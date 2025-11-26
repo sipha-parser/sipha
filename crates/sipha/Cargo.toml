@@ -1,0 +1,73 @@
+[package]
+name = "sipha"
+version = "0.5.0"
+edition = "2024"
+authors = ["Chloe Magnier <contact@nyaleph.com>"]
+description = "Core parsing infrastructure for Sipha parser library"
+license = "MIT"
+repository = "https://github.com/nyaleph/sipha"
+homepage = "https://github.com/nyaleph/sipha"
+documentation = "https://docs.rs/sipha"
+keywords = ["parser", "parsing", "incremental", "syntax-tree", "lexer", "grammar"]
+categories = ["parsing", "development-tools"]
+
+[lints.clippy]
+pedantic = "deny"
+nursery = "warn"
+
+[dependencies]
+# Core
+compact_str = "0.9"
+lasso = "0.7"
+smallvec = "1.13"
+hashbrown = "0.16"
+ahash = "0.8"
+bumpalo = { version = "3.16", optional = true }
+
+# Error handling
+thiserror = "2.0"
+miette = { version = "7.2", optional = true }
+
+# Unicode
+unicode-ident = { version = "1.0", optional = true }
+unicode-normalization = { version = "0.1", optional = true }
+memchr = "2.7"
+
+# Performance
+memmap2 = { version = "0.9", optional = true }
+rayon = { version = "1.10", optional = true }
+puffin = { version = "0.19", optional = true }
+tracing = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+rkyv = { version = "0.8", optional = true }
+
+[dev-dependencies]
+insta = "1.40"
+proptest = "1.5"
+criterion = "0.7"
+pretty_assertions = "1.4"
+tracing-subscriber = "0.3"
+
+[features]
+default = ["diagnostics", "unicode", "query", "visitor", "traversal", "tree-utils", "backend-ll"]
+diagnostics = ["miette"]
+unicode = ["unicode-ident", "unicode-normalization"]
+parallel = ["rayon"]
+profiling = ["puffin"]
+serialize = ["serde", "serde_json", "rkyv"]
+arena = ["bumpalo"]
+
+# Tree traversal and query features
+query = []
+visitor = []
+traversal = []
+tree-utils = []
+tree-index = []
+
+# Backend features
+backend-ll = []
+backend-lr = []
+

@@ -1,0 +1,47 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Documentation
+/target/doc/
+
+# Test artifacts
+*.test
+*.profdata
+
+# Environment
+.env
+.env.local
+
+# Debugging
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Coverage
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+
+# Misc
+*.orig
+*.rej
+
