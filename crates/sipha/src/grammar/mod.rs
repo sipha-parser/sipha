@@ -83,11 +83,13 @@
 //!
 //! See [`Expr`] for the full list of expression types.
 
+pub mod analysis;
 pub mod builder;
 pub mod expr;
 pub mod hint;
 pub mod validate;
 
+pub use analysis::*;
 pub use builder::*;
 pub use expr::*;
 pub use hint::*;
@@ -99,21 +101,21 @@ pub use validate::*;
 pub trait Token: Clone + std::fmt::Debug + std::hash::Hash + Eq + Send + Sync + 'static {
     /// The syntax kind type for this token
     type Kind: crate::syntax::SyntaxKind;
-    
+
     /// Get the syntax kind for this token
     fn kind(&self) -> Self::Kind;
-    
+
     /// Get the text length of this token in bytes
-    /// 
+    ///
     /// This is used for accurate text position tracking during parsing.
     /// The default implementation returns 1, but implementations should
     /// provide the actual token length for proper error reporting.
     fn text_len(&self) -> crate::syntax::TextSize {
         crate::syntax::TextSize::from(1)
     }
-    
+
     /// Get the text representation of this token
-    /// 
+    ///
     /// This is used for syntax tree construction. The default implementation
     /// uses Debug formatting, but implementations should provide the actual
     /// token text when available.
@@ -123,28 +125,30 @@ pub trait Token: Clone + std::fmt::Debug + std::hash::Hash + Eq + Send + Sync + 
 }
 
 /// Trait for non-terminal types
-pub trait NonTerminal: Clone + std::fmt::Debug + std::hash::Hash + Eq + Send + Sync + 'static {
+pub trait NonTerminal:
+    Clone + std::fmt::Debug + std::hash::Hash + Eq + Send + Sync + 'static
+{
     /// Get the name of this non-terminal
     fn name(&self) -> &str;
-    
+
     /// Convert this non-terminal to a syntax kind
-    /// 
+    ///
     /// This is used for syntax tree construction. Users should implement this
     /// for their specific types to provide a mapping from non-terminals to syntax kinds.
-    /// 
+    ///
     /// Returns None if no mapping is available, in which case the parser will
     /// attempt to infer the kind from context (e.g., from tokens).
     fn to_syntax_kind<K: crate::syntax::SyntaxKind>(&self) -> Option<K> {
         let _ = self;
         None
     }
-    
+
     /// Get a default syntax kind for this non-terminal
-    /// 
+    ///
     /// This is used as a fallback when [`to_syntax_kind()`](Self::to_syntax_kind) returns `None` and
     /// no tokens are available. Users should implement this to provide a
     /// default kind (e.g., a generic "node" kind).
-    /// 
+    ///
     /// The default implementation returns None, which will cause parsing
     /// to fail if no other kind can be determined.
     fn default_syntax_kind<K: crate::syntax::SyntaxKind>(&self) -> Option<K> {
@@ -152,4 +156,3 @@ pub trait NonTerminal: Clone + std::fmt::Debug + std::hash::Hash + Eq + Send + S
         None
     }
 }
-

@@ -16,12 +16,12 @@ impl TextSize {
     pub const fn from(offset: u32) -> Self {
         Self(offset)
     }
-    
+
     #[must_use]
     pub const fn into(self) -> u32 {
         self.0
     }
-    
+
     #[must_use]
     pub const fn zero() -> Self {
         Self(0)
@@ -30,7 +30,7 @@ impl TextSize {
 
 impl std::ops::Add<Self> for TextSize {
     type Output = Self;
-    
+
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
     }
@@ -47,42 +47,42 @@ impl TextRange {
     pub const fn new(start: TextSize, end: TextSize) -> Self {
         Self { start, end }
     }
-    
+
     #[must_use]
     pub const fn at(start: TextSize, len: TextSize) -> Self {
         Self::new(start, TextSize(start.0 + len.0))
     }
-    
+
     #[must_use]
     pub const fn start(self) -> TextSize {
         self.start
     }
-    
+
     #[must_use]
     pub const fn end(self) -> TextSize {
         self.end
     }
-    
+
     #[must_use]
     pub const fn len(self) -> TextSize {
         TextSize(self.end.0 - self.start.0)
     }
-    
+
     #[must_use]
     pub const fn contains(self, offset: TextSize) -> bool {
         offset.0 >= self.start.0 && offset.0 < self.end.0
     }
-    
+
     #[must_use]
     pub const fn contains_range(self, other: Self) -> bool {
         other.start.0 >= self.start.0 && other.end.0 <= self.end.0
     }
-    
+
     #[must_use]
     pub fn intersect(self, other: Self) -> Option<Self> {
         let start = self.start.0.max(other.start.0);
         let end = self.end.0.min(other.end.0);
-        
+
         if start < end {
             Some(Self::new(TextSize(start), TextSize(end)))
         } else {
@@ -103,7 +103,7 @@ impl From<TextRange> for miette::SourceSpan {
         use miette::SourceOffset;
         Self::new(
             SourceOffset::from(range.start().into() as usize),
-            range.len().into() as usize
+            range.len().into() as usize,
         )
     }
 }
@@ -166,12 +166,12 @@ mod tests {
     #[test]
     fn test_text_range_contains() {
         let range = TextRange::new(TextSize::from(10), TextSize::from(20));
-        
-        assert!(!range.contains(TextSize::from(9)));  // Before start
-        assert!(range.contains(TextSize::from(10)));   // At start
-        assert!(range.contains(TextSize::from(15)));   // In middle
-        assert!(!range.contains(TextSize::from(20)));  // At end (exclusive)
-        assert!(!range.contains(TextSize::from(21)));  // After end
+
+        assert!(!range.contains(TextSize::from(9))); // Before start
+        assert!(range.contains(TextSize::from(10))); // At start
+        assert!(range.contains(TextSize::from(15))); // In middle
+        assert!(!range.contains(TextSize::from(20))); // At end (exclusive)
+        assert!(!range.contains(TextSize::from(21))); // After end
     }
 
     #[test]
@@ -180,7 +180,7 @@ mod tests {
         let inner = TextRange::new(TextSize::from(15), TextSize::from(25));
         let overlapping = TextRange::new(TextSize::from(5), TextSize::from(15));
         let outside = TextRange::new(TextSize::from(35), TextSize::from(40));
-        
+
         assert!(outer.contains_range(inner));
         assert!(!outer.contains_range(overlapping));
         assert!(!outer.contains_range(outside));
@@ -192,13 +192,13 @@ mod tests {
         let range1 = TextRange::new(TextSize::from(10), TextSize::from(20));
         let range2 = TextRange::new(TextSize::from(15), TextSize::from(25));
         let range3 = TextRange::new(TextSize::from(5), TextSize::from(8));
-        
+
         let intersection = range1.intersect(range2);
         assert!(intersection.is_some());
         let inter = intersection.unwrap();
         assert_eq!(inter.start(), TextSize::from(15));
         assert_eq!(inter.end(), TextSize::from(20));
-        
+
         assert!(range1.intersect(range3).is_none()); // No overlap
     }
 
@@ -206,7 +206,7 @@ mod tests {
     fn test_text_range_intersect_adjacent() {
         let range1 = TextRange::new(TextSize::from(10), TextSize::from(20));
         let range2 = TextRange::new(TextSize::from(20), TextSize::from(30));
-        
+
         // Adjacent ranges don't intersect (end is exclusive)
         assert!(range1.intersect(range2).is_none());
     }
@@ -223,9 +223,8 @@ mod tests {
         let range1 = TextRange::new(TextSize::from(10), TextSize::from(20));
         let range2 = TextRange::new(TextSize::from(10), TextSize::from(20));
         let range3 = TextRange::new(TextSize::from(10), TextSize::from(21));
-        
+
         assert_eq!(range1, range2);
         assert_ne!(range1, range3);
     }
 }
-

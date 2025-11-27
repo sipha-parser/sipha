@@ -17,8 +17,6 @@
 //! This example shows how to create a simple arithmetic expression parser:
 //!
 //! ```rust,no_run
-//! // Note: This example demonstrates the concepts but may require adjustments
-//! // to work in all environments due to lexer implementation details
 //! use sipha::grammar::{GrammarBuilder, Token, NonTerminal, Expr};
 //! use sipha::syntax::SyntaxKind as SyntaxKindTrait;
 //! use sipha::backend::ll::{LlParser, LlConfig};
@@ -155,19 +153,22 @@
 //! - [`error`] - Error types and diagnostics
 //! - [`incremental`] - Incremental parsing support
 
-pub mod syntax;
+pub mod backend;
+pub mod error;
 pub mod grammar;
+pub mod incremental;
 pub mod lexer;
 pub mod parser;
-pub mod error;
-pub mod incremental;
-pub mod backend;
+pub mod syntax;
 
 // Re-export commonly used types
-pub use syntax::{SyntaxKind, TextSize, TextRange, GreenNode, GreenToken, SyntaxNode, SyntaxToken, SyntaxElement, GreenNodeBuilder};
-pub use grammar::{Grammar, GrammarBuilder, Rule, Expr, Token as GrammarToken, NonTerminal};
-pub use lexer::{Token, LexerBuilder, CompiledLexer};
-pub use error::{ParseError, LexerError, ParseResult, ParseMetrics};
+pub use error::{LexerError, ParseError, ParseMetrics, ParseResult};
+pub use grammar::{Expr, Grammar, GrammarBuilder, NonTerminal, Rule, Token as GrammarToken};
+pub use lexer::{CompiledLexer, LexerBuilder, Token};
+pub use syntax::{
+    GreenNode, GreenNodeBuilder, GreenToken, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken,
+    TextRange, TextSize,
+};
 
 // Conditionally re-export feature-gated modules
 #[cfg(feature = "visitor")]
@@ -177,4 +178,4 @@ pub use syntax::{SyntaxVisitor, SyntaxWalker};
 pub use syntax::{QueryBuilder, XPathQuery};
 
 #[cfg(feature = "tree-utils")]
-pub use syntax::{TreeStats, ValidationResult, TreeDiff};
+pub use syntax::{TreeDiff, TreeStats, ValidationResult};

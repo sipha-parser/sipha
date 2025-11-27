@@ -2,6 +2,6 @@
 //!
 //! This module provides parser traits and interfaces.
 //!
-//! Actual parser implementations are provided by backend modules (e.g., `backend::ll`).
-//! The parser module serves as a placeholder for future parser-level abstractions.
-
+//! Actual parser implementations are provided by backend modules (e.g., `backend::ll`, `backend::lr`).
+//! This module currently re-exports parser state types but may be extended in the future
+//! with parser-level abstractions that work across different backends.

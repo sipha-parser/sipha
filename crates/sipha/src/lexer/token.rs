@@ -1,6 +1,6 @@
-use compact_str::CompactString;
-use crate::syntax::{TextRange, TextSize, SyntaxKind};
 use crate::grammar::Token as GrammarToken;
+use crate::syntax::{SyntaxKind, TextRange, TextSize};
+use compact_str::CompactString;
 
 #[derive(Debug, Clone)]
 pub struct Token<K: SyntaxKind> {
@@ -46,13 +46,13 @@ impl<K: SyntaxKind> Token<K> {
             value: TokenValue::None,
         }
     }
-    
+
     #[inline]
     #[must_use]
     pub fn is_trivia(&self) -> bool {
         self.kind.is_trivia()
     }
-    
+
     #[must_use]
     pub const fn value(&self) -> &TokenValue {
         &self.value
@@ -62,15 +62,15 @@ impl<K: SyntaxKind> Token<K> {
 // Implement grammar::Token trait so lexer tokens can be used directly in grammars
 impl<K: SyntaxKind> GrammarToken for Token<K> {
     type Kind = K;
-    
+
     fn kind(&self) -> Self::Kind {
         self.kind
     }
-    
+
     fn text_len(&self) -> TextSize {
         self.range.len()
     }
-    
+
     fn text(&self) -> CompactString {
         self.text.clone()
     }

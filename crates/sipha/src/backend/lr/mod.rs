@@ -1,15 +1,15 @@
-mod table;
-mod parser;
 mod config;
+mod parser;
 mod state;
+mod table;
 
 pub use config::LrConfig;
 pub use state::LrParserState;
 use table::LrParsingTable;
 
-use crate::grammar::{Grammar, Token};
-use crate::backend::{ParserBackend, BackendCapabilities, Algorithm};
+use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
+use crate::grammar::{Grammar, Token};
 
 /// LR(1) parser backend
 pub struct LrParser<T, N>
@@ -27,10 +27,10 @@ where
 pub enum LrError {
     #[error("Grammar is not LR(1) compatible: {0}")]
     NotLrGrammar(String),
-    
+
     #[error("Failed to build parsing table: {0}")]
     TableConstructionFailed(String),
-    
+
     #[error("Grammar contains unsupported constructs: {0}")]
     UnsupportedConstruct(String),
 }
@@ -43,23 +43,24 @@ where
     type Config = LrConfig;
     type Error = LrError;
     type State = LrParserState<T, N>;
-    
+
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error> {
         // Validate grammar for LR compatibility
         let errors = Self::validate(grammar);
         if !errors.is_empty() {
             return Err(LrError::NotLrGrammar(
-                errors.iter()
+                errors
+                    .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-                    .join(", ")
+                    .join(", "),
             ));
         }
-        
+
         // Build parsing table
         let table = LrParsingTable::new(grammar, config.use_lalr)
             .map_err(LrError::TableConstructionFailed)?;
-        
+
         Ok(Self {
             grammar: grammar.clone(),
             table,
@@ -67,7 +68,7 @@ where
             config,
         })
     }
-    
+
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
         parser::parse(
             &self.grammar,
@@ -78,49 +79,48 @@ where
             &mut self.state,
         )
     }
-    
-    fn parse_incremental(
+
+    fn parse_with_session(
         &mut self,
         input: &[T],
-        old_tree: Option<&crate::syntax::GreenNode<T::Kind>>,
-        edits: &[crate::incremental::TextEdit],
         entry: N,
+        session: &crate::incremental::IncrementalSession<'_, T::Kind>,
     ) -> ParseResult<T, N>
     where
         T: Token,
     {
-        // Invalidate cache if there are edits
-        if !edits.is_empty() {
-            self.state.invalidate_cache();
+        if session.edits().is_empty() {
+            return self.parse(input, entry);
         }
-        
-        parser::parse_incremental(
+
+        self.state.invalidate_cache();
+
+        parser::parse_with_session(
             &self.grammar,
             &self.table,
             input,
-            old_tree,
-            edits,
+            session,
             &entry,
             &self.config,
             &mut self.state,
         )
     }
-    
+
     fn validate(grammar: &Grammar<T, N>) -> Vec<crate::grammar::GrammarError<T, N>> {
         let mut errors = Vec::new();
-        
+
         // LR parsers can handle left recursion, so we don't check for that
         // But we should check for other issues
-        
+
         // Check for undefined rules
         for (_lhs, rule) in grammar.rules() {
             // Check if rule references undefined non-terminals
             Self::check_undefined_references(grammar, &rule.rhs, &mut errors);
         }
-        
+
         errors
     }
-    
+
     fn capabilities() -> BackendCapabilities {
         BackendCapabilities {
             name: "LR(1)/LALR(1)",
@@ -132,7 +132,7 @@ where
             max_lookahead: Some(1), // LR(1) or LALR(1)
         }
     }
-    
+
     fn state(&self) -> &Self::State {
         &self.state
     }
@@ -163,11 +163,18 @@ where
             crate::grammar::Expr::Opt(e) | crate::grammar::Expr::Repeat { expr: e, .. } => {
                 Self::check_undefined_references(grammar, e, errors);
             }
-            crate::grammar::Expr::Separated { item, separator, .. } => {
+            crate::grammar::Expr::Separated {
+                item, separator, ..
+            } => {
                 Self::check_undefined_references(grammar, item, errors);
                 Self::check_undefined_references(grammar, separator, errors);
             }
-            crate::grammar::Expr::Delimited { open, content, close, .. } => {
+            crate::grammar::Expr::Delimited {
+                open,
+                content,
+                close,
+                ..
+            } => {
                 Self::check_undefined_references(grammar, open, errors);
                 Self::check_undefined_references(grammar, content, errors);
                 Self::check_undefined_references(grammar, close, errors);
@@ -185,4 +192,3 @@ where
         }
     }
 }
-

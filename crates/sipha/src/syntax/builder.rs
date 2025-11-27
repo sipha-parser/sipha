@@ -1,5 +1,5 @@
+use crate::syntax::{GreenElement, GreenNode, SyntaxKind, TextSize};
 use smallvec::SmallVec;
-use crate::syntax::{GreenNode, GreenElement, SyntaxKind, TextSize};
 use thiserror::Error;
 
 /// Error that can occur when building a syntax tree
@@ -7,10 +7,10 @@ use thiserror::Error;
 pub enum BuilderError {
     #[error("Builder must have exactly one root node, but found {stack_size} nodes on stack")]
     InvalidStackSize { stack_size: usize },
-    
+
     #[error("finish_node() called without a matching start_node()")]
     UnmatchedFinishNode,
-    
+
     #[error("token() called without a parent node. Call start_node() before adding tokens")]
     TokenWithoutParent,
 }
@@ -33,7 +33,7 @@ impl<K: SyntaxKind> GreenNodeBuilder<K> {
             stack: SmallVec::new(),
         }
     }
-    
+
     pub fn start_node(&mut self, kind: K) {
         self.stack.push(NodeBuilder {
             kind,
@@ -41,38 +41,37 @@ impl<K: SyntaxKind> GreenNodeBuilder<K> {
             text_len: TextSize::zero(),
         });
     }
-    
+
     /// Finish the current node and add it to its parent.
     ///
     /// # Errors
     ///
     /// Returns an error if there's no node on the stack to finish.
     pub fn finish_node(&mut self) -> Result<(), BuilderError> {
-        let node = self.stack.pop()
-            .ok_or(BuilderError::UnmatchedFinishNode)?;
-        let green = GreenNode::new(
-            node.kind,
-            node.children,
-            node.text_len,
-        );
-        
+        let node = self.stack.pop().ok_or(BuilderError::UnmatchedFinishNode)?;
+        let green = GreenNode::new(node.kind, node.children, node.text_len);
+
         if let Some(parent) = self.stack.last_mut() {
             parent.text_len = TextSize::from(parent.text_len.into() + green.text_len().into());
             parent.children.push(GreenElement::Node(green));
         }
         Ok(())
     }
-    
+
     /// Add a token to the current node.
     ///
     /// # Errors
     ///
     /// Returns an error if there's no parent node on the stack.
-    pub fn token(&mut self, kind: K, text: impl Into<compact_str::CompactString>) -> Result<(), BuilderError> {
+    pub fn token(
+        &mut self,
+        kind: K,
+        text: impl Into<compact_str::CompactString>,
+    ) -> Result<(), BuilderError> {
         let text: compact_str::CompactString = text.into();
         let text_len = TextSize::from(u32::try_from(text.len()).unwrap_or(0));
         let token = GreenElement::Token(crate::syntax::GreenToken::new(kind, text));
-        
+
         if let Some(parent) = self.stack.last_mut() {
             parent.text_len = TextSize::from(parent.text_len.into() + text_len.into());
             parent.children.push(token);
@@ -81,7 +80,25 @@ impl<K: SyntaxKind> GreenNodeBuilder<K> {
             Err(BuilderError::TokenWithoutParent)
         }
     }
-    
+
+    /// Add a pre-built node to the current node.
+    ///
+    /// This is used for incremental parsing to reuse nodes from previous parses.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there's no parent node on the stack.
+    pub fn reuse_node(&mut self, node: std::sync::Arc<GreenNode<K>>) -> Result<(), BuilderError> {
+        if let Some(parent) = self.stack.last_mut() {
+            let text_len = node.text_len();
+            parent.text_len = TextSize::from(parent.text_len.into() + text_len.into());
+            parent.children.push(GreenElement::Node(node));
+            Ok(())
+        } else {
+            Err(BuilderError::TokenWithoutParent)
+        }
+    }
+
     /// Finish building the syntax tree.
     ///
     /// Returns an error if the builder doesn't have exactly one root node on the stack.
@@ -96,14 +113,14 @@ impl<K: SyntaxKind> GreenNodeBuilder<K> {
     /// Panics if the stack is empty when trying to pop the root node.
     pub fn finish(mut self) -> Result<std::sync::Arc<GreenNode<K>>, BuilderError> {
         if self.stack.len() != 1 {
-            return Err(BuilderError::InvalidStackSize { 
-                stack_size: self.stack.len() 
+            return Err(BuilderError::InvalidStackSize {
+                stack_size: self.stack.len(),
             });
         }
         let root = self.stack.pop().unwrap();
         Ok(GreenNode::new(root.kind, root.children, root.text_len))
     }
-    
+
     /// Finish building the syntax tree, panicking on error.
     ///
     /// This is a convenience method for cases where you're certain the builder
@@ -113,13 +130,12 @@ impl<K: SyntaxKind> GreenNodeBuilder<K> {
     ///
     /// Panics if the builder doesn't have exactly one root node on the stack.
     pub fn finish_unwrap(self) -> std::sync::Arc<GreenNode<K>> {
-        self.finish().expect("Builder must have exactly one root node")
+        self.finish()
+            .expect("Builder must have exactly one root node")
     }
-    
+
     pub fn node_count(&self) -> usize {
-        self.stack.iter()
-            .map(|n| n.children.len())
-            .sum::<usize>()
+        self.stack.iter().map(|n| n.children.len()).sum::<usize>()
     }
 }
 
@@ -147,7 +163,7 @@ mod tests {
         fn is_terminal(self) -> bool {
             !matches!(self, Self::Root | Self::Expr)
         }
-        
+
         fn is_trivia(self) -> bool {
             false
         }
@@ -181,18 +197,18 @@ mod tests {
     fn test_builder_nested_nodes() {
         let mut builder = GreenNodeBuilder::new();
         builder.start_node(TestKind::Root);
-        
+
         builder.start_node(TestKind::Expr);
         builder.token(TestKind::Ident, "x").unwrap();
         builder.token(TestKind::Plus, "+").unwrap();
         builder.token(TestKind::Number, "42").unwrap();
         builder.finish_node().unwrap();
-        
+
         // Don't call finish_node() on root - finish() expects it on the stack
         let root = builder.finish().unwrap();
         assert_eq!(root.kind(), TestKind::Root);
         assert_eq!(root.children().len(), 1);
-        
+
         match &root.children()[0] {
             GreenElement::Node(expr) => {
                 assert_eq!(expr.kind(), TestKind::Expr);
@@ -219,17 +235,17 @@ mod tests {
     fn test_builder_text_len_accumulation() {
         let mut builder = GreenNodeBuilder::new();
         builder.start_node(TestKind::Root);
-        
+
         builder.start_node(TestKind::Expr);
         builder.token(TestKind::Number, "123").unwrap();
         builder.finish_node().unwrap();
-        
+
         builder.token(TestKind::Plus, "+").unwrap();
-        
+
         builder.start_node(TestKind::Expr);
         builder.token(TestKind::Number, "456").unwrap();
         builder.finish_node().unwrap();
-        
+
         // Don't call finish_node() on root - finish() expects it on the stack
         let root = builder.finish().unwrap();
         // "123" + "+" + "456" = 7 bytes
@@ -243,10 +259,10 @@ mod tests {
         builder.token(TestKind::Ident, "x").unwrap();
         builder.token(TestKind::Plus, "+").unwrap();
         builder.token(TestKind::Number, "1").unwrap();
-        
+
         // node_count counts children in all nodes on the stack
         assert_eq!(builder.node_count(), 3);
-        
+
         // Don't call finish_node() on root - finish() expects it on the stack
         let _root = builder.finish().unwrap();
     }
@@ -281,4 +297,3 @@ mod tests {
         assert!(builder.token(TestKind::Ident, "x").is_err());
     }
 }
-

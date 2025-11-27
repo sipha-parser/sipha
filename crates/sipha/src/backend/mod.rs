@@ -39,8 +39,9 @@
 //!
 //! See [`ParserBackend::parse_incremental`] for incremental parsing support.
 
-use crate::grammar::{Grammar, Token, NonTerminal};
 use crate::error::ParseResult;
+use crate::grammar::{Grammar, NonTerminal, Token};
+use crate::incremental::IncrementalSession;
 
 #[cfg(feature = "backend-ll")]
 pub mod ll;
@@ -57,17 +58,17 @@ where
     type Config: Default + Clone;
     type Error: std::error::Error + Send + Sync + 'static;
     type State: Send + Sync;
-    
+
     /// Create parser from grammar
     ///
     /// # Errors
     ///
     /// Returns an error if the parser cannot be created from the given grammar and config.
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error>;
-    
+
     /// Parse input tokens
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N>;
-    
+
     /// Parse with incremental support (default: full reparse)
     fn parse_incremental(
         &mut self,
@@ -79,21 +80,43 @@ where
     where
         T: Token,
     {
-        // Default implementation: ignore cache, full reparse
-        let _ = (old_tree, edits);
+        if edits.is_empty() {
+            return self.parse(input, entry);
+        }
+
+        let session = IncrementalSession::new(old_tree, edits);
+        self.parse_with_session(input, entry, &session)
+    }
+
+    /// Hook that receives pre-computed incremental context.
+    fn parse_with_session(
+        &mut self,
+        input: &[T],
+        entry: N,
+        session: &IncrementalSession<'_, T::Kind>,
+    ) -> ParseResult<T, N>
+    where
+        T: Token,
+    {
+        let _ = session;
         self.parse(input, entry)
     }
-    
+
     /// Validate grammar compatibility
     fn validate(grammar: &Grammar<T, N>) -> Vec<crate::grammar::GrammarError<T, N>>;
-    
+
     /// Get backend capabilities
     fn capabilities() -> BackendCapabilities;
-    
+
     /// Access internal state for debugging
     fn state(&self) -> &Self::State;
 }
 
+/// Capabilities of a parsing backend
+///
+/// Note: This struct uses multiple boolean fields for clarity in the public API.
+/// While this triggers `clippy::struct_excessive_bools`, the self-documenting
+/// nature of named boolean fields is preferred over bitflags for API clarity.
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct BackendCapabilities {
@@ -115,4 +138,3 @@ pub enum Algorithm {
     Packrat,
     Earley,
 }
-

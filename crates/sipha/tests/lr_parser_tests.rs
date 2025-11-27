@@ -1,13 +1,14 @@
 //! Tests for LR parser backend
 
 #[cfg(feature = "backend-lr")]
-use sipha::backend::lr::{LrParser, LrConfig, LrError};
-#[cfg(feature = "backend-lr")]
 use sipha::backend::ParserBackend;
-use sipha::grammar::{GrammarBuilder, Token, NonTerminal, Expr};
+#[cfg(feature = "backend-lr")]
+use sipha::backend::lr::{LrConfig, LrError, LrParser};
+use sipha::grammar::{Expr, GrammarBuilder, NonTerminal, Token};
 use sipha::syntax::{SyntaxKind, TextSize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 enum TestSyntaxKind {
     // Terminals
     Number,
@@ -29,7 +30,7 @@ impl SyntaxKind for TestSyntaxKind {
     fn is_terminal(self) -> bool {
         !matches!(self, Self::Expr | Self::Term | Self::Factor)
     }
-    
+
     fn is_trivia(self) -> bool {
         matches!(self, Self::Whitespace)
     }
@@ -43,21 +44,22 @@ struct TestToken {
 
 impl Token for TestToken {
     type Kind = TestSyntaxKind;
-    
+
     fn kind(&self) -> Self::Kind {
         self.kind
     }
-    
+
     fn text_len(&self) -> TextSize {
         TextSize::from(u32::try_from(self.text.len()).unwrap_or(u32::MAX))
     }
-    
+
     fn text(&self) -> compact_str::CompactString {
         self.text.clone()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 enum TestNonTerminal {
     Expr,
     Term,
@@ -72,12 +74,12 @@ impl NonTerminal for TestNonTerminal {
             Self::Factor => "Factor",
         }
     }
-    
+
     fn to_syntax_kind<K: SyntaxKind>(&self) -> Option<K> {
         // Simplified implementation - proper type conversion would require more complex setup
         None
     }
-    
+
     fn default_syntax_kind<K: SyntaxKind>(&self) -> Option<K> {
         // This is a simplified implementation - in practice you'd need proper type conversion
         None
@@ -98,17 +100,16 @@ fn test_lr_parser_creation() {
     // Create a simple grammar: Expr -> Number
     let grammar = GrammarBuilder::new()
         .entry_point(TestNonTerminal::Expr)
-        .rule(TestNonTerminal::Expr, Expr::token(create_token(
-            TestSyntaxKind::Number,
-            "42",
-            0,
-        )))
+        .rule(
+            TestNonTerminal::Expr,
+            Expr::token(create_token(TestSyntaxKind::Number, "42", 0)),
+        )
         .build()
         .expect("Failed to build grammar");
-    
+
     let config = LrConfig::default();
     let result = LrParser::<TestToken, TestNonTerminal>::new(&grammar, config);
-    
+
     // Note: This will likely fail because the LR table construction is incomplete
     // But we can test the structure
     match result {
@@ -138,7 +139,7 @@ fn test_lr_config_custom() {
         max_errors: 50,
         use_lalr: false,
     };
-    
+
     assert!(!config.error_recovery);
     assert_eq!(config.max_errors, 50);
     assert!(!config.use_lalr);
@@ -148,7 +149,7 @@ fn test_lr_config_custom() {
 #[cfg(feature = "backend-lr")]
 fn test_lr_parser_state() {
     use sipha::backend::lr::LrParserState;
-    
+
     let _state = LrParserState::<TestToken, TestNonTerminal>::new();
     // State should be created successfully
 }

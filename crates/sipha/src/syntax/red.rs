@@ -1,5 +1,8 @@
-use std::{cell::RefCell, sync::{Arc, Weak}};
-use crate::syntax::{GreenNode, GreenToken, GreenElement, SyntaxKind, TextRange, TextSize};
+use crate::syntax::{GreenElement, GreenNode, GreenToken, SyntaxKind, TextRange, TextSize};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Weak},
+};
 
 /// Mutable cursor with parent pointers
 #[derive(Clone)]
@@ -27,19 +30,15 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             offset: TextSize::zero(),
         }
     }
-    
-    fn new_child(
-        green: std::sync::Arc<GreenNode<K>>,
-        parent: &Self,
-        index: u32,
-    ) -> Self {
+
+    fn new_child(green: std::sync::Arc<GreenNode<K>>, parent: &Self, index: u32) -> Self {
         // Calculate offset by summing text lengths of previous siblings
         let mut offset = parent.offset;
         let children = parent.green.children();
         for child in children.iter().take(index as usize) {
             offset = TextSize::from(offset.into() + child.text_len().into());
         }
-        
+
         let arc = Arc::new(RefCell::new(SyntaxData {
             green: parent.green.clone(),
             parent: parent.parent.clone(),
@@ -53,19 +52,19 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             offset,
         }
     }
-    
+
     #[inline]
     #[must_use]
     pub fn kind(&self) -> K {
         self.green.kind()
     }
-    
+
     #[inline]
     #[must_use]
     pub fn text_range(&self) -> TextRange {
         TextRange::at(self.offset, self.green.text_len())
     }
-    
+
     /// Get the text content of this node and all its descendants.
     ///
     /// This allocates a new `String` every time. For better performance when
@@ -78,7 +77,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
         self.collect_text(&mut result);
         result
     }
-    
+
     /// Write the text content of this node to the given buffer.
     ///
     /// This avoids allocating a new String and allows you to reuse buffers.
@@ -87,7 +86,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
     pub fn write_text(&self, buffer: &mut String) {
         self.collect_text(buffer);
     }
-    
+
     fn collect_text(&self, result: &mut String) {
         for child in self.green.children() {
             match child {
@@ -101,7 +100,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             }
         }
     }
-    
+
     #[must_use]
     pub fn parent(&self) -> Option<Self> {
         self.parent.as_ref().and_then(|weak| {
@@ -116,7 +115,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             })
         })
     }
-    
+
     #[must_use]
     pub fn children(&self) -> SyntaxChildren<'_, K> {
         SyntaxChildren {
@@ -125,14 +124,15 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             index: 0,
         }
     }
-    
+
     #[must_use]
     pub fn first_child(&self) -> Option<SyntaxElement<K>> {
-        self.green.children().first().map(|green| {
-            self.element_from_green(green, 0)
-        })
+        self.green
+            .children()
+            .first()
+            .map(|green| self.element_from_green(green, 0))
     }
-    
+
     #[must_use]
     pub fn last_child(&self) -> Option<SyntaxElement<K>> {
         let last_idx = self.green.children().len().saturating_sub(1);
@@ -140,7 +140,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             self.element_from_green(green, u32::try_from(last_idx).unwrap_or(u32::MAX))
         })
     }
-    
+
     fn element_from_green(&self, green: &GreenElement<K>, index: u32) -> SyntaxElement<K> {
         // Calculate offset by summing text lengths of previous siblings
         let mut offset = self.offset;
@@ -148,13 +148,9 @@ impl<K: SyntaxKind> SyntaxNode<K> {
         for child in children.iter().take(index as usize) {
             offset = TextSize::from(offset.into() + child.text_len().into());
         }
-        
+
         match green {
-            GreenElement::Node(g) => SyntaxElement::Node(Self::new_child(
-                g.clone(),
-                self,
-                index,
-            )),
+            GreenElement::Node(g) => SyntaxElement::Node(Self::new_child(g.clone(), self, index)),
             GreenElement::Token(t) => SyntaxElement::Token(SyntaxToken {
                 green: t.clone(),
                 parent: self.parent.clone(),
@@ -163,29 +159,35 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             }),
         }
     }
-    
+
     #[must_use]
     pub fn next_sibling(&self) -> Option<SyntaxElement<K>> {
         let parent = self.parent()?;
         let next_index = self.index + 1;
-        
-        parent.green.children().get(next_index as usize)
+
+        parent
+            .green
+            .children()
+            .get(next_index as usize)
             .map(|green| parent.element_from_green(green, next_index))
     }
-    
+
     #[must_use]
     pub fn prev_sibling(&self) -> Option<SyntaxElement<K>> {
         if self.index == 0 {
             return None;
         }
-        
+
         let parent = self.parent()?;
         let prev_index = self.index - 1;
-        
-        parent.green.children().get(prev_index as usize)
+
+        parent
+            .green
+            .children()
+            .get(prev_index as usize)
             .map(|green| parent.element_from_green(green, prev_index))
     }
-    
+
     #[must_use]
     pub fn descendants(&self) -> SyntaxDescendants<K> {
         // Start with all children (not just first_child) to get all descendants
@@ -195,21 +197,21 @@ impl<K: SyntaxKind> SyntaxNode<K> {
         }
         SyntaxDescendants { stack }
     }
-    
+
     #[must_use]
     pub fn ancestors(&self) -> SyntaxAncestors<K> {
         SyntaxAncestors {
             current: self.parent(),
         }
     }
-    
+
     pub fn children_with_kind(&self, kind: K) -> impl Iterator<Item = Self> + '_ {
         self.children().filter_map(move |elem| match elem {
             SyntaxElement::Node(node) if node.kind() == kind => Some(node),
             _ => None,
         })
     }
-    
+
     #[must_use]
     pub fn find_first_child<F>(&self, predicate: F) -> Option<SyntaxElement<K>>
     where
@@ -217,7 +219,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
     {
         self.children().find(|elem| predicate(elem))
     }
-    
+
     #[must_use]
     pub fn find_last_child<F>(&self, predicate: F) -> Option<SyntaxElement<K>>
     where
@@ -227,41 +229,43 @@ impl<K: SyntaxKind> SyntaxNode<K> {
         let children: Vec<_> = self.children().collect();
         children.into_iter().rev().find(|elem| predicate(elem))
     }
-    
+
     #[must_use]
     pub fn nth_child(&self, index: usize) -> Option<SyntaxElement<K>> {
-        self.green.children().get(index).map(|green| {
-            self.element_from_green(green, u32::try_from(index).unwrap_or(u32::MAX))
-        })
+        self.green
+            .children()
+            .get(index)
+            .map(|green| self.element_from_green(green, u32::try_from(index).unwrap_or(u32::MAX)))
     }
-    
+
     #[must_use]
     pub fn siblings(&self) -> SyntaxSiblings<K> {
         let parent = self.parent();
         SyntaxSiblings {
             parent: parent.clone(),
-            children: parent.as_ref()
+            children: parent
+                .as_ref()
                 .map(|p| p.green.children().to_vec())
                 .unwrap_or_default(),
             current_index: 0,
             skip_index: self.index,
         }
     }
-    
+
     #[must_use]
     pub fn tokens(&self) -> SyntaxTokens<K> {
         SyntaxTokens {
             stack: vec![self.first_child()],
         }
     }
-    
+
     #[must_use]
     pub fn nodes(&self) -> SyntaxNodes<K> {
         SyntaxNodes {
             stack: vec![self.first_child()],
         }
     }
-    
+
     #[cfg(feature = "traversal")]
     #[must_use]
     pub fn preorder(&self) -> SyntaxPreOrder<K> {
@@ -269,7 +273,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             stack: vec![Some(self.clone())],
         }
     }
-    
+
     #[cfg(feature = "traversal")]
     #[must_use]
     pub fn postorder(&self) -> SyntaxPostOrder<K> {
@@ -277,7 +281,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             stack: vec![(self.clone(), false)],
         }
     }
-    
+
     #[cfg(feature = "traversal")]
     #[must_use]
     pub fn inorder(&self) -> SyntaxInOrder<K> {
@@ -285,7 +289,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             stack: vec![(self.clone(), false)],
         }
     }
-    
+
     #[cfg(feature = "traversal")]
     #[must_use]
     pub fn level_order(&self) -> SyntaxLevelOrder<K> {
@@ -293,7 +297,7 @@ impl<K: SyntaxKind> SyntaxNode<K> {
             queue: std::collections::VecDeque::from(vec![self.clone()]),
         }
     }
-    
+
     #[must_use]
     pub const fn green(&self) -> &std::sync::Arc<GreenNode<K>> {
         &self.green
@@ -308,15 +312,17 @@ pub struct SyntaxChildren<'a, K: SyntaxKind> {
 
 impl<K: SyntaxKind> Iterator for SyntaxChildren<'_, K> {
     type Item = SyntaxElement<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.green_children.len() {
             return None;
         }
-        
+
         let green = &self.green_children[self.index];
-        let element = self.parent.element_from_green(green, u32::try_from(self.index).unwrap_or(0));
-        
+        let element = self
+            .parent
+            .element_from_green(green, u32::try_from(self.index).unwrap_or(0));
+
         self.index += 1;
         Some(element)
     }
@@ -328,7 +334,7 @@ pub struct SyntaxDescendants<K: SyntaxKind> {
 
 impl<K: SyntaxKind> Iterator for SyntaxDescendants<K> {
     type Item = SyntaxNode<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(elem) = self.stack.pop()? {
             match elem {
@@ -355,7 +361,7 @@ pub struct SyntaxAncestors<K: SyntaxKind> {
 
 impl<K: SyntaxKind> Iterator for SyntaxAncestors<K> {
     type Item = SyntaxNode<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.current.take()?;
         self.current = current.parent();
@@ -371,11 +377,12 @@ pub struct SyntaxPreOrder<K: SyntaxKind> {
 #[cfg(feature = "traversal")]
 impl<K: SyntaxKind> Iterator for SyntaxPreOrder<K> {
     type Item = SyntaxNode<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(Some(node)) = self.stack.pop() {
             // Add children to stack in reverse order (so first child is popped first)
-            let children: Vec<_> = node.children()
+            let children: Vec<_> = node
+                .children()
                 .filter_map(|elem| {
                     if let SyntaxElement::Node(n) = elem {
                         Some(n)
@@ -402,18 +409,19 @@ pub struct SyntaxPostOrder<K: SyntaxKind> {
 #[cfg(feature = "traversal")]
 impl<K: SyntaxKind> Iterator for SyntaxPostOrder<K> {
     type Item = SyntaxNode<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((node, visited)) = self.stack.pop() {
             if visited {
                 return Some(node);
             }
-            
+
             // Mark as visited and push back
             self.stack.push((node.clone(), true));
-            
+
             // Add children in reverse order
-            let children: Vec<_> = node.children()
+            let children: Vec<_> = node
+                .children()
                 .filter_map(|elem| {
                     if let SyntaxElement::Node(n) = elem {
                         Some(n)
@@ -438,14 +446,15 @@ pub struct SyntaxInOrder<K: SyntaxKind> {
 #[cfg(feature = "traversal")]
 impl<K: SyntaxKind> Iterator for SyntaxInOrder<K> {
     type Item = SyntaxNode<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((node, visited)) = self.stack.pop() {
             if visited {
                 return Some(node);
             }
-            
-            let children: Vec<_> = node.children()
+
+            let children: Vec<_> = node
+                .children()
                 .filter_map(|elem| {
                     if let SyntaxElement::Node(n) = elem {
                         Some(n)
@@ -454,7 +463,7 @@ impl<K: SyntaxKind> Iterator for SyntaxInOrder<K> {
                     }
                 })
                 .collect();
-            
+
             match children.len() {
                 0 => return Some(node), // Leaf node, visit immediately
                 1 => {
@@ -484,17 +493,17 @@ pub struct SyntaxLevelOrder<K: SyntaxKind> {
 #[cfg(feature = "traversal")]
 impl<K: SyntaxKind> Iterator for SyntaxLevelOrder<K> {
     type Item = SyntaxNode<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.queue.pop_front()?;
-        
+
         // Add children to queue
         for child in node.children() {
             if let SyntaxElement::Node(n) = child {
                 self.queue.push_back(n);
             }
         }
-        
+
         Some(node)
     }
 }
@@ -508,23 +517,23 @@ pub struct SyntaxSiblings<K: SyntaxKind> {
 
 impl<K: SyntaxKind> Iterator for SyntaxSiblings<K> {
     type Item = SyntaxElement<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         let parent = self.parent.as_ref()?;
-        
+
         while self.current_index < self.children.len() {
             let idx = self.current_index;
             self.current_index += 1;
-            
+
             // Skip the node itself
             if u32::try_from(idx).unwrap_or(0) == self.skip_index {
                 continue;
             }
-            
+
             let green = &self.children[idx];
             return Some(parent.element_from_green(green, u32::try_from(idx).unwrap_or(0)));
         }
-        
+
         None
     }
 }
@@ -535,7 +544,7 @@ pub struct SyntaxTokens<K: SyntaxKind> {
 
 impl<K: SyntaxKind> Iterator for SyntaxTokens<K> {
     type Item = SyntaxToken<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(Some(elem)) = self.stack.pop() {
             match elem {
@@ -559,7 +568,7 @@ pub struct SyntaxNodes<K: SyntaxKind> {
 
 impl<K: SyntaxKind> Iterator for SyntaxNodes<K> {
     type Item = SyntaxNode<K>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(Some(elem)) = self.stack.pop() {
             match elem {
@@ -585,8 +594,12 @@ pub struct SyntaxToken<K: SyntaxKind> {
     green: GreenToken<K>,
     parent: Option<Weak<RefCell<SyntaxData<K>>>>,
     /// Index of this token within its parent's children.
-    /// Reserved for future token sibling navigation (similar to `SyntaxNode.index`).
-    #[allow(dead_code)]
+    ///
+    /// # Implementation Status
+    ///
+    /// **Reserved for future use**: This field is intended for token sibling navigation
+    /// (similar to `SyntaxNode.index`), but the navigation methods are not yet implemented.
+    #[allow(dead_code)] // Reserved for future token navigation
     index: u32,
     offset: TextSize,
 }
@@ -596,19 +609,19 @@ impl<K: SyntaxKind> SyntaxToken<K> {
     pub const fn kind(&self) -> K {
         self.green.kind()
     }
-    
+
     #[inline]
     #[must_use]
     pub fn text(&self) -> &str {
         self.green.text()
     }
-    
+
     #[inline]
     #[must_use]
     pub fn text_range(&self) -> TextRange {
         TextRange::at(self.offset, self.green.text_len())
     }
-    
+
     #[must_use]
     pub fn parent(&self) -> Option<SyntaxNode<K>> {
         self.parent.as_ref().and_then(|weak| {
@@ -638,7 +651,7 @@ impl<K: SyntaxKind> SyntaxElement<K> {
             Self::Token(t) => t.kind(),
         }
     }
-    
+
     pub fn text_range(&self) -> TextRange {
         match self {
             Self::Node(n) => n.text_range(),
@@ -646,4 +659,3 @@ impl<K: SyntaxKind> SyntaxElement<K> {
         }
     }
 }
-

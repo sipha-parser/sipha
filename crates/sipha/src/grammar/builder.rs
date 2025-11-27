@@ -1,9 +1,50 @@
-use smallvec::SmallVec;
+use crate::grammar::{BackendHint, Expr, NonTerminal, Token, validate_grammar};
 use hashbrown::HashMap;
 use lasso::Rodeo;
-use crate::grammar::{Token, NonTerminal, Expr, BackendHint, validate_grammar};
+use smallvec::SmallVec;
 
-/// Grammar definition
+/// Grammar definition for context-free grammars.
+///
+/// A `Grammar` represents a complete context-free grammar with production rules,
+/// an entry point, and string interning for efficient rule name storage.
+///
+/// # Performance
+///
+/// The grammar uses string interning for rule names to reduce memory usage and
+/// enable fast string comparisons. Rule names are automatically interned when
+/// the grammar is built.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use sipha::grammar::{GrammarBuilder, Expr, NonTerminal, Token};
+/// use sipha::syntax::{SyntaxKind, TextSize};
+///
+/// # #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// # enum MyNonTerminal { Expr }
+/// # impl NonTerminal for MyNonTerminal {
+/// #     fn name(&self) -> &str { "Expr" }
+/// # }
+/// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// # enum MySyntaxKind { Number }
+/// # impl SyntaxKind for MySyntaxKind {
+/// #     fn is_terminal(self) -> bool { true }
+/// #     fn is_trivia(self) -> bool { false }
+/// # }
+/// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// # struct MyToken;
+/// # impl Token for MyToken {
+/// #     type Kind = MySyntaxKind;
+/// #     fn kind(&self) -> Self::Kind { MySyntaxKind::Number }
+/// #     fn text_len(&self) -> TextSize { TextSize::from(1) }
+/// #     fn text(&self) -> compact_str::CompactString { "1".into() }
+/// # }
+/// let grammar = GrammarBuilder::<MyToken, MyNonTerminal>::new()
+///     .entry_point(MyNonTerminal::Expr)
+///     .rule(MyNonTerminal::Expr, Expr::Empty)
+///     .build()
+///     .expect("Failed to build grammar");
+/// ```
 #[derive(Clone)]
 pub struct Grammar<T, N>
 where
@@ -12,9 +53,11 @@ where
 {
     rules: HashMap<N, Rule<T, N>, ahash::RandomState>,
     entry_point: N,
-    /// String interner for future optimization.
-    /// Reserved for interning rule names and other grammar strings to reduce memory usage
-    /// and enable fast string comparisons. Currently unused but infrastructure is in place.
+    /// String interner for rule names and grammar strings.
+    ///
+    /// This is used to intern rule names during grammar construction, reducing memory usage
+    /// and enabling fast string comparisons. Rule names are automatically interned when
+    /// the grammar is built via `GrammarBuilder`.
     interner: Rodeo,
 }
 
@@ -57,14 +100,15 @@ impl RuleMetadata {
             hints: SmallVec::new(),
         }
     }
-    
+
     pub fn add_hint(&mut self, hint: impl BackendHint + 'static) {
         self.hints.push(Box::new(hint));
     }
-    
+
     #[must_use]
     pub fn get_hint<H: BackendHint + 'static>(&self) -> Option<&H> {
-        self.hints.iter()
+        self.hints
+            .iter()
             .find_map(|h| h.as_any().downcast_ref::<H>())
     }
 }
@@ -78,16 +122,42 @@ where
     pub fn get_rule(&self, lhs: &N) -> Option<&Rule<T, N>> {
         self.rules.get(lhs)
     }
-    
+
     #[must_use]
     pub const fn entry_point(&self) -> &N {
         &self.entry_point
     }
-    
+
     pub fn rules(&self) -> impl Iterator<Item = (&N, &Rule<T, N>)> {
         self.rules.iter()
     }
-    
+
+    /// Get an interned rule name for a non-terminal (read-only access)
+    ///
+    /// This returns the interned reference if the name was already interned,
+    /// or None if it hasn't been interned yet. For building grammars, use
+    /// `GrammarBuilder` which can intern new strings.
+    #[must_use]
+    pub fn get_interned_rule_name(&self, name: &str) -> Option<lasso::Spur> {
+        self.interner.get(name)
+    }
+
+    /// Get an interned rule name for a non-terminal (read-only access)
+    ///
+    /// This is a convenience method that gets the interned name of the given non-terminal.
+    #[must_use]
+    pub fn get_interned_non_terminal_name(&self, nt: &N) -> Option<lasso::Spur> {
+        self.get_interned_rule_name(nt.name())
+    }
+
+    /// Resolve an interned string back to its original value
+    ///
+    /// This is useful when you have an interned reference and need the original string.
+    #[must_use]
+    pub fn resolve_interned(&self, spur: lasso::Spur) -> &str {
+        self.interner.resolve(&spur)
+    }
+
     /// Try to get a fallback syntax kind from any rule in the grammar.
     /// This is used as a last resort when no other kind can be determined.
     #[must_use]
@@ -103,50 +173,54 @@ where
         }
         None
     }
-    
+
     /// Compute FOLLOW sets for all non-terminals in the grammar
     #[must_use]
-    pub fn compute_follow_sets(&self) -> hashbrown::HashMap<N, hashbrown::HashSet<T, ahash::RandomState>, ahash::RandomState> {
+    pub fn compute_follow_sets(
+        &self,
+    ) -> hashbrown::HashMap<N, hashbrown::HashSet<T, ahash::RandomState>, ahash::RandomState> {
         use hashbrown::HashSet;
-        let mut follow_sets: hashbrown::HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState> = 
-            hashbrown::HashMap::with_hasher(ahash::RandomState::new());
-        
+        let mut follow_sets: hashbrown::HashMap<
+            N,
+            HashSet<T, ahash::RandomState>,
+            ahash::RandomState,
+        > = hashbrown::HashMap::with_hasher(ahash::RandomState::new());
+
         // Initialize all non-terminals with empty sets
         for (nt, _) in &self.rules {
             follow_sets.insert(nt.clone(), HashSet::with_hasher(ahash::RandomState::new()));
         }
-        
+
         // Add EOF to FOLLOW of entry point
         // Note: We can't create an EOF token here, so we'll handle this in the LL parser
-        
+
         // Iterate until no changes (fixed point algorithm)
         let mut changed = true;
         while changed {
             changed = false;
-            
+
             for (lhs, rule) in &self.rules {
                 // For each production A -> αBβ:
                 // - Add FIRST(β) - {ε} to FOLLOW(B)
                 // - If ε ∈ FIRST(β), add FOLLOW(A) to FOLLOW(B)
-                
-                self.update_follow_sets_for_expr(
-                    &rule.rhs,
-                    lhs,
-                    &mut follow_sets,
-                    &mut changed,
-                );
+
+                self.update_follow_sets_for_expr(&rule.rhs, lhs, &mut follow_sets, &mut changed);
             }
         }
-        
+
         follow_sets
     }
-    
+
     #[allow(clippy::too_many_lines)]
     fn update_follow_sets_for_expr(
         &self,
         expr: &Expr<T, N>,
         lhs: &N,
-        follow_sets: &mut hashbrown::HashMap<N, hashbrown::HashSet<T, ahash::RandomState>, ahash::RandomState>,
+        follow_sets: &mut hashbrown::HashMap<
+            N,
+            hashbrown::HashSet<T, ahash::RandomState>,
+            ahash::RandomState,
+        >,
         changed: &mut bool,
     ) {
         // Helper to process a sequence and update FOLLOW sets
@@ -154,19 +228,24 @@ where
             grammar: &Grammar<T, N>,
             exprs: &[Expr<T, N>],
             lhs: &N,
-            follow_sets: &mut hashbrown::HashMap<N, hashbrown::HashSet<T, ahash::RandomState>, ahash::RandomState>,
+            follow_sets: &mut hashbrown::HashMap<
+                N,
+                hashbrown::HashSet<T, ahash::RandomState>,
+                ahash::RandomState,
+            >,
             changed: &mut bool,
         ) {
             for (i, expr) in exprs.iter().enumerate() {
                 // Find all non-terminals in this expression
                 let mut nts = Vec::new();
                 collect_nonterminals(expr, &mut nts);
-                
+
                 for nt in nts {
                     // Compute FIRST of suffix after this position
-                    let mut suffix_first = hashbrown::HashSet::with_hasher(ahash::RandomState::new());
+                    let mut suffix_first =
+                        hashbrown::HashSet::with_hasher(ahash::RandomState::new());
                     let mut nullable_suffix = true;
-                    
+
                     for suffix_expr in exprs.iter().skip(i + 1) {
                         let first = suffix_expr.first_set(grammar);
                         suffix_first.extend(first.iter().cloned());
@@ -175,34 +254,35 @@ where
                             break;
                         }
                     }
-                    
-                        // Add FIRST(suffix) to FOLLOW(nt)
+
+                    // Add FIRST(suffix) to FOLLOW(nt)
+                    if let Some(follow_nt) = follow_sets.get_mut(&nt) {
+                        for token in &suffix_first {
+                            if follow_nt.insert(token.clone()) {
+                                *changed = true;
+                            }
+                        }
+                    }
+
+                    // If suffix is nullable, add FOLLOW(lhs) to FOLLOW(nt)
+                    if nullable_suffix {
+                        let follow_lhs_tokens: Vec<T> = follow_sets
+                            .get(lhs)
+                            .map(|s| s.iter().cloned().collect())
+                            .unwrap_or_default();
+
                         if let Some(follow_nt) = follow_sets.get_mut(&nt) {
-                            for token in &suffix_first {
-                                if follow_nt.insert(token.clone()) {
+                            for token in follow_lhs_tokens {
+                                if follow_nt.insert(token) {
                                     *changed = true;
                                 }
                             }
                         }
-                        
-                        // If suffix is nullable, add FOLLOW(lhs) to FOLLOW(nt)
-                        if nullable_suffix {
-                            let follow_lhs_tokens: Vec<T> = follow_sets.get(lhs)
-                                .map(|s| s.iter().cloned().collect())
-                                .unwrap_or_default();
-                            
-                            if let Some(follow_nt) = follow_sets.get_mut(&nt) {
-                                for token in follow_lhs_tokens {
-                                    if follow_nt.insert(token) {
-                                        *changed = true;
-                                    }
-                                }
-                            }
-                        }
+                    }
                 }
             }
         }
-        
+
         fn collect_nonterminals<T: Token, N: NonTerminal>(expr: &Expr<T, N>, result: &mut Vec<N>) {
             match expr {
                 Expr::Rule(n) => {
@@ -216,11 +296,18 @@ where
                 Expr::Opt(e) | Expr::Repeat { expr: e, .. } => {
                     collect_nonterminals(e, result);
                 }
-                Expr::Separated { item, separator, .. } => {
+                Expr::Separated {
+                    item, separator, ..
+                } => {
                     collect_nonterminals(item, result);
                     collect_nonterminals(separator, result);
                 }
-                Expr::Delimited { open, content, close, .. } => {
+                Expr::Delimited {
+                    open,
+                    content,
+                    close,
+                    ..
+                } => {
                     collect_nonterminals(open, result);
                     collect_nonterminals(content, result);
                     collect_nonterminals(close, result);
@@ -237,7 +324,7 @@ where
                 _ => {}
             }
         }
-        
+
         match expr {
             Expr::Seq(exprs) => {
                 process_sequence(self, exprs, lhs, follow_sets, changed);
@@ -258,20 +345,37 @@ where
             | Expr::RecoveryPoint { expr, .. } => {
                 self.update_follow_sets_for_expr(expr, lhs, follow_sets, changed);
             }
-            Expr::Separated { item, separator, .. } => {
+            Expr::Separated {
+                item, separator, ..
+            } => {
                 // Treat as sequence: item separator item separator ...
                 // For simplicity, process item and separator separately
                 self.update_follow_sets_for_expr(item, lhs, follow_sets, changed);
                 self.update_follow_sets_for_expr(separator, lhs, follow_sets, changed);
             }
-            Expr::Delimited { open, content, close, .. } => {
+            Expr::Delimited {
+                open,
+                content,
+                close,
+                ..
+            } => {
                 // Treat as sequence: open content close
-                process_sequence(self, &[open.as_ref().clone(), content.as_ref().clone(), close.as_ref().clone()], lhs, follow_sets, changed);
+                process_sequence(
+                    self,
+                    &[
+                        open.as_ref().clone(),
+                        content.as_ref().clone(),
+                        close.as_ref().clone(),
+                    ],
+                    lhs,
+                    follow_sets,
+                    changed,
+                );
             }
             _ => {}
         }
     }
-    
+
     /// Get FOLLOW set for a specific non-terminal
     #[must_use]
     pub fn follow_set(&self, nt: &N) -> hashbrown::HashSet<T, ahash::RandomState> {
@@ -293,7 +397,7 @@ impl<T, N> Default for GrammarBuilder<T, N>
 where
     T: Token,
     N: NonTerminal,
- {
+{
     fn default() -> Self {
         Self::new()
     }
@@ -312,15 +416,17 @@ where
             interner: Rodeo::new(),
         }
     }
-    
+
     #[must_use]
     pub fn entry_point(mut self, entry: N) -> Self {
         self.entry_point = Some(entry);
         self
     }
-    
+
     #[must_use]
     pub fn rule(mut self, lhs: N, rhs: Expr<T, N>) -> Self {
+        // Intern the rule name for efficient storage
+        let _ = self.interner.get_or_intern(lhs.name());
         self.rules.push(Rule {
             lhs,
             rhs,
@@ -328,41 +434,34 @@ where
         });
         self
     }
-    
+
     #[must_use]
-    pub fn rule_with(
-        mut self,
-        lhs: N,
-        rhs: Expr<T, N>,
-        f: impl FnOnce(&mut RuleMetadata),
-    ) -> Self {
+    pub fn rule_with(mut self, lhs: N, rhs: Expr<T, N>, f: impl FnOnce(&mut RuleMetadata)) -> Self {
+        // Intern the rule name for efficient storage
+        let _ = self.interner.get_or_intern(lhs.name());
         let mut metadata = RuleMetadata::new();
         f(&mut metadata);
-        
-        self.rules.push(Rule {
-            lhs,
-            rhs,
-            metadata,
-        });
+
+        self.rules.push(Rule { lhs, rhs, metadata });
         self
     }
-    
+
     /// Build the grammar from the configured rules.
     ///
     /// # Errors
     ///
     /// Returns an error if the entry point is missing, or if grammar validation fails.
-    pub fn build(self) -> Result<Grammar<T, N>, GrammarError<T, N>> {
-        let entry_point = self.entry_point
-            .ok_or(GrammarError::MissingEntryPoint)?;
-        
+    pub fn build(mut self) -> Result<Grammar<T, N>, GrammarError<T, N>> {
+        let entry_point = self.entry_point.ok_or(GrammarError::MissingEntryPoint)?;
+
+        // Intern the entry point name
+        let _ = self.interner.get_or_intern(entry_point.name());
+
         // Validate grammar
         validate_grammar(&self.rules)?;
-        
+
         Ok(Grammar {
-            rules: self.rules.into_iter()
-                .map(|r| (r.lhs.clone(), r))
-                .collect(),
+            rules: self.rules.into_iter().map(|r| (r.lhs.clone(), r)).collect(),
             entry_point,
             interner: self.interner,
         })
@@ -373,10 +472,10 @@ where
 pub enum GrammarError<T, N> {
     #[error("Missing entry point")]
     MissingEntryPoint,
-    
+
     #[error("Left recursion detected: {0:?}")]
     LeftRecursion(Vec<Vec<N>>),
-    
+
     #[error("FIRST/FIRST conflict in rule {rule:?} between alternatives {alt1} and {alt2}")]
     FirstFirstConflict {
         rule: N,
@@ -384,7 +483,12 @@ pub enum GrammarError<T, N> {
         alt2: usize,
         tokens: Vec<T>,
     },
-    
+
+    #[error(
+        "FIRST/FOLLOW conflict in nullable rule {rule:?}: tokens {tokens:?} appear in both FIRST and FOLLOW sets"
+    )]
+    FirstFollowConflict { rule: N, tokens: Vec<T> },
+
     #[error("Undefined rule: {0:?}")]
     UndefinedRule(N),
 }
@@ -392,10 +496,11 @@ pub enum GrammarError<T, N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::syntax::SyntaxKind;
     use crate::grammar::Expr;
+    use crate::syntax::SyntaxKind;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[allow(dead_code)]
     enum TestToken {
         Ident,
         Number,
@@ -447,7 +552,7 @@ mod tests {
         fn is_terminal(self) -> bool {
             true // All variants are terminals in this test
         }
-        
+
         fn is_trivia(self) -> bool {
             false
         }
@@ -471,9 +576,9 @@ mod tests {
 
     #[test]
     fn test_grammar_builder_entry_point() {
-        let builder = GrammarBuilder::<TestToken, TestNonTerminal>::new()
-            .entry_point(TestNonTerminal::Expr);
-        
+        let builder =
+            GrammarBuilder::<TestToken, TestNonTerminal>::new().entry_point(TestNonTerminal::Expr);
+
         assert_eq!(builder.entry_point, Some(TestNonTerminal::Expr));
     }
 
@@ -481,16 +586,19 @@ mod tests {
     fn test_grammar_builder_rule() {
         let builder = GrammarBuilder::<TestToken, TestNonTerminal>::new()
             .rule(TestNonTerminal::Expr, Expr::token(TestToken::Ident));
-        
+
         assert_eq!(builder.rules.len(), 1);
         assert_eq!(builder.rules[0].lhs, TestNonTerminal::Expr);
     }
 
     #[test]
     fn test_grammar_builder_rule_with() {
-        let builder = GrammarBuilder::<TestToken, TestNonTerminal>::new()
-            .rule_with(TestNonTerminal::Expr, Expr::token(TestToken::Ident), |_| {});
-        
+        let builder = GrammarBuilder::<TestToken, TestNonTerminal>::new().rule_with(
+            TestNonTerminal::Expr,
+            Expr::token(TestToken::Ident),
+            |_| {},
+        );
+
         assert_eq!(builder.rules.len(), 1);
     }
 
@@ -498,7 +606,7 @@ mod tests {
     fn test_grammar_builder_build_missing_entry_point() {
         let builder = GrammarBuilder::<TestToken, TestNonTerminal>::new()
             .rule(TestNonTerminal::Expr, Expr::token(TestToken::Ident));
-        
+
         let result = builder.build();
         assert!(result.is_err());
         // Check error type without requiring Debug
@@ -515,7 +623,7 @@ mod tests {
             .rule(TestNonTerminal::Expr, Expr::token(TestToken::Ident))
             .build()
             .unwrap();
-        
+
         assert_eq!(grammar.entry_point(), &TestNonTerminal::Expr);
         // Grammar doesn't implement Debug, so we can't format it
         // but we can test its functionality
@@ -528,11 +636,11 @@ mod tests {
             .rule(TestNonTerminal::Expr, Expr::token(TestToken::Ident))
             .build()
             .unwrap();
-        
+
         let rule = grammar.get_rule(&TestNonTerminal::Expr);
         assert!(rule.is_some());
         assert_eq!(rule.unwrap().lhs, TestNonTerminal::Expr);
-        
+
         let missing = grammar.get_rule(&TestNonTerminal::Term);
         assert!(missing.is_none());
     }
@@ -545,7 +653,7 @@ mod tests {
             .rule(TestNonTerminal::Term, Expr::token(TestToken::Number))
             .build()
             .unwrap();
-        
+
         assert_eq!(grammar.rules().count(), 2);
     }
 
@@ -563,12 +671,12 @@ mod tests {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
-            
+
             fn description(&self) -> String {
                 "Test hint".to_string()
             }
         }
-        
+
         let mut metadata = RuleMetadata::new();
         metadata.add_hint(TestHint);
         assert_eq!(metadata.hints.len(), 1);
@@ -582,15 +690,15 @@ mod tests {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
-            
+
             fn description(&self) -> String {
                 "Test hint".to_string()
             }
         }
-        
+
         let mut metadata = RuleMetadata::new();
         metadata.add_hint(TestHint);
-        
+
         let hint = metadata.get_hint::<TestHint>();
         assert!(hint.is_some());
     }
@@ -602,7 +710,7 @@ mod tests {
             rhs: Expr::token(TestToken::Ident),
             metadata: RuleMetadata::new(),
         };
-        
+
         let cloned = rule.clone();
         assert_eq!(rule.lhs, cloned.lhs);
         assert_eq!(format!("{:?}", rule.rhs), format!("{:?}", cloned.rhs));
@@ -615,7 +723,7 @@ mod tests {
             .rule(TestNonTerminal::Expr, Expr::token(TestToken::Ident))
             .build()
             .unwrap();
-        
+
         let follow_sets = grammar.compute_follow_sets();
         assert!(!follow_sets.is_empty());
     }
@@ -627,10 +735,9 @@ mod tests {
             .rule(TestNonTerminal::Expr, Expr::token(TestToken::Ident))
             .build()
             .unwrap();
-        
+
         let _follow_set = grammar.follow_set(&TestNonTerminal::Expr);
         // Follow set should exist (even if empty)
         // Just check it doesn't panic
     }
 }
-

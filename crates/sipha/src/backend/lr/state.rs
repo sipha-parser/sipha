@@ -1,4 +1,4 @@
-use crate::grammar::{Token, NonTerminal};
+use crate::grammar::{NonTerminal, Token};
 use crate::syntax::GreenNode;
 use hashbrown::HashMap;
 
@@ -23,6 +23,18 @@ struct CacheKey {
     version: usize,
 }
 
+impl CacheKey {
+    /// Create a new cache key
+    #[must_use]
+    const fn new(state_id: usize, start_pos: usize, version: usize) -> Self {
+        Self {
+            state_id,
+            start_pos,
+            version,
+        }
+    }
+}
+
 impl<T, N> LrParserState<T, N>
 where
     T: Token,
@@ -36,38 +48,52 @@ where
             _phantom: std::marker::PhantomData,
         }
     }
-    
+
     const fn cache_key(&self, state_id: usize, start_pos: usize) -> CacheKey {
-        CacheKey {
-            state_id,
-            start_pos,
-            version: self.cache_version,
-        }
+        CacheKey::new(state_id, start_pos, self.cache_version)
     }
-    
+
     /// Get a cached parse result for the given state and position
-    pub(crate) fn get_cached(&self, state_id: usize, start_pos: usize) -> Option<std::sync::Arc<GreenNode<T::Kind>>> {
+    pub(crate) fn get_cached(
+        &self,
+        state_id: usize,
+        start_pos: usize,
+    ) -> Option<std::sync::Arc<GreenNode<T::Kind>>> {
         let key = self.cache_key(state_id, start_pos);
         self.parse_cache.get(&key).cloned()
     }
-    
+
     /// Cache a parsed node for incremental parsing performance.
-    pub(crate) fn cache_result(&mut self, state_id: usize, start_pos: usize, node: std::sync::Arc<GreenNode<T::Kind>>) {
+    pub(crate) fn cache_result(
+        &mut self,
+        state_id: usize,
+        start_pos: usize,
+        node: std::sync::Arc<GreenNode<T::Kind>>,
+    ) {
         let key = self.cache_key(state_id, start_pos);
         self.parse_cache.insert(key, node);
     }
-    
+
     /// Get a cached result for a full parse (using entry point as `state_id`)
-    pub(crate) fn get_cached_parse(&self, entry_id: usize, input_len: usize) -> Option<std::sync::Arc<GreenNode<T::Kind>>> {
+    pub(crate) fn get_cached_parse(
+        &self,
+        entry_id: usize,
+        input_len: usize,
+    ) -> Option<std::sync::Arc<GreenNode<T::Kind>>> {
         // Use entry_id as state_id and input_len as start_pos to cache full parses
         self.get_cached(entry_id, input_len)
     }
-    
+
     /// Cache a full parse result
-    pub(crate) fn cache_parse_result(&mut self, entry_id: usize, input_len: usize, node: std::sync::Arc<GreenNode<T::Kind>>) {
+    pub(crate) fn cache_parse_result(
+        &mut self,
+        entry_id: usize,
+        input_len: usize,
+        node: std::sync::Arc<GreenNode<T::Kind>>,
+    ) {
         self.cache_result(entry_id, input_len, node);
     }
-    
+
     pub(crate) fn invalidate_cache(&mut self) {
         self.cache_version += 1;
         // Clear old cache entries (keep recent ones for potential reuse)
@@ -86,4 +112,3 @@ where
         Self::new()
     }
 }
-

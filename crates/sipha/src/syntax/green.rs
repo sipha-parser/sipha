@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use compact_str::CompactString;
 use crate::syntax::{SyntaxKind, TextSize};
+use compact_str::CompactString;
+use std::sync::Arc;
 
 /// Immutable, shareable green tree node
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -48,26 +48,26 @@ impl<K: SyntaxKind> GreenNode<K> {
             1 => GreenChildren::One(iter.next().unwrap()),
             _ => GreenChildren::Many(Arc::from(iter.collect::<Vec<_>>())),
         };
-        
+
         Arc::new(Self {
             kind,
             text_len,
             children,
         })
     }
-    
+
     #[inline]
     #[must_use]
     pub const fn kind(&self) -> K {
         self.kind
     }
-    
+
     #[inline]
     #[must_use]
     pub const fn text_len(&self) -> TextSize {
         self.text_len
     }
-    
+
     #[inline]
     #[must_use]
     pub fn children(&self) -> &[GreenElement<K>] {
@@ -77,7 +77,7 @@ impl<K: SyntaxKind> GreenNode<K> {
             GreenChildren::Many(children) => children,
         }
     }
-    
+
     #[must_use]
     pub const fn is_leaf(&self) -> bool {
         matches!(self.children, GreenChildren::Empty)
@@ -92,19 +92,19 @@ impl<K: SyntaxKind> GreenToken<K> {
             text: text.into(),
         }
     }
-    
+
     #[inline]
     #[must_use]
     pub const fn kind(&self) -> K {
         self.kind
     }
-    
+
     #[inline]
     #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
-    
+
     #[must_use]
     pub fn text_len(&self) -> TextSize {
         TextSize::from(u32::try_from(self.text.len()).unwrap_or(u32::MAX))
@@ -112,6 +112,18 @@ impl<K: SyntaxKind> GreenToken<K> {
 }
 
 impl<K: SyntaxKind> GreenElement<K> {
+    /// Create a green element from a node
+    #[must_use]
+    pub const fn node(node: Arc<GreenNode<K>>) -> Self {
+        Self::Node(node)
+    }
+
+    /// Create a green element from a token
+    #[must_use]
+    pub const fn token(token: GreenToken<K>) -> Self {
+        Self::Token(token)
+    }
+
     #[must_use]
     pub fn kind(&self) -> K {
         match self {
@@ -119,7 +131,7 @@ impl<K: SyntaxKind> GreenElement<K> {
             Self::Token(t) => t.kind(),
         }
     }
-    
+
     pub fn text_len(&self) -> TextSize {
         match self {
             Self::Node(n) => n.text_len(),
@@ -134,6 +146,7 @@ mod tests {
     use crate::syntax::SyntaxKind;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[allow(dead_code)]
     enum TestKind {
         Root,
         Expr,
@@ -147,7 +160,7 @@ mod tests {
         fn is_terminal(self) -> bool {
             !matches!(self, Self::Root | Self::Expr)
         }
-        
+
         fn is_trivia(self) -> bool {
             matches!(self, Self::Whitespace)
         }
@@ -168,7 +181,11 @@ mod tests {
 
     #[test]
     fn test_green_node_empty() {
-        let node = GreenNode::new(TestKind::Root, Vec::<GreenElement<TestKind>>::new(), TextSize::zero());
+        let node = GreenNode::new(
+            TestKind::Root,
+            Vec::<GreenElement<TestKind>>::new(),
+            TextSize::zero(),
+        );
         assert_eq!(node.kind(), TestKind::Root);
         assert_eq!(node.text_len(), TextSize::zero());
         assert!(node.is_leaf());
@@ -178,12 +195,8 @@ mod tests {
     #[test]
     fn test_green_node_with_one_child() {
         let token = GreenElement::Token(GreenToken::new(TestKind::Ident, "x"));
-        let node = GreenNode::new(
-            TestKind::Expr,
-            vec![token],
-            TextSize::from(1),
-        );
-        
+        let node = GreenNode::new(TestKind::Expr, vec![token], TextSize::from(1));
+
         assert_eq!(node.kind(), TestKind::Expr);
         assert_eq!(node.text_len(), TextSize::from(1));
         assert!(!node.is_leaf());
@@ -196,13 +209,13 @@ mod tests {
         let token1 = GreenElement::Token(GreenToken::new(TestKind::Ident, "x"));
         let token2 = GreenElement::Token(GreenToken::new(TestKind::Plus, "+"));
         let token3 = GreenElement::Token(GreenToken::new(TestKind::Number, "42"));
-        
+
         let node = GreenNode::new(
             TestKind::Expr,
             vec![token1, token2, token3],
             TextSize::from(4), // "x+42"
         );
-        
+
         assert_eq!(node.kind(), TestKind::Expr);
         assert_eq!(node.text_len(), TextSize::from(4));
         assert!(!node.is_leaf());
@@ -212,22 +225,18 @@ mod tests {
     #[test]
     fn test_green_node_nested() {
         let inner_token = GreenElement::Token(GreenToken::new(TestKind::Number, "42"));
-        let inner_node = GreenNode::new(
-            TestKind::Expr,
-            vec![inner_token],
-            TextSize::from(2),
-        );
-        
+        let inner_node = GreenNode::new(TestKind::Expr, vec![inner_token], TextSize::from(2));
+
         let outer_token = GreenElement::Token(GreenToken::new(TestKind::Plus, "+"));
         let outer_node = GreenNode::new(
             TestKind::Root,
             vec![GreenElement::Node(inner_node), outer_token],
             TextSize::from(3),
         );
-        
+
         assert_eq!(outer_node.kind(), TestKind::Root);
         assert_eq!(outer_node.children().len(), 2);
-        
+
         match &outer_node.children()[0] {
             GreenElement::Node(n) => {
                 assert_eq!(n.kind(), TestKind::Expr);
@@ -241,7 +250,7 @@ mod tests {
     fn test_green_element_kind() {
         let token = GreenElement::Token(GreenToken::new(TestKind::Ident, "x"));
         assert_eq!(token.kind(), TestKind::Ident);
-        
+
         let node = GreenNode::new(TestKind::Expr, Vec::new(), TextSize::zero());
         let element = GreenElement::Node(node);
         assert_eq!(element.kind(), TestKind::Expr);
@@ -251,12 +260,8 @@ mod tests {
     fn test_green_element_text_len() {
         let token = GreenElement::Token(GreenToken::new(TestKind::Ident, "hello"));
         assert_eq!(token.text_len(), TextSize::from(5));
-        
-        let node = GreenNode::new(
-            TestKind::Expr,
-            vec![token],
-            TextSize::from(5),
-        );
+
+        let node = GreenNode::new(TestKind::Expr, vec![token], TextSize::from(5));
         let element = GreenElement::Node(node);
         assert_eq!(element.text_len(), TextSize::from(5));
     }
@@ -265,7 +270,7 @@ mod tests {
     fn test_green_node_clone_shares_arc() {
         let node = GreenNode::new(TestKind::Root, Vec::new(), TextSize::zero());
         let cloned = node.clone();
-        
+
         // Both should point to the same data (Arc)
         assert_eq!(Arc::as_ptr(&node), Arc::as_ptr(&cloned));
     }
@@ -274,9 +279,8 @@ mod tests {
     fn test_green_node_equality() {
         let node1 = GreenNode::new(TestKind::Root, Vec::new(), TextSize::zero());
         let node2 = GreenNode::new(TestKind::Root, Vec::new(), TextSize::zero());
-        
+
         // Two separate nodes with same content should be equal
         assert_eq!(*node1, *node2);
     }
 }
-

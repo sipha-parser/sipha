@@ -1,8 +1,8 @@
-pub mod kind;
-pub mod text;
-pub mod green;
-pub mod red;
 pub mod builder;
+pub mod green;
+pub mod kind;
+pub mod red;
+pub mod text;
 
 #[cfg(feature = "visitor")]
 pub mod visitor;
@@ -13,11 +13,11 @@ pub mod query;
 #[cfg(feature = "tree-utils")]
 pub mod utils;
 
-pub use kind::*;
-pub use text::*;
-pub use green::*;
-pub use red::*;
 pub use builder::*;
+pub use green::*;
+pub use kind::*;
+pub use red::*;
+pub use text::*;
 
 #[cfg(feature = "visitor")]
 pub use visitor::*;
@@ -27,4 +27,3 @@ pub use query::*;
 
 #[cfg(feature = "tree-utils")]
 pub use utils::*;
-

@@ -63,10 +63,10 @@
 //!
 //! See [`crate::error::LexerError`] for details.
 
-pub mod token;
 pub mod builder;
 pub mod dfa;
+pub mod token;
 
-pub use token::*;
-pub use builder::{LexerBuilder, Pattern, CharSet, LexRule};
+pub use builder::{CharSet, LexRule, LexerBuilder, Pattern};
 pub use dfa::*;
+pub use token::*;

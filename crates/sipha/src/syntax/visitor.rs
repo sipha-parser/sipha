@@ -1,6 +1,6 @@
+use crate::syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 #[cfg(feature = "visitor")]
 use std::ops::ControlFlow;
-use crate::syntax::{SyntaxNode, SyntaxToken, SyntaxElement, SyntaxKind};
 
 /// Trait for visiting syntax trees
 #[cfg(feature = "visitor")]
@@ -10,13 +10,13 @@ pub trait SyntaxVisitor<K: SyntaxKind> {
         let _ = node;
         ControlFlow::Continue(())
     }
-    
+
     /// Called when exiting a node (after visiting children)
     fn exit_node(&mut self, node: &SyntaxNode<K>) -> ControlFlow<()> {
         let _ = node;
         ControlFlow::Continue(())
     }
-    
+
     /// Called when visiting a token
     fn visit_token(&mut self, token: &SyntaxToken<K>) -> ControlFlow<()> {
         let _ = token;
@@ -43,12 +43,12 @@ where
             _phantom: std::marker::PhantomData,
         }
     }
-    
+
     /// Walk the tree in pre-order (node before children)
     pub fn walk_preorder(&mut self, root: &SyntaxNode<K>) -> ControlFlow<()> {
         // Visit node
         self.visitor.enter_node(root)?;
-        
+
         // Visit children
         for child in root.children() {
             match child {
@@ -60,13 +60,13 @@ where
                 }
             }
         }
-        
+
         // Exit node
         self.visitor.exit_node(root)?;
-        
+
         ControlFlow::Continue(())
     }
-    
+
     /// Walk the tree in post-order (node after children)
     pub fn walk_postorder(&mut self, root: &SyntaxNode<K>) -> ControlFlow<()> {
         // Visit children first
@@ -80,12 +80,12 @@ where
                 }
             }
         }
-        
+
         self.visitor.exit_node(root)?;
-        
+
         ControlFlow::Continue(())
     }
-    
+
     /// Walk the tree and call visitor methods
     /// Uses pre-order traversal by default
     pub fn walk(&mut self, root: &SyntaxNode<K>) -> ControlFlow<()> {
@@ -101,4 +101,3 @@ impl<K: SyntaxKind> SyntaxNode<K> {
         walker.walk(self)
     }
 }
-

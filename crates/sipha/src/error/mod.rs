@@ -82,8 +82,8 @@
 //! When the `diagnostics` feature is enabled, errors integrate with [`miette`]
 //! for rich error reporting with source code snippets and suggestions.
 
-use thiserror::Error;
 use crate::syntax::TextRange;
+use thiserror::Error;
 
 #[cfg(feature = "diagnostics")]
 use miette::Diagnostic;
@@ -98,7 +98,7 @@ pub enum ParseError {
         span: TextRange,
         expected: Vec<String>,
     },
-    
+
     #[error("Invalid syntax")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(parser::invalid_syntax)))]
     InvalidSyntax {
@@ -106,7 +106,7 @@ pub enum ParseError {
         span: TextRange,
         message: String,
     },
-    
+
     #[error("Unexpected end of file")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(parser::unexpected_eof)))]
     UnexpectedEof {
@@ -114,7 +114,7 @@ pub enum ParseError {
         span: TextRange,
         expected: Vec<String>,
     },
-    
+
     #[error("Ambiguous parse")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(parser::ambiguous)))]
     Ambiguity {
@@ -141,29 +141,55 @@ pub struct LexerError {
 pub enum LexerErrorKind {
     #[error("Unexpected character: '{char}'")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(lexer::unexpected_char)))]
-    UnexpectedChar { 
-        char: char 
-    },
-    
+    UnexpectedChar { char: char },
+
     #[error("Unterminated string literal")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(lexer::unterminated_string)))]
     UnterminatedString,
-    
+
     #[error("Invalid escape sequence: {escape}")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(lexer::invalid_escape)))]
-    InvalidEscape { 
-        escape: String 
-    },
-    
+    InvalidEscape { escape: String },
+
     #[error("Invalid number format: {reason}")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(lexer::invalid_number)))]
-    InvalidNumber { 
-        reason: String 
-    },
-    
+    InvalidNumber { reason: String },
+
     #[error("Unexpected end of file")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(lexer::unexpected_eof)))]
     UnexpectedEof,
+}
+
+impl LexerErrorKind {
+    /// Create an unexpected character error
+    #[must_use]
+    pub const fn unexpected_char(char: char) -> Self {
+        Self::UnexpectedChar { char }
+    }
+
+    /// Create an unterminated string error
+    #[must_use]
+    pub const fn unterminated_string() -> Self {
+        Self::UnterminatedString
+    }
+
+    /// Create an invalid escape sequence error
+    #[must_use]
+    pub const fn invalid_escape(escape: String) -> Self {
+        Self::InvalidEscape { escape }
+    }
+
+    /// Create an invalid number format error
+    #[must_use]
+    pub const fn invalid_number(reason: String) -> Self {
+        Self::InvalidNumber { reason }
+    }
+
+    /// Create an unexpected EOF error
+    #[must_use]
+    pub const fn unexpected_eof() -> Self {
+        Self::UnexpectedEof
+    }
 }
 
 impl ParseError {
@@ -177,15 +203,107 @@ impl ParseError {
             | Self::Ambiguity { span, .. } => *span,
         }
     }
+
+    /// Create an unexpected token error with improved message formatting
+    #[must_use]
+    pub const fn unexpected_token(span: TextRange, expected: Vec<String>) -> Self {
+        Self::UnexpectedToken { span, expected }
+    }
+
+    /// Create an unexpected token error with a single expected token (convenience method)
+    #[must_use]
+    pub fn unexpected_token_single(span: TextRange, expected: String) -> Self {
+        Self::UnexpectedToken {
+            span,
+            expected: vec![expected],
+        }
+    }
+
+    /// Create an invalid syntax error
+    #[must_use]
+    pub const fn invalid_syntax(span: TextRange, message: String) -> Self {
+        Self::InvalidSyntax { span, message }
+    }
+
+    /// Create an invalid syntax error with a suggestion
+    #[must_use]
+    pub fn invalid_syntax_with_suggestion(
+        span: TextRange,
+        message: impl Into<String>,
+        suggestion: &str,
+    ) -> Self {
+        let mut msg = message.into();
+        msg.push_str(". Suggestion: ");
+        msg.push_str(suggestion);
+        Self::InvalidSyntax { span, message: msg }
+    }
+
+    /// Create an unexpected EOF error
+    #[must_use]
+    pub const fn unexpected_eof(span: TextRange, expected: Vec<String>) -> Self {
+        Self::UnexpectedEof { span, expected }
+    }
+
+    /// Create an unexpected EOF error with a single expected token (convenience method)
+    #[must_use]
+    pub fn unexpected_eof_single(span: TextRange, expected: String) -> Self {
+        Self::UnexpectedEof {
+            span,
+            expected: vec![expected],
+        }
+    }
+
+    /// Create an ambiguity error
+    #[must_use]
+    pub const fn ambiguity(span: TextRange, alternatives: Vec<String>) -> Self {
+        Self::Ambiguity { span, alternatives }
+    }
+
+    /// Format expected tokens as a human-readable string
+    #[must_use]
+    pub fn format_expected(&self) -> String {
+        match self {
+            Self::UnexpectedToken { expected, .. } | Self::UnexpectedEof { expected, .. } => {
+                Self::format_expected_list(expected)
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Format a list of expected tokens as a human-readable string
+    #[must_use]
+    pub fn format_expected_list(expected: &[String]) -> String {
+        match expected.len() {
+            0 => "nothing".to_string(),
+            1 => expected[0].clone(),
+            2 => format!("{} or {}", expected[0], expected[1]),
+            _ => {
+                let mut result = expected[..expected.len() - 1]
+                    .iter()
+                    .map(std::string::String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                result.push_str(", or ");
+                result.push_str(&expected[expected.len() - 1]);
+                result
+            }
+        }
+    }
 }
 
 impl LexerError {
+    /// Create a new lexer error
+    #[must_use]
+    pub const fn new(span: TextRange, kind: LexerErrorKind) -> Self {
+        Self { span, kind }
+    }
+
     /// Get the span (location) of this error
     #[must_use]
     pub const fn span(&self) -> TextRange {
         self.span
     }
-    
+
     /// Get the kind of lexer error
     #[must_use]
     pub const fn kind(&self) -> &LexerErrorKind {
@@ -199,10 +317,10 @@ impl From<LexerError> for ParseError {
     /// This preserves the original error information and adds context
     /// that the error occurred during tokenization.
     fn from(err: LexerError) -> Self {
-        Self::InvalidSyntax {
-            span: err.span,
-            message: format!("Lexer error at {:?}: {}", err.span, err.kind),
-        }
+        Self::invalid_syntax(
+            err.span,
+            format!("Lexer error at {:?}: {}", err.span, err.kind),
+        )
     }
 }
 
@@ -211,6 +329,36 @@ pub struct ParseWarning {
     pub span: TextRange,
     pub message: String,
     pub severity: Severity,
+}
+
+impl ParseWarning {
+    /// Create a new parse warning
+    #[must_use]
+    pub const fn new(span: TextRange, message: String, severity: Severity) -> Self {
+        Self {
+            span,
+            message,
+            severity,
+        }
+    }
+
+    /// Create a warning-level parse warning
+    #[must_use]
+    pub const fn warning(span: TextRange, message: String) -> Self {
+        Self::new(span, message, Severity::Warning)
+    }
+
+    /// Create an info-level parse warning
+    #[must_use]
+    pub const fn info(span: TextRange, message: String) -> Self {
+        Self::new(span, message, Severity::Info)
+    }
+
+    /// Create a hint-level parse warning
+    #[must_use]
+    pub const fn hint(span: TextRange, message: String) -> Self {
+        Self::new(span, message, Severity::Hint)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,7 +377,7 @@ pub struct ParseMetrics {
     pub cache_hits: usize,
 }
 
-pub struct ParseResult<T, N> 
+pub struct ParseResult<T, N>
 where
     T: crate::grammar::Token,
 {
@@ -301,7 +449,7 @@ mod tests {
             span: range,
             expected: vec!["identifier".to_string(), "number".to_string()],
         };
-        
+
         let error_str = format!("{error}");
         assert!(error_str.contains("Unexpected token"));
     }
@@ -313,7 +461,7 @@ mod tests {
             span: range,
             message: "Invalid expression".to_string(),
         };
-        
+
         let error_str = format!("{error}");
         assert!(error_str.contains("Invalid syntax"));
     }
@@ -325,7 +473,7 @@ mod tests {
             span: range,
             expected: vec!["}".to_string()],
         };
-        
+
         let error_str = format!("{error}");
         assert!(error_str.contains("Unexpected end of file"));
     }
@@ -337,7 +485,7 @@ mod tests {
             span: range,
             alternatives: vec!["expr1".to_string(), "expr2".to_string()],
         };
-        
+
         let error_str = format!("{error}");
         assert!(error_str.contains("Ambiguous parse"));
     }
@@ -349,7 +497,7 @@ mod tests {
             span: range,
             kind: LexerErrorKind::UnexpectedChar { char: '!' },
         };
-        
+
         assert_eq!(error.span, range);
         match error.kind {
             LexerErrorKind::UnexpectedChar { char } => assert_eq!(char, '!'),
@@ -360,7 +508,7 @@ mod tests {
     #[test]
     fn test_lexer_error_kinds() {
         let range = TextRange::new(TextSize::from(0), TextSize::from(1));
-        
+
         let errors = [
             LexerError {
                 span: range,
@@ -372,18 +520,22 @@ mod tests {
             },
             LexerError {
                 span: range,
-                kind: LexerErrorKind::InvalidEscape { escape: "\\z".to_string() },
+                kind: LexerErrorKind::InvalidEscape {
+                    escape: "\\z".to_string(),
+                },
             },
             LexerError {
                 span: range,
-                kind: LexerErrorKind::InvalidNumber { reason: "Invalid format".to_string() },
+                kind: LexerErrorKind::InvalidNumber {
+                    reason: "Invalid format".to_string(),
+                },
             },
             LexerError {
                 span: range,
                 kind: LexerErrorKind::UnexpectedEof,
             },
         ];
-        
+
         assert_eq!(errors.len(), 5);
     }
 
@@ -394,7 +546,7 @@ mod tests {
             span: range,
             kind: LexerErrorKind::UnexpectedChar { char: '#' },
         };
-        
+
         let parse_error: ParseError = lexer_error.into();
         match parse_error {
             ParseError::InvalidSyntax { span, message } => {
@@ -413,7 +565,7 @@ mod tests {
             message: "Deprecated syntax".to_string(),
             severity: Severity::Warning,
         };
-        
+
         assert_eq!(warning.span, range);
         assert_eq!(warning.severity, Severity::Warning);
         assert_eq!(warning.message, "Deprecated syntax");
@@ -445,7 +597,7 @@ mod tests {
             cache_hits: 10,
             parse_time: std::time::Duration::from_millis(5),
         };
-        
+
         assert_eq!(metrics.tokens_consumed, 100);
         assert_eq!(metrics.nodes_created, 50);
         assert_eq!(metrics.errors_recovered, 2);
@@ -453,4 +605,3 @@ mod tests {
         assert_eq!(metrics.parse_time.as_millis(), 5);
     }
 }
-

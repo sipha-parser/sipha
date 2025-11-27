@@ -17,9 +17,12 @@ impl BackendHint for PrecedenceHint {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    
+
     fn description(&self) -> String {
-        format!("Precedence: {}, Associativity: {:?}", self.precedence, self.associativity)
+        format!(
+            "Precedence: {}, Associativity: {:?}",
+            self.precedence, self.associativity
+        )
     }
 }
 
@@ -29,4 +32,3 @@ pub enum Associativity {
     Right,
     None,
 }
-

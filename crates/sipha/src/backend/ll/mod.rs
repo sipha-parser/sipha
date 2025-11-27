@@ -1,14 +1,14 @@
-mod table;
-mod parser;
 mod config;
+mod parser;
+mod table;
 
 pub use config::LlConfig;
-use table::ParsingTable;
 pub use parser::LlParserState;
+use table::ParsingTable;
 
-use crate::grammar::{Grammar, Token};
-use crate::backend::{ParserBackend, BackendCapabilities, Algorithm};
+use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
+use crate::grammar::{Grammar, Token};
 
 /// LL(k) parser backend
 pub struct LlParser<T, N>
@@ -26,7 +26,7 @@ where
 pub enum LlError {
     #[error("Grammar is not LL(k) compatible: {0}")]
     NotLlGrammar(String),
-    
+
     #[error("Failed to build parsing table: {0}")]
     TableConstructionFailed(String),
 }
@@ -39,68 +39,76 @@ where
     type Config = LlConfig;
     type Error = LlError;
     type State = LlParserState<T, N>;
-    
+
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error> {
         // Validate grammar for LL compatibility
         let errors = Self::validate(grammar);
         if !errors.is_empty() {
             return Err(LlError::NotLlGrammar(
-                errors.iter()
+                errors
+                    .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-                    .join(", ")
+                    .join(", "),
             ));
         }
-        
+
         // Build parsing table
         let table = ParsingTable::new(grammar, config.lookahead)
             .map_err(LlError::TableConstructionFailed)?;
-        
+
         Ok(Self {
             grammar: grammar.clone(),
             table,
-            state: LlParserState::new(),
+            state: LlParserState::with_cache_settings(config.max_cache_size, config.cache_history),
             config,
         })
     }
-    
+
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
-        parser::parse(&self.grammar, &self.table, input, &entry, &self.config, &mut self.state)
-    }
-    
-    fn parse_incremental(
-        &mut self,
-        input: &[T],
-        old_tree: Option<&crate::syntax::GreenNode<T::Kind>>,
-        edits: &[crate::incremental::TextEdit],
-        entry: N,
-    ) -> ParseResult<T, N>
-    where
-        T: Token,
-    {
-        // Invalidate cache if there are edits
-        if !edits.is_empty() {
-            self.state.invalidate_cache();
-        }
-        
-        // Incremental parsing with cache invalidation
-        // Note: Full node reuse is a future enhancement - basic infrastructure is in place
-        parser::parse_incremental(
+        parser::parse(
             &self.grammar,
             &self.table,
             input,
-            old_tree,
-            edits,
             &entry,
             &self.config,
             &mut self.state,
         )
     }
-    
+
+    fn parse_with_session(
+        &mut self,
+        input: &[T],
+        entry: N,
+        session: &crate::incremental::IncrementalSession<'_, T::Kind>,
+    ) -> ParseResult<T, N>
+    where
+        T: Token,
+    {
+        if session.edits().is_empty() {
+            return self.parse(input, entry);
+        }
+
+        // Use range-based cache invalidation for better performance
+        let affected = session.affected();
+        let union_range = affected.union();
+        self.state.invalidate_cache_range(union_range);
+
+        parser::parse_with_session(
+            &self.grammar,
+            &self.table,
+            input,
+            session,
+            &entry,
+            &self.config,
+            &mut self.state,
+        )
+    }
+
     fn validate(grammar: &Grammar<T, N>) -> Vec<crate::grammar::GrammarError<T, N>> {
         use crate::grammar::GrammarError;
         let mut errors = Vec::new();
-        
+
         // Check for left recursion (reuse existing validation)
         // Collect rules into a Vec (Rule is now Clone)
         let rules: Vec<_> = grammar.rules().map(|(_, r)| r.clone()).collect();
@@ -110,7 +118,7 @@ where
                 _ => {}
             }
         }
-        
+
         // Check for FIRST/FIRST conflicts in choices
         for (lhs, rule) in grammar.rules() {
             if let crate::grammar::Expr::Choice(alternatives) = &rule.rhs {
@@ -131,7 +139,7 @@ where
                 }
             }
         }
-        
+
         // Check for FIRST/FOLLOW conflicts (for nullable rules)
         let follow_sets = grammar.compute_follow_sets();
         for (lhs, rule) in grammar.rules() {
@@ -141,15 +149,18 @@ where
                     let conflict: Vec<T> = first.intersection(follow).cloned().collect();
                     if !conflict.is_empty() {
                         // This is a FIRST/FOLLOW conflict for nullable rules
-                        // For now, we'll just note it - could add a specific error type
+                        errors.push(crate::grammar::GrammarError::FirstFollowConflict {
+                            rule: lhs.clone(),
+                            tokens: conflict,
+                        });
                     }
                 }
             }
         }
-        
+
         errors
     }
-    
+
     fn capabilities() -> BackendCapabilities {
         BackendCapabilities {
             name: "LL(k)",
@@ -161,9 +172,8 @@ where
             max_lookahead: None, // Supports any k (configurable)
         }
     }
-    
+
     fn state(&self) -> &Self::State {
         &self.state
     }
 }
-

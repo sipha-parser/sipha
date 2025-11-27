@@ -101,7 +101,9 @@ pub fn errors_at_span<T, N>(result: &ParseResult<T, N>, span: TextRange) -> Vec<
 where
     T: Token,
 {
-    result.errors.iter()
+    result
+        .errors
+        .iter()
         .filter(|e| e.span().intersect(span).is_some())
         .collect()
 }
@@ -112,7 +114,9 @@ pub fn warnings_at_span<T, N>(result: &ParseResult<T, N>, span: TextRange) -> Ve
 where
     T: Token,
 {
-    result.warnings.iter()
+    result
+        .warnings
+        .iter()
         .filter(|w| w.span.intersect(span).is_some())
         .collect()
 }
@@ -142,20 +146,19 @@ where
     if is_successful(result) {
         let mut output = format!(
             "Parse successful: {} nodes created, {} tokens consumed in {:?}",
-            result.metrics.nodes_created,
-            result.metrics.tokens_consumed,
-            result.metrics.parse_time
+            result.metrics.nodes_created, result.metrics.tokens_consumed, result.metrics.parse_time
         );
-        
+
         if has_warnings(result) {
             use std::fmt::Write;
             write!(
                 &mut output,
                 "\nWarnings: {}",
                 warning_messages(result).join(", ")
-            ).unwrap();
+            )
+            .unwrap();
         }
-        
+
         output
     } else {
         format!(
@@ -220,9 +223,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sipha::error::{ParseError, ParseResult, ParseWarning, Severity, ParseMetrics};
-    use sipha::syntax::{TextRange, TextSize, GreenNodeBuilder, SyntaxKind};
+    use sipha::error::{ParseError, ParseMetrics, ParseResult, ParseWarning, Severity};
     use sipha::grammar::Token;
+    use sipha::syntax::{GreenNodeBuilder, SyntaxKind, TextRange, TextSize};
 
     // Test token type for error helper tests
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -234,7 +237,7 @@ mod tests {
         fn is_terminal(self) -> bool {
             true // Root is the only kind, treated as terminal for this test
         }
-        
+
         fn is_trivia(self) -> bool {
             false
         }
@@ -247,7 +250,7 @@ mod tests {
 
     impl Token for TestToken {
         type Kind = TestSyntaxKind;
-        
+
         fn kind(&self) -> Self::Kind {
             self.kind
         }
@@ -262,7 +265,7 @@ mod tests {
         let mut builder = GreenNodeBuilder::new();
         builder.start_node(TestSyntaxKind::Root);
         let root = builder.finish().unwrap();
-        
+
         ParseResult::new(root, errors, warnings, ParseMetrics::default())
     }
 
@@ -270,7 +273,7 @@ mod tests {
     fn test_is_successful() {
         let result = create_test_result(vec![], vec![]);
         assert!(is_successful(&result));
-        
+
         let error = ParseError::UnexpectedToken {
             span: TextRange::new(TextSize::from(0), TextSize::from(5)),
             expected: vec!["number".to_string()],
@@ -283,7 +286,7 @@ mod tests {
     fn test_error_count() {
         let result = create_test_result(vec![], vec![]);
         assert_eq!(error_count(&result), 0);
-        
+
         let errors = vec![
             ParseError::UnexpectedToken {
                 span: TextRange::new(TextSize::from(0), TextSize::from(5)),
@@ -302,7 +305,7 @@ mod tests {
     fn test_warning_count() {
         let result = create_test_result(vec![], vec![]);
         assert_eq!(warning_count(&result), 0);
-        
+
         let warnings = vec![
             ParseWarning {
                 span: TextRange::new(TextSize::from(0), TextSize::from(5)),
@@ -323,7 +326,7 @@ mod tests {
     fn test_has_warnings() {
         let result = create_test_result(vec![], vec![]);
         assert!(!has_warnings(&result));
-        
+
         let warnings = vec![ParseWarning {
             span: TextRange::new(TextSize::from(0), TextSize::from(5)),
             message: "Test warning".to_string(),
@@ -347,7 +350,7 @@ mod tests {
         ];
         let result = create_test_result(errors, vec![]);
         let messages = error_messages(&result);
-        
+
         assert_eq!(messages.len(), 2);
         assert!(messages.iter().any(|m| m.contains("Unexpected")));
         assert!(messages.iter().any(|m| m.contains("Invalid")));
@@ -369,7 +372,7 @@ mod tests {
         ];
         let result = create_test_result(vec![], warnings);
         let messages = warning_messages(&result);
-        
+
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0], "Warning 1");
         assert_eq!(messages[1], "Warning 2");
@@ -377,12 +380,10 @@ mod tests {
 
     #[test]
     fn test_error_messages_iter() {
-        let errors = vec![
-            ParseError::UnexpectedToken {
-                span: TextRange::new(TextSize::from(0), TextSize::from(5)),
-                expected: vec!["number".to_string()],
-            },
-        ];
+        let errors = vec![ParseError::UnexpectedToken {
+            span: TextRange::new(TextSize::from(0), TextSize::from(5)),
+            expected: vec!["number".to_string()],
+        }];
         let result = create_test_result(errors, vec![]);
         let count: usize = error_messages_iter(&result).count();
         assert_eq!(count, 1);
@@ -405,30 +406,32 @@ mod tests {
             },
         ];
         let result = create_test_result(errors, vec![]);
-        
-        let unexpected_tokens = find_errors(&result, |e| {
-            matches!(e, ParseError::UnexpectedToken { .. })
-        });
+
+        let unexpected_tokens =
+            find_errors(&result, |e| matches!(e, ParseError::UnexpectedToken { .. }));
         assert_eq!(unexpected_tokens.len(), 2);
-        
-        let invalid_syntax = find_errors(&result, |e| {
-            matches!(e, ParseError::InvalidSyntax { .. })
-        });
+
+        let invalid_syntax =
+            find_errors(&result, |e| matches!(e, ParseError::InvalidSyntax { .. }));
         assert_eq!(invalid_syntax.len(), 1);
     }
 
     #[test]
     fn test_has_error_type() {
-        let errors = vec![
-            ParseError::UnexpectedToken {
-                span: TextRange::new(TextSize::from(0), TextSize::from(5)),
-                expected: vec!["number".to_string()],
-            },
-        ];
+        let errors = vec![ParseError::UnexpectedToken {
+            span: TextRange::new(TextSize::from(0), TextSize::from(5)),
+            expected: vec!["number".to_string()],
+        }];
         let result = create_test_result(errors, vec![]);
-        
-        assert!(has_error_type(&result, |e| matches!(e, ParseError::UnexpectedToken { .. })));
-        assert!(!has_error_type(&result, |e| matches!(e, ParseError::InvalidSyntax { .. })));
+
+        assert!(has_error_type(&result, |e| matches!(
+            e,
+            ParseError::UnexpectedToken { .. }
+        )));
+        assert!(!has_error_type(&result, |e| matches!(
+            e,
+            ParseError::InvalidSyntax { .. }
+        )));
     }
 
     #[test]
@@ -436,7 +439,7 @@ mod tests {
         let mut result = create_test_result(vec![], vec![]);
         result.metrics.nodes_created = 10;
         result.metrics.tokens_consumed = 5;
-        
+
         let formatted = format_result(&result);
         assert!(formatted.contains("Parse successful"));
         assert!(formatted.contains("10"));
@@ -451,7 +454,7 @@ mod tests {
             severity: Severity::Warning,
         }];
         let result = create_test_result(vec![], warnings);
-        
+
         let formatted = format_result(&result);
         assert!(formatted.contains("Warnings"));
         assert!(formatted.contains("Test warning"));
@@ -459,14 +462,12 @@ mod tests {
 
     #[test]
     fn test_format_result_failure() {
-        let errors = vec![
-            ParseError::UnexpectedToken {
-                span: TextRange::new(TextSize::from(0), TextSize::from(5)),
-                expected: vec!["number".to_string()],
-            },
-        ];
+        let errors = vec![ParseError::UnexpectedToken {
+            span: TextRange::new(TextSize::from(0), TextSize::from(5)),
+            expected: vec!["number".to_string()],
+        }];
         let result = create_test_result(errors, vec![]);
-        
+
         let formatted = format_result(&result);
         assert!(formatted.contains("Parse failed"));
         assert!(formatted.contains("1 errors"));
@@ -491,12 +492,10 @@ mod tests {
 
     #[test]
     fn test_assert_error_count() {
-        let errors = vec![
-            ParseError::UnexpectedToken {
-                span: TextRange::new(TextSize::from(0), TextSize::from(5)),
-                expected: vec!["number".to_string()],
-            },
-        ];
+        let errors = vec![ParseError::UnexpectedToken {
+            span: TextRange::new(TextSize::from(0), TextSize::from(5)),
+            expected: vec!["number".to_string()],
+        }];
         let result = create_test_result(errors, vec![]);
         assert_error_count(&result, 1); // Should not panic
     }
@@ -539,10 +538,9 @@ mod tests {
             span: TextRange::new(TextSize::from(0), TextSize::from(5)),
             expected: vec!["number".to_string(), "identifier".to_string()],
         };
-        
+
         let error_str = format!("{error}");
         assert!(!error_str.is_empty());
         assert!(error_str.contains("Unexpected"));
     }
 }
-

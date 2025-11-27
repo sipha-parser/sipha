@@ -5,6 +5,7 @@ edition = "2024"
 authors = ["Chloe Magnier <contact@nyaleph.com>"]
 description = "Core parsing infrastructure for Sipha parser library"
 license = "MIT"
+readme = "README.md"
 repository = "https://github.com/nyaleph/sipha"
 homepage = "https://github.com/nyaleph/sipha"
 documentation = "https://docs.rs/sipha"
@@ -13,15 +14,15 @@ categories = ["parsing", "development-tools"]
 
 [lints.clippy]
 pedantic = "deny"
-nursery = "warn"
 
 [dependencies]
 # Core
 compact_str = "0.9"
 lasso = "0.7"
 smallvec = "1.13"
-hashbrown = "0.16"
+hashbrown = "0.14.5"
 ahash = "0.8"
+regex = "1.11"
 bumpalo = { version = "3.16", optional = true }
 
 # Error handling
@@ -50,6 +51,10 @@ proptest = "1.5"
 criterion = "0.7"
 pretty_assertions = "1.4"
 tracing-subscriber = "0.3"
+
+[[bench]]
+name = "parsing_bench"
+harness = false
 
 [features]
 default = ["diagnostics", "unicode", "query", "visitor", "traversal", "tree-utils", "backend-ll"]
