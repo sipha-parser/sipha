@@ -65,11 +65,13 @@ impl GrammarMetrics {
             }
         }
 
-        // Calculate average alternatives (usize to f64 conversion is acceptable for metrics)
-        #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
-        // choice_count is usize, not i32
+        // Calculate average alternatives
+        // Precision loss from usize to f64 is acceptable for metrics calculation
         let avg_alternatives = if choice_count > 0 {
-            total_alternatives as f64 / choice_count as f64
+            #[allow(clippy::cast_precision_loss)]
+            {
+                total_alternatives as f64 / f64::from(choice_count)
+            }
         } else {
             0.0
         };

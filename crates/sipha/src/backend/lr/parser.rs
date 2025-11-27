@@ -9,6 +9,45 @@ const DEFAULT_ERROR_SPAN_LEN: TextSize = TextSize::from(1);
 /// Type alias for LR parser stack: (`state_id`, nodes)
 type LrStack<T> = Vec<(usize, Vec<std::sync::Arc<GreenNode<T>>>)>;
 
+/// Context for LR parsing operations - groups immutable parsing parameters
+struct LrParseContext<'a, T, N>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    grammar: &'a Grammar<T, N>,
+    table: &'a LrParsingTable<T, N>,
+    input: &'a [T],
+    entry: &'a N,
+    config: &'a LrConfig,
+    state: &'a mut LrParserState<T, N>,
+}
+
+impl<'a, T, N> LrParseContext<'a, T, N>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    #[allow(clippy::missing_const_for_fn)]
+    fn new(
+        grammar: &'a Grammar<T, N>,
+        table: &'a LrParsingTable<T, N>,
+        input: &'a [T],
+        entry: &'a N,
+        config: &'a LrConfig,
+        state: &'a mut LrParserState<T, N>,
+    ) -> Self {
+        Self {
+            grammar,
+            table,
+            input,
+            entry,
+            config,
+            state,
+        }
+    }
+}
+
 /// Recursively count nodes in a syntax tree
 fn count_nodes<K: crate::syntax::SyntaxKind>(node: &std::sync::Arc<GreenNode<K>>) -> usize {
     let mut count = 1; // Count this node
@@ -69,8 +108,120 @@ where
         })
 }
 
+/// Create an error result when syntax kind cannot be determined
+fn create_error_result<T, N>(entry: &N, input: &[T], grammar: &Grammar<T, N>) -> ParseResult<T, N>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    let mut errors = Vec::new();
+    errors.push(ParseError::InvalidSyntax {
+        span: crate::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
+        message: format!(
+            "Cannot determine syntax kind for entry point {:?}",
+            entry.name()
+        ),
+    });
+    let error_kind = determine_error_syntax_kind(entry, input, grammar);
+    errors.push(ParseError::InvalidSyntax {
+        span: crate::syntax::TextRange::at(TextSize::zero(), DEFAULT_ERROR_SPAN_LEN),
+        message: format!(
+            "Cannot determine syntax kind for error result. \
+             Entry point '{}' must implement NonTerminal::default_syntax_kind() \
+             to return Some for error cases, or provide at least one token in input.",
+            entry.name()
+        ),
+    });
+
+    ParseResult {
+        root: GreenNode::new(error_kind, [], TextSize::zero()),
+        errors,
+        warnings: Vec::new(),
+        metrics: ParseMetrics::default(),
+        _phantom: std::marker::PhantomData::<N>,
+    }
+}
+
+/// Create a token node from a token
+fn create_token_node<T: Token>(token: &T) -> std::sync::Arc<GreenNode<T::Kind>> {
+    let token_len = token.text_len();
+    let token_element = crate::syntax::GreenElement::Token(crate::syntax::GreenToken::new(
+        token.kind(),
+        token.text(),
+    ));
+    GreenNode::new(token.kind(), vec![token_element], token_len)
+}
+
+/// Build a node from a reduce action
+fn build_reduce_node<T, N>(
+    production: &crate::backend::lr::table::Production<T, N>,
+    children: &[std::sync::Arc<GreenNode<T::Kind>>],
+    root_kind: T::Kind,
+) -> std::sync::Arc<GreenNode<T::Kind>>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    let lhs_kind = production
+        .lhs
+        .to_syntax_kind()
+        .or_else(|| production.lhs.default_syntax_kind())
+        .or_else(|| children.first().map(|_| root_kind))
+        .unwrap_or(root_kind);
+
+    let mut text_len = TextSize::zero();
+    let mut elements = Vec::new();
+    for child in children.iter().rev() {
+        elements.push(crate::syntax::GreenElement::Node(child.clone()));
+        text_len += child.text_len();
+    }
+    GreenNode::new(lhs_kind, elements, text_len)
+}
+
+/// Try to insert a token during error recovery
+fn try_insert_token<T, N>(
+    table: &LrParsingTable<T, N>,
+    current_state: usize,
+    candidate_token: &T,
+    stack: &mut LrStack<T::Kind>,
+    text_pos: TextSize,
+    warnings: &mut Vec<ParseWarning>,
+) -> bool
+where
+    T: Token,
+    N: NonTerminal,
+{
+    let candidate_action = table.get_action(current_state, Some(candidate_token));
+    match candidate_action {
+        crate::backend::lr::table::Action::Shift(next_state) => {
+            let token_node = create_token_node(candidate_token);
+            stack.push((next_state, vec![token_node]));
+            warnings.push(ParseWarning {
+                span: crate::syntax::TextRange::at(text_pos, DEFAULT_ERROR_SPAN_LEN),
+                message: format!(
+                    "Inserted missing token {candidate_token:?} during error recovery"
+                ),
+                severity: crate::error::Severity::Warning,
+            });
+            true
+        }
+        crate::backend::lr::table::Action::Accept => {
+            let token_node = create_token_node(candidate_token);
+            stack.push((current_state, vec![token_node]));
+            warnings.push(ParseWarning {
+                span: crate::syntax::TextRange::at(text_pos, DEFAULT_ERROR_SPAN_LEN),
+                message: format!(
+                    "Inserted missing token {candidate_token:?} during error recovery"
+                ),
+                severity: crate::error::Severity::Warning,
+            });
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Parse input using LR parser
-#[allow(clippy::too_many_lines)]
 pub fn parse<T, N>(
     grammar: &Grammar<T, N>,
     table: &LrParsingTable<T, N>,
@@ -79,6 +230,17 @@ pub fn parse<T, N>(
     config: &LrConfig,
     state: &mut LrParserState<T, N>,
 ) -> ParseResult<T, N>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    let mut ctx = LrParseContext::new(grammar, table, input, entry, config, state);
+    parse_impl(&mut ctx)
+}
+
+/// Internal parse implementation using context
+#[allow(clippy::too_many_lines)]
+fn parse_impl<T, N>(ctx: &mut LrParseContext<'_, T, N>) -> ParseResult<T, N>
 where
     T: Token,
     N: NonTerminal,
@@ -93,13 +255,13 @@ where
     let start_time = std::time::Instant::now();
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    std::hash::Hash::hash(&entry, &mut hasher);
+    std::hash::Hash::hash(ctx.entry, &mut hasher);
     let entry_id = usize::try_from(hasher.finish()).unwrap_or(0);
-    if let Some(cached_root) = state.get_cached_parse(entry_id, input.len()) {
+    if let Some(cached_root) = ctx.state.get_cached_parse(entry_id, ctx.input.len()) {
         // Return cached result
         let node_count = count_nodes(&cached_root);
         metrics.parse_time = start_time.elapsed();
-        metrics.tokens_consumed = input.len();
+        metrics.tokens_consumed = ctx.input.len();
         metrics.nodes_created = node_count;
         return ParseResult {
             root: cached_root,
@@ -111,32 +273,8 @@ where
     }
 
     // Start parsing from entry point
-    let Some(root_kind) = determine_syntax_kind(entry, input, grammar) else {
-        errors.push(ParseError::InvalidSyntax {
-            span: crate::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
-            message: format!(
-                "Cannot determine syntax kind for entry point {:?}",
-                entry.name()
-            ),
-        });
-        let error_kind = determine_error_syntax_kind(entry, input, grammar);
-        errors.push(ParseError::InvalidSyntax {
-            span: crate::syntax::TextRange::at(TextSize::zero(), DEFAULT_ERROR_SPAN_LEN),
-            message: format!(
-                "Cannot determine syntax kind for error result. \
-                 Entry point '{}' must implement NonTerminal::default_syntax_kind() \
-                 to return Some for error cases, or provide at least one token in input.",
-                entry.name()
-            ),
-        });
-
-        return ParseResult {
-            root: GreenNode::new(error_kind, [], TextSize::zero()),
-            errors,
-            warnings,
-            metrics,
-            _phantom: std::marker::PhantomData::<N>,
-        };
+    let Some(root_kind) = determine_syntax_kind(ctx.entry, ctx.input, ctx.grammar) else {
+        return create_error_result(ctx.entry, ctx.input, ctx.grammar);
     };
     // LR parsing using shift-reduce algorithm
     let mut stack: LrStack<T::Kind> = Vec::new();
@@ -148,24 +286,17 @@ where
 
     loop {
         let current_state = stack.last().map_or(0, |(s, _)| *s);
-        let current_token = input.get(pos);
+        let current_token = ctx.input.get(pos);
 
-        let action = table.get_action(current_state, current_token);
+        let action = ctx.table.get_action(current_state, current_token);
 
         match action {
             crate::backend::lr::table::Action::Shift(next_state) => {
                 if let Some(token) = current_token {
-                    let token_text = token.text();
-                    let token_len = token.text_len();
-                    // Create a token node (leaf node containing just the token)
-                    let token_element = crate::syntax::GreenElement::Token(
-                        crate::syntax::GreenToken::new(token.kind(), token_text.clone()),
-                    );
-                    let token_node = GreenNode::new(token.kind(), vec![token_element], token_len);
-
+                    let token_node = create_token_node(token);
                     stack.push((next_state, vec![token_node]));
                     pos += 1;
-                    text_pos += token_len;
+                    text_pos += token.text_len();
                 } else {
                     errors.push(ParseError::UnexpectedEof {
                         span: crate::syntax::TextRange::at(text_pos, DEFAULT_ERROR_SPAN_LEN),
@@ -176,7 +307,7 @@ where
             }
 
             crate::backend::lr::table::Action::Reduce(prod_idx) => {
-                if let Some(production) = table.get_production(prod_idx) {
+                if let Some(production) = ctx.table.get_production(prod_idx) {
                     // Pop RHS items from stack
                     let rhs_len = production.rhs.len();
                     let mut children = Vec::new();
@@ -191,25 +322,8 @@ where
                     let state_after_pop = stack.last().map_or(0, |(s, _)| *s);
 
                     // Get goto state
-                    if let Some(goto_state) = table.get_goto(state_after_pop, &production.lhs) {
-                        // Create node for LHS
-                        let lhs_kind = production
-                            .lhs
-                            .to_syntax_kind()
-                            .or_else(|| production.lhs.default_syntax_kind())
-                            .or_else(|| children.first().map(|_| root_kind))
-                            .unwrap_or(root_kind);
-
-                        // Build node from children
-                        let mut text_len = TextSize::zero();
-                        let mut elements = Vec::new();
-                        for child in children.iter().rev() {
-                            // Convert Arc<GreenNode> to GreenElement
-                            elements.push(crate::syntax::GreenElement::Node(child.clone()));
-                            text_len += child.text_len();
-                        }
-                        let node = GreenNode::new(lhs_kind, elements, text_len);
-
+                    if let Some(goto_state) = ctx.table.get_goto(state_after_pop, &production.lhs) {
+                        let node = build_reduce_node(production, &children, root_kind);
                         stack.push((goto_state, vec![node]));
                     } else {
                         errors.push(ParseError::InvalidSyntax {
@@ -245,24 +359,56 @@ where
 
             crate::backend::lr::table::Action::Error => {
                 // Error - no action available
-                let expected = vec!["<valid token>".to_string()];
+                // Get expected tokens for better error messages and token insertion
+                let expected_tokens = ctx.table.get_expected_tokens(current_state);
+                let expected: Vec<String> = if expected_tokens.is_empty() {
+                    vec!["<valid token>".to_string()]
+                } else {
+                    expected_tokens.iter().map(|t| format!("{t:?}")).collect()
+                };
+
                 if current_token.is_none() {
                     errors.push(ParseError::UnexpectedEof {
                         span: crate::syntax::TextRange::at(text_pos, DEFAULT_ERROR_SPAN_LEN),
-                        expected,
+                        expected: expected.clone(),
                     });
                 } else {
                     errors.push(ParseError::UnexpectedToken {
                         span: crate::syntax::TextRange::at(text_pos, DEFAULT_ERROR_SPAN_LEN),
-                        expected,
+                        expected: expected.clone(),
                     });
                 }
 
-                if config.error_recovery {
-                    // Try error recovery: skip token
-                    if pos < input.len() {
+                if ctx.config.error_recovery {
+                    // Try token insertion first if enabled
+                    let mut recovered = false;
+                    if ctx.config.enable_token_insertion && !expected_tokens.is_empty() {
+                        // Try inserting each expected token to see if parsing can continue
+                        // Prioritize shift actions as they're most common for missing tokens (e.g., semicolons)
+                        for candidate_token in &expected_tokens {
+                            if try_insert_token(
+                                ctx.table,
+                                current_state,
+                                candidate_token,
+                                &mut stack,
+                                text_pos,
+                                &mut warnings,
+                            ) {
+                                recovered = true;
+                                break; // Successfully inserted token, continue parsing
+                            }
+                        }
+                    }
+
+                    if recovered {
+                        // Successfully inserted a token, continue parsing
+                        continue;
+                    }
+
+                    // Token insertion didn't work, fall back to skipping token
+                    if pos < ctx.input.len() {
                         pos += 1;
-                        if let Some(token) = input.get(pos - 1) {
+                        if let Some(token) = ctx.input.get(pos - 1) {
                             text_pos += token.text_len();
                         }
                         warnings.push(ParseWarning {
@@ -277,13 +423,13 @@ where
             }
         }
 
-        if errors.len() >= config.max_errors {
+        if errors.len() >= ctx.config.max_errors {
             break;
         }
     }
 
     // Check if we consumed all input
-    if pos < input.len() {
+    if pos < ctx.input.len() {
         errors.push(ParseError::InvalidSyntax {
             span: crate::syntax::TextRange::at(text_pos, TextSize::from(1)),
             message: format!("Unexpected tokens remaining at position {pos}"),
@@ -309,7 +455,8 @@ where
 
     // Cache the final result if parsing was successful (no errors)
     if errors.is_empty() {
-        state.cache_parse_result(entry_id, input.len(), root.clone());
+        ctx.state
+            .cache_parse_result(entry_id, ctx.input.len(), root.clone());
     }
 
     // Count nodes in the tree recursively
@@ -329,7 +476,6 @@ where
 }
 
 /// Parse with incremental support
-#[allow(clippy::too_many_arguments)]
 pub fn parse_with_session<T, N>(
     grammar: &Grammar<T, N>,
     table: &LrParsingTable<T, N>,

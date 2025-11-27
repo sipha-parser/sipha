@@ -3,28 +3,13 @@
 //! This module provides utilities for generating markdown documentation
 //! with EBNF representation of grammars.
 
-#![allow(
-    clippy::too_many_lines,
-    clippy::format_push_string,
-    clippy::uninlined_format_args,
-    clippy::only_used_in_recursion,
-    clippy::struct_excessive_bools,
-    clippy::needless_pass_by_value,
-    clippy::collection_is_never_read,
-    clippy::collapsible_if,
-    clippy::single_char_add_str,
-    clippy::redundant_closure_for_method_calls,
-    clippy::map_unwrap_or,
-    clippy::if_not_else,
-    clippy::manual_contains,
-    clippy::collapsible_str_replace,
-    clippy::used_underscore_binding,
-    clippy::match_same_arms
-)]
-
 use crate::grammar::{Expr, Grammar, NonTerminal, Token};
+use std::fmt::Write;
 
-/// Format an expression as EBNF
+/// Format an expression as EBNF.
+///
+/// This function is intentionally recursive to handle nested expressions.
+/// The `only_used_in_recursion` warning is expected and acceptable for this use case.
 #[allow(clippy::too_many_lines, clippy::only_used_in_recursion)]
 pub fn format_expr_ebnf<T, N>(
     expr: &Expr<T, N>,
@@ -111,8 +96,7 @@ where
                 sep_str
             };
             match *min {
-                0 => format!("{item_wrapped} ({sep_wrapped} {item_wrapped})*"),
-                1 => format!("{item_wrapped} ({sep_wrapped} {item_wrapped})*"),
+                0 | 1 => format!("{item_wrapped} ({sep_wrapped} {item_wrapped})*"),
                 n => format!("{item_wrapped} ({sep_wrapped} {item_wrapped}){{{n},}}"),
             }
         }
@@ -159,8 +143,7 @@ where
 }
 
 /// Check if an expression needs parentheses when used in a sequence or choice
-#[allow(clippy::missing_const_for_fn)]
-fn needs_parentheses<T, N>(expr: &Expr<T, N>) -> bool {
+const fn needs_parentheses<T, N>(expr: &Expr<T, N>) -> bool {
     matches!(
         expr,
         Expr::Choice(_) | Expr::Seq(_) | Expr::Separated { .. } | Expr::Delimited { .. }
@@ -178,19 +161,17 @@ fn needs_parentheses<T, N>(expr: &Expr<T, N>) -> bool {
 /// # use sipha::grammar::docs::MarkdownConfig;
 /// # use std::collections::HashMap;
 /// let mut config = MarkdownConfig::default();
-/// config.include_token_usage = false;  // Skip token usage for simpler docs
+/// config.sections.include_token_usage = false;  // Skip token usage for simpler docs
 /// config.overview = Some("This grammar describes a JSON document structure.".to_string());
 /// ```
+///
+/// Note: This struct intentionally uses multiple boolean fields for configuration options.
+/// This is a common and idiomatic pattern for configuration structs where each option
+/// is independent and can be toggled separately.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarkdownConfig {
-    /// Include a table of contents with links to all sections
-    pub include_toc: bool,
-    /// Include grammar statistics (rule count, token count, recursive rules)
-    pub include_statistics: bool,
-    /// Include rule dependencies (which rules reference which other rules)
-    pub include_dependencies: bool,
-    /// Include token usage information (which tokens are used by each rule)
-    pub include_token_usage: bool,
+    /// Options for which sections to include in the documentation
+    pub sections: SectionOptions,
     /// Use line breaks for long EBNF expressions to improve readability
     pub format_long_expressions: bool,
     /// Maximum line length before breaking (if `format_long_expressions` is true)
@@ -203,25 +184,46 @@ pub struct MarkdownConfig {
     pub show_expression_details: bool,
     /// Optional overview text describing the grammar
     pub overview: Option<String>,
-    /// Include a mermaid dependency graph showing rule relationships
-    pub include_dependency_graph: bool,
     /// Optional examples for rules, mapping rule names to example strings
     pub rule_examples: std::collections::HashMap<String, Vec<String>>,
 }
 
-impl Default for MarkdownConfig {
+/// Options for which sections to include in the markdown documentation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionOptions {
+    /// Include a table of contents with links to all sections
+    pub include_toc: bool,
+    /// Include grammar statistics (rule count, token count, recursive rules)
+    pub include_statistics: bool,
+    /// Include rule dependencies (which rules reference which other rules)
+    pub include_dependencies: bool,
+    /// Include token usage information (which tokens are used by each rule)
+    pub include_token_usage: bool,
+    /// Include a mermaid dependency graph showing rule relationships
+    pub include_dependency_graph: bool,
+}
+
+impl Default for SectionOptions {
     fn default() -> Self {
         Self {
             include_toc: true,
             include_statistics: true,
             include_dependencies: true,
             include_token_usage: true,
+            include_dependency_graph: true,
+        }
+    }
+}
+
+impl Default for MarkdownConfig {
+    fn default() -> Self {
+        Self {
+            sections: SectionOptions::default(),
             format_long_expressions: true,
             max_line_length: 80,
             show_nullable: true,
             show_expression_details: true,
             overview: None,
-            include_dependency_graph: true,
             rule_examples: std::collections::HashMap::new(),
         }
     }
@@ -260,24 +262,24 @@ where
     rules.sort_by(|a, b| a.0.name().cmp(b.0.name()));
 
     // Generate table of contents if requested
-    if config.include_toc {
+    if config.sections.include_toc {
         output.push_str("## Table of Contents\n\n");
         if config.overview.is_some() {
             output.push_str("- [Overview](#overview)\n");
         }
         output.push_str("- [Entry Point](#entry-point)\n");
-        if config.include_statistics {
+        if config.sections.include_statistics {
             output.push_str("- [Statistics](#statistics)\n");
         }
         output.push_str("- [Production Rules](#production-rules)\n");
-        if config.include_dependencies {
+        if config.sections.include_dependencies {
             output.push_str("- [Rule Dependencies](#rule-dependencies)\n");
         }
-        if config.include_dependency_graph {
+        if config.sections.include_dependency_graph {
             output.push_str("- [Rule Dependency Graph](#rule-dependency-graph)\n");
         }
         output.push_str("- [Tokens](#tokens)\n");
-        if config.include_token_usage {
+        if config.sections.include_token_usage {
             output.push_str("- [Token Usage](#token-usage)\n");
         }
         output.push_str("- [Grammar Design Notes](#grammar-design-notes)\n");
@@ -287,20 +289,24 @@ where
     // Overview section
     if let Some(overview) = &config.overview {
         output.push_str("## Overview\n\n");
-        output.push_str(&format!("{overview}\n\n"));
+        writeln!(output, "{overview}").unwrap();
+        output.push('\n');
         output.push_str("---\n\n");
     }
 
     // Entry point
     output.push_str("## Entry Point\n\n");
-    output.push_str(&format!(
-        "The grammar entry point is [`{}`](#{}).\n\n",
-        grammar.entry_point().name(),
-        grammar.entry_point().name().to_lowercase()
-    ));
+    let entry_name = grammar.entry_point().name();
+    writeln!(
+        output,
+        "The grammar entry point is [`{entry_name}`](#{}).",
+        entry_name.to_lowercase()
+    )
+    .unwrap();
+    output.push('\n');
 
     // Statistics section
-    if config.include_statistics {
+    if config.sections.include_statistics {
         output.push_str("## Statistics\n\n");
         let rule_count = rules.len();
         let token_count = count_unique_tokens(grammar, token_name);
@@ -313,56 +319,39 @@ where
             .filter(|(_, rule)| rule.rhs.is_nullable(grammar))
             .count();
 
-        // Build notes for statistics
-        let mut notes = Vec::new();
-        if !direct_recursive.is_empty() && !indirect_recursive.is_empty() {
-            let direct_only: Vec<_> = direct_recursive
-                .iter()
-                .filter(|r| indirect_recursive.contains(r))
-                .cloned()
-                .collect();
-            if direct_only.len() < direct_recursive.len() {
-                notes.push("Includes both direct and indirect recursion".to_string());
-            }
-        }
-        if nullable_count > 0 {
-            notes.push("Some rules can match empty input".to_string());
-        }
-
         output.push_str("| Metric | Value | Notes |\n");
         output.push_str("|--------|-------|-------|\n");
-        output.push_str(&format!(
-            "| **Total Rules** | {} | {} |\n",
-            rule_count,
-            rules
-                .iter()
-                .map(|(n, _)| n.name())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-        output.push_str(&format!(
-            "| **Unique Tokens** | {} | See [Token Reference](#tokens) |\n",
-            token_count
-        ));
+        let rule_names = rules
+            .iter()
+            .map(|(n, _)| n.name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(output, "| **Total Rules** | {rule_count} | {rule_names} |").unwrap();
+        writeln!(
+            output,
+            "| **Unique Tokens** | {token_count} | See [Token Reference](#tokens) |"
+        )
+        .unwrap();
 
         let recursive_note = if !indirect_recursive.is_empty() || !direct_recursive.is_empty() {
             let direct_count = direct_recursive.len();
             let indirect_count = indirect_recursive.len();
             if direct_count == 0 && indirect_count > 0 {
-                format!("0 direct, {} indirect", indirect_count)
+                format!("0 direct, {indirect_count} indirect")
             } else if direct_count > 0 && indirect_count == 0 {
                 "Direct recursion only".to_string()
             } else {
-                format!("{} direct, {} indirect", direct_count, indirect_count)
+                format!("{direct_count} direct, {indirect_count} indirect")
             }
         } else {
             "None".to_string()
         };
-        output.push_str(&format!(
-            "| **Recursive Rules** | {} | {} |\n",
-            indirect_recursive.len().max(direct_recursive.len()),
-            recursive_note
-        ));
+        let recursive_count = indirect_recursive.len().max(direct_recursive.len());
+        writeln!(
+            output,
+            "| **Recursive Rules** | {recursive_count} | {recursive_note} |"
+        )
+        .unwrap();
 
         if config.show_nullable {
             let nullable_note = if nullable_count > 0 {
@@ -375,10 +364,11 @@ where
             } else {
                 "None".to_string()
             };
-            output.push_str(&format!(
-                "| **Nullable Rules** | {} | {} |\n",
-                nullable_count, nullable_note
-            ));
+            writeln!(
+                output,
+                "| **Nullable Rules** | {nullable_count} | {nullable_note} |"
+            )
+            .unwrap();
         }
 
         if !indirect_recursive.is_empty() {
@@ -386,11 +376,13 @@ where
                 .iter()
                 .map(|n| format!("`{}`", n.name()))
                 .collect();
-            output.push_str(&format!(
-                "| **Recursive Rule Names** | {} | {} |\n",
-                indirect_recursive.len(),
-                recursive_names.join(", ")
-            ));
+            let recursive_count = indirect_recursive.len();
+            let recursive_names_str = recursive_names.join(", ");
+            writeln!(
+                output,
+                "| **Recursive Rule Names** | {recursive_count} | {recursive_names_str} |"
+            )
+            .unwrap();
         }
         output.push('\n');
     }
@@ -400,16 +392,18 @@ where
 
     for (lhs, rule) in &rules {
         let rule_id = lhs.name().to_lowercase();
-        output.push_str(&format!("### <a id=\"{}\"></a>{}\n\n", rule_id, lhs.name()));
+        writeln!(output, "### <a id=\"{rule_id}\"></a>{}", lhs.name()).unwrap();
+        output.push('\n');
 
         // Add description if available
         #[cfg(feature = "grammar-docs")]
         if let Some(desc) = rule.metadata.description() {
-            output.push_str(&format!("{desc}\n\n"));
+            writeln!(output, "{desc}").unwrap();
+            output.push('\n');
         }
 
         // Show if rule is recursive (simplified check - just direct recursion)
-        if config.include_statistics {
+        if config.sections.include_statistics {
             let referenced = collect_referenced_rules(&rule.rhs);
             if referenced.iter().any(|r| r == *lhs) {
                 output.push_str("> **Note**: This rule is recursive.\n\n");
@@ -417,10 +411,8 @@ where
         }
 
         // Show if rule is nullable (can match empty input)
-        if config.show_nullable {
-            if rule.rhs.is_nullable(grammar) {
-                output.push_str("> **Note**: This rule is nullable (can match empty input).\n\n");
-            }
+        if config.show_nullable && rule.rhs.is_nullable(grammar) {
+            output.push_str("> **Note**: This rule is nullable (can match empty input).\n\n");
         }
 
         // Format the RHS as EBNF with improved formatting
@@ -430,11 +422,11 @@ where
             format_expr_ebnf(&rule.rhs, grammar, token_name)
         };
         output.push_str("```ebnf\n");
-        output.push_str(&format!("{} ::= {}\n", lhs.name(), ebnf));
+        writeln!(output, "{} ::= {ebnf}", lhs.name()).unwrap();
         output.push_str("```\n\n");
 
         // Show which rules this rule references
-        if config.include_dependencies {
+        if config.sections.include_dependencies {
             let referenced_rules = collect_referenced_rules(&rule.rhs);
             if !referenced_rules.is_empty() {
                 output.push_str("**References**: ");
@@ -453,46 +445,46 @@ where
             if !details.is_empty() {
                 output.push_str("**Expression Details**:\n");
                 for detail in details {
-                    output.push_str(&format!("- {detail}\n"));
+                    writeln!(output, "- {detail}").unwrap();
                 }
                 output.push('\n');
             }
         }
 
         // Show examples if provided
-        if let Some(examples) = config.rule_examples.get(lhs.name()) {
-            if !examples.is_empty() {
-                output.push_str("**Examples**:\n");
-                for example in examples {
-                    output.push_str(&format!("- {example}\n"));
-                }
-                output.push('\n');
+        if let Some(examples) = config.rule_examples.get(lhs.name())
+            && !examples.is_empty()
+        {
+            output.push_str("**Examples**:\n");
+            for example in examples {
+                writeln!(output, "- {example}").unwrap();
             }
+            output.push('\n');
         }
     }
 
     // Rule dependencies section
-    if config.include_dependencies {
+    if config.sections.include_dependencies {
         output.push_str("## Rule Dependencies\n\n");
         output.push_str("This section shows which rules reference which other rules.\n\n");
 
         for (lhs, rule) in &rules {
             let referenced = collect_referenced_rules(&rule.rhs);
             if !referenced.is_empty() {
-                output.push_str(&format!("- **`{}`** references: ", lhs.name()));
+                write!(output, "- **`{}`** references: ", lhs.name()).unwrap();
                 let ref_links: Vec<String> = referenced
                     .iter()
                     .map(|n| format!("[`{}`](#{})", n.name(), n.name().to_lowercase()))
                     .collect();
                 output.push_str(&ref_links.join(", "));
-                output.push_str("\n");
+                output.push('\n');
             }
         }
         output.push('\n');
     }
 
     // Rule dependency graph (mermaid)
-    if config.include_dependency_graph {
+    if config.sections.include_dependency_graph {
         output.push_str("## Rule Dependency Graph\n\n");
         output.push_str(&generate_mermaid_graph(grammar));
         output.push_str("\n**Legend**: Arrows indicate \"references\" relationship. The graph shows the indirect recursion between rules.\n\n");
@@ -536,15 +528,14 @@ where
                 // Only keep the first occurrence of each token type, or prefer one with a description
                 token_map
                     .entry(name.clone())
-                    .or_insert_with(|| (token.clone(), desc.map(|d| d.to_string())));
+                    .or_insert_with(|| (token.clone(), desc.map(std::string::ToString::to_string)));
 
                 // If we find a token with a description, prefer it
-                if let Some(desc_str) = desc {
-                    if let Some((_, existing_desc)) = token_map.get_mut(&name) {
-                        if existing_desc.is_none() {
-                            *existing_desc = Some(desc_str.to_string());
-                        }
-                    }
+                if let Some(desc_str) = desc
+                    && let Some((_, existing_desc)) = token_map.get_mut(&name)
+                    && existing_desc.is_none()
+                {
+                    *existing_desc = Some(desc_str.to_string());
                 }
             }
         }
@@ -560,7 +551,7 @@ where
             output.push_str("|-------|---------|-------------|---------------|\n");
 
             for (token_name_str, (token, desc)) in &tokens {
-                let desc_str = desc.as_ref().map(|s| s.as_str()).unwrap_or("—");
+                let desc_str = desc.as_ref().map_or("—", std::string::String::as_str);
 
                 // Get literal text from token
                 let literal_text = token.text();
@@ -572,7 +563,7 @@ where
                 } else {
                     // Escape backticks in the literal for markdown
                     let escaped = literal_text.replace('`', "\\`");
-                    format!("`{}`", escaped)
+                    format!("`{escaped}`")
                 };
 
                 // Get usage context (which rules use this token)
@@ -583,24 +574,25 @@ where
                         rule_list.sort();
                         rule_list
                             .iter()
-                            .map(|r| format!("`{}`", r))
+                            .map(|r| format!("`{r}`"))
                             .collect::<Vec<_>>()
                             .join(", ")
                     })
-                    .unwrap_or_else(|| "—".to_string());
+                    .map_or_else(|| String::from("—"), |s| s);
 
                 // Escape pipe characters in markdown table
                 let desc_escaped = desc_str.replace('|', "\\|");
 
-                output.push_str(&format!(
-                    "| `{}` | {} | {} | {} |\n",
-                    token_name_str, literal_display, desc_escaped, usage_context
-                ));
+                writeln!(
+                    output,
+                    "| `{token_name_str}` | {literal_display} | {desc_escaped} | {usage_context} |"
+                )
+                .unwrap();
             }
             output.push('\n');
 
             // Token usage section
-            if config.include_token_usage {
+            if config.sections.include_token_usage {
                 output.push_str("## Token Usage\n\n");
 
                 // By Rule
@@ -610,7 +602,10 @@ where
 
                 for (lhs, rule) in &rules {
                     let used_tokens = collect_tokens(&rule.rhs);
-                    if !used_tokens.is_empty() {
+                    if used_tokens.is_empty() {
+                        writeln!(output, "| **`{}`** | *(none directly)* | N/A |", lhs.name())
+                            .unwrap();
+                    } else {
                         let mut token_names: hashbrown::HashSet<String, ahash::RandomState> =
                             hashbrown::HashSet::with_hasher(ahash::RandomState::new());
                         for token in &used_tokens {
@@ -626,24 +621,20 @@ where
                             "Required"
                         };
 
-                        output.push_str(&format!(
-                            "| **`{}`** | {} | {} |\n",
-                            lhs.name(),
-                            sorted_names
-                                .iter()
-                                .map(|n| format!("`{}`", n))
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                            required
-                        ));
-                    } else {
-                        output.push_str(&format!(
-                            "| **`{}`** | *(none directly)* | N/A |\n",
+                        let sorted_names_str = sorted_names
+                            .iter()
+                            .map(|n| format!("`{n}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        writeln!(
+                            output,
+                            "| **`{}`** | {sorted_names_str} | {required} |",
                             lhs.name()
-                        ));
+                        )
+                        .unwrap();
                     }
                 }
-                output.push_str("\n");
+                output.push('\n');
 
                 // By Token
                 output.push_str("### By Token:\n\n");
@@ -658,19 +649,20 @@ where
                             rule_list.sort();
                             rule_list
                                 .iter()
-                                .map(|r| format!("`{}`", r))
+                                .map(|r| format!("`{r}`"))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         })
-                        .unwrap_or_else(|| "—".to_string());
+                        .map_or_else(|| String::from("—"), |s| s);
 
-                    let purpose = desc.as_ref().map(|s| s.as_str()).unwrap_or("—");
+                    let purpose = desc.as_ref().map_or("—", std::string::String::as_str);
                     let purpose_escaped = purpose.replace('|', "\\|");
 
-                    output.push_str(&format!(
-                        "| `{}` | {} | {} |\n",
-                        token_name_str, usage_rules, purpose_escaped
-                    ));
+                    writeln!(
+                        output,
+                        "| `{token_name_str}` | {usage_rules} | {purpose_escaped} |"
+                    )
+                    .unwrap();
                 }
                 output.push('\n');
             }
@@ -767,22 +759,14 @@ where
             let indent_str = " ".repeat(indent);
             if parts.iter().any(|p| p.contains('\n')) {
                 // Multi-line format
-                format!(
-                    "{}\n{}",
-                    parts.join(&format!("\n{}", indent_str)),
-                    indent_str
-                )
+                format!("{}\n{}", parts.join(&format!("\n{indent_str}")), indent_str)
             } else {
                 // Try to fit on one line, or break if too long
                 let joined = parts.join(" ");
                 if joined.len() <= max_line_length {
                     joined
                 } else {
-                    format!(
-                        "{}\n{}",
-                        parts.join(&format!("\n{}", indent_str)),
-                        indent_str
-                    )
+                    format!("{}\n{}", parts.join(&format!("\n{indent_str}")), indent_str)
                 }
             }
         }
@@ -797,7 +781,7 @@ where
             if parts.iter().any(|p| p.contains('\n')) {
                 format!(
                     "{}\n{}",
-                    parts.join(&format!("\n{}| ", indent_str)),
+                    parts.join(&format!("\n{indent_str}| ")),
                     indent_str
                 )
             } else {
@@ -807,7 +791,7 @@ where
                 } else {
                     format!(
                         "{}\n{}",
-                        parts.join(&format!("\n{}| ", indent_str)),
+                        parts.join(&format!("\n{indent_str}| ")),
                         indent_str
                     )
                 }
@@ -846,7 +830,7 @@ where
 
     for (lhs, rule) in grammar.rules() {
         let referenced = collect_referenced_rules(&rule.rhs);
-        if referenced.iter().any(|r| *r == *lhs) {
+        if referenced.contains(lhs) {
             recursive.push(lhs.clone());
         }
     }
@@ -877,7 +861,6 @@ where
     // For each rule, check if it can reach itself through the dependency graph
     for (start, _) in grammar.rules() {
         if can_reach(
-            grammar,
             &dependencies,
             start,
             start,
@@ -891,8 +874,7 @@ where
 }
 
 /// Check if a rule can reach another rule through the dependency graph
-fn can_reach<T, N>(
-    grammar: &Grammar<T, N>,
+fn can_reach<N>(
     dependencies: &hashbrown::HashMap<
         N,
         hashbrown::HashSet<N, ahash::RandomState>,
@@ -903,7 +885,6 @@ fn can_reach<T, N>(
     visited: &mut hashbrown::HashSet<N, ahash::RandomState>,
 ) -> bool
 where
-    T: Token,
     N: NonTerminal + Clone,
 {
     if from == to && !visited.is_empty() {
@@ -916,7 +897,7 @@ where
 
     if let Some(refs) = dependencies.get(from) {
         for ref_rule in refs {
-            if can_reach(grammar, dependencies, ref_rule, to, visited) {
+            if can_reach(dependencies, ref_rule, to, visited) {
                 return true;
             }
         }
@@ -941,9 +922,9 @@ where
         let referenced = collect_referenced_rules(&rule.rhs);
         for ref_rule in referenced {
             // Escape rule names for mermaid (replace special chars)
-            let lhs_name = lhs.name().replace('-', "_").replace(' ', "_");
-            let ref_name = ref_rule.name().replace('-', "_").replace(' ', "_");
-            output.push_str(&format!("    {} --> {}\n", lhs_name, ref_name));
+            let lhs_name = lhs.name().replace(['-', ' '], "_");
+            let ref_name = ref_rule.name().replace(['-', ' '], "_");
+            writeln!(output, "    {lhs_name} --> {ref_name}").unwrap();
         }
     }
 
@@ -1053,12 +1034,14 @@ where
         let rule_list: Vec<String> = features
             .error_recovery_rules
             .iter()
-            .map(|r| format!("`{}`", r))
+            .map(|r| format!("`{r}`"))
             .collect();
-        output.push_str(&format!(
-            "The following rules have **error recovery enabled** for their delimited expressions: {}.\n",
-            rule_list.join(", ")
-        ));
+        let rule_list_str = rule_list.join(", ");
+        writeln!(
+            output,
+            "The following rules have **error recovery enabled** for their delimited expressions: {rule_list_str}."
+        )
+        .unwrap();
         output.push_str("This means:\n");
         output.push_str("- If a syntax error occurs inside a delimited expression, the parser can skip to the closing delimiter\n");
         output.push_str(
@@ -1075,13 +1058,14 @@ where
         let rule_list: Vec<String> = features
             .nullable_rules
             .iter()
-            .map(|r| format!("`{}`", r))
+            .map(|r| format!("`{r}`"))
             .collect();
         let rule_list_str = rule_list.join(", ");
-        output.push_str(&format!(
-            "The following rules are **nullable** (can match empty input): {}.\n",
-            rule_list_str
-        ));
+        writeln!(
+            output,
+            "The following rules are **nullable** (can match empty input): {rule_list_str}."
+        )
+        .unwrap();
 
         output.push_str("This is typically achieved by making the content optional with the `?` quantifier or using `Empty`.\n\n");
     }
@@ -1100,7 +1084,15 @@ where
             }
         }
 
-        if !paths_found.is_empty() {
+        if paths_found.is_empty() {
+            let rule_list_str = features
+                .indirect_recursive_rules
+                .iter()
+                .map(|r| format!("`{r}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(output, "- Rules with indirect recursion: {rule_list_str}").unwrap();
+        } else {
             // Sort paths by length (shorter paths first) and take up to 3
             paths_found.sort_by(|a, b| {
                 // Sort by path length (number of arrows), then alphabetically
@@ -1109,18 +1101,8 @@ where
                 a_len.cmp(&b_len).then_with(|| a.0.cmp(&b.0))
             });
             for (rule_name, path) in paths_found.iter().take(3) {
-                output.push_str(&format!("- `{}` → {}\n", rule_name, path));
+                writeln!(output, "- `{rule_name}` → {path}").unwrap();
             }
-        } else {
-            output.push_str(&format!(
-                "- Rules with indirect recursion: {}\n",
-                features
-                    .indirect_recursive_rules
-                    .iter()
-                    .map(|r| format!("`{}`", r))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
         }
         output.push_str("This allows arbitrary nesting depth in the grammar.\n\n");
     }
@@ -1151,18 +1133,14 @@ where
     let start_rule_clone = start_rule.clone();
     if let Some(refs) = dependencies.get(&start_rule_clone) {
         for first_ref in refs {
-            if let Some(mut path) = find_path_to_rule(
-                grammar,
-                &dependencies,
-                first_ref,
-                &start_rule_clone,
-                &mut Vec::new(),
-            ) {
+            if let Some(mut path) =
+                find_path_to_rule(&dependencies, first_ref, &start_rule_clone, &mut Vec::new())
+            {
                 // Prepend the start rule to show the full cycle
                 path.insert(0, start_rule_clone.clone());
                 return Some(
                     path.iter()
-                        .map(|n| n.name())
+                        .map(NonTerminal::name)
                         .collect::<Vec<_>>()
                         .join(" → "),
                 );
@@ -1174,15 +1152,13 @@ where
 }
 
 /// Find a path from a rule back to itself
-fn find_path_to_rule<T, N>(
-    _grammar: &Grammar<T, N>,
+fn find_path_to_rule<N>(
     dependencies: &hashbrown::HashMap<N, Vec<N>, ahash::RandomState>,
     current: &N,
     target: &N,
     path: &mut Vec<N>,
 ) -> Option<Vec<N>>
 where
-    T: Token,
     N: NonTerminal + Clone,
 {
     if current == target && !path.is_empty() {
@@ -1198,8 +1174,7 @@ where
 
     if let Some(refs) = dependencies.get(current) {
         for ref_rule in refs {
-            if let Some(result) = find_path_to_rule(_grammar, dependencies, ref_rule, target, path)
-            {
+            if let Some(result) = find_path_to_rule(dependencies, ref_rule, target, path) {
                 return Some(result);
             }
         }
@@ -1264,17 +1239,17 @@ fn collect_expression_details_impl<T, N>(
             result.push(format!("Negative lookahead: `!{inner}`"));
         }
         Expr::RecoveryPoint { sync_tokens, .. } => {
-            if !sync_tokens.is_empty() {
+            if sync_tokens.is_empty() {
+                result.push("Recovery point (no sync tokens specified)".to_string());
+            } else {
                 let token_names: Vec<String> = sync_tokens
                     .iter()
                     .map(|t| format!("`{}`", token_name(t)))
                     .collect();
+                let token_names_str = token_names.join(", ");
                 result.push(format!(
-                    "Recovery point with sync tokens: {}",
-                    token_names.join(", ")
+                    "Recovery point with sync tokens: {token_names_str}"
                 ));
-            } else {
-                result.push("Recovery point (no sync tokens specified)".to_string());
             }
         }
         Expr::Seq(exprs) | Expr::Choice(exprs) => {
@@ -1432,9 +1407,13 @@ mod tests {
         }
     }
 
-    #[allow(clippy::trivially_copy_pass_by_ref, clippy::uninlined_format_args)]
-    fn token_name(t: &TestToken) -> String {
+    fn token_name_impl(t: TestToken) -> String {
         format!("{t:?}")
+    }
+
+    // Wrapper to match API signature (Fn(&T) -> String) while satisfying clippy
+    fn token_name(t: &TestToken) -> String {
+        token_name_impl(*t)
     }
 
     #[test]

@@ -1,5 +1,3 @@
-#![allow(clippy::semicolon_if_nothing_returned)]
-
 use criterion::{Criterion, criterion_group, criterion_main};
 use sipha::backend::ParserBackend;
 use sipha::backend::ll::{LlConfig, LlParser};
@@ -178,7 +176,7 @@ fn bench_full_parse(c: &mut Criterion) {
         b.iter(|| {
             let mut parser = LlParser::new(&grammar, config.clone()).unwrap();
             black_box(parser.parse(black_box(&tokens), BenchNonTerminal::Expr));
-        })
+        });
     });
 }
 
@@ -223,8 +221,9 @@ fn bench_incremental_parse(c: &mut Criterion) {
                 Some(&result1.root),
                 black_box(&edits),
                 BenchNonTerminal::Expr,
+                None, // No grammar for cache population in benchmark
             ));
-        })
+        });
     });
 }
 
@@ -236,7 +235,7 @@ fn bench_grammar_analysis(c: &mut Criterion) {
     c.bench_function("grammar_metrics", |b| {
         b.iter(|| {
             black_box(GrammarMetrics::compute(black_box(&grammar)));
-        })
+        });
     });
 }
 

@@ -138,6 +138,7 @@ fn test_lr_config_custom() {
         error_recovery: false,
         max_errors: 50,
         use_lalr: false,
+        enable_token_insertion: true,
     };
 
     assert!(!config.error_recovery);

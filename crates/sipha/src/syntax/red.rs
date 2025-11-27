@@ -636,6 +636,69 @@ impl<K: SyntaxKind> SyntaxToken<K> {
             })
         })
     }
+
+    /// Get the next sibling token, skipping any nodes.
+    ///
+    /// Returns `None` if there is no next token sibling.
+    #[must_use]
+    pub fn next_token(&self) -> Option<Self> {
+        let parent = self.parent()?;
+        let children = parent.green.children();
+        let start_index = (self.index + 1) as usize;
+
+        for (idx, green) in children.iter().enumerate().skip(start_index) {
+            if let GreenElement::Token(token) = green {
+                // Calculate offset for this token
+                let mut offset = parent.offset;
+                for child in children.iter().take(idx) {
+                    offset = TextSize::from(offset.into() + child.text_len().into());
+                }
+
+                return Some(Self {
+                    green: token.clone(),
+                    parent: self.parent.clone(),
+                    index: u32::try_from(idx).unwrap_or(u32::MAX),
+                    offset,
+                });
+            }
+        }
+
+        None
+    }
+
+    /// Get the previous sibling token, skipping any nodes.
+    ///
+    /// Returns `None` if there is no previous token sibling.
+    #[must_use]
+    pub fn prev_token(&self) -> Option<Self> {
+        if self.index == 0 {
+            return None;
+        }
+
+        let parent = self.parent()?;
+        let children = parent.green.children();
+        let start_index = self.index as usize;
+
+        // Iterate backwards from the token before this one
+        for idx in (0..start_index).rev() {
+            if let Some(GreenElement::Token(token)) = children.get(idx) {
+                // Calculate offset for this token
+                let mut offset = parent.offset;
+                for child in children.iter().take(idx) {
+                    offset = TextSize::from(offset.into() + child.text_len().into());
+                }
+
+                return Some(Self {
+                    green: token.clone(),
+                    parent: self.parent.clone(),
+                    index: u32::try_from(idx).unwrap_or(u32::MAX),
+                    offset,
+                });
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Clone)]

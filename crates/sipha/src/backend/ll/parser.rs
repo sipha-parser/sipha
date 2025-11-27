@@ -88,6 +88,78 @@ where
     }
 }
 
+/// Build final parse result from builder and metrics
+fn build_parse_result<K: crate::syntax::SyntaxKind>(
+    builder: GreenNodeBuilder<K>,
+    root_kind: K,
+    pos: usize,
+    start_time: std::time::Instant,
+    errors: &mut Vec<ParseError>,
+) -> (std::sync::Arc<GreenNode<K>>, ParseMetrics) {
+    let node_count = builder.node_count();
+    let root = match builder.finish() {
+        Ok(root) => root,
+        Err(e) => {
+            errors.push(ParseError::InvalidSyntax {
+                span: crate::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
+                message: format!("Builder error: {e}"),
+            });
+            GreenNode::new(root_kind, [], TextSize::zero())
+        }
+    };
+
+    let metrics = ParseMetrics {
+        parse_time: start_time.elapsed(),
+        tokens_consumed: pos,
+        nodes_created: node_count,
+        ..Default::default()
+    };
+
+    (root, metrics)
+}
+
+/// Create error result when syntax kind cannot be determined (for incremental parsing)
+fn create_incremental_error_result<T, N>(
+    entry: &N,
+    input: &[T],
+    grammar: &Grammar<T, N>,
+    mut errors: Vec<ParseError>,
+) -> ParseResult<T, N>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    let error_kind = input
+        .first()
+        .map(crate::grammar::Token::kind)
+        .or_else(|| entry.default_syntax_kind())
+        .or_else(|| grammar.try_get_fallback_kind())
+        .unwrap_or_else(|| {
+            errors.push(ParseError::InvalidSyntax {
+                span: crate::syntax::TextRange::at(TextSize::zero(), DEFAULT_ERROR_SPAN_LEN),
+                message: format!(
+                    "Cannot determine syntax kind for error result. \
+                     Entry point '{}' must implement NonTerminal::default_syntax_kind() \
+                     to return Some for error cases, or provide at least one token in input.",
+                    entry.name()
+                ),
+            });
+            entry.default_syntax_kind().expect(
+                "CRITICAL: Cannot create error result - no syntax kind available. \
+                 This is a configuration error. You must implement \
+                 NonTerminal::default_syntax_kind() to return Some for error cases.",
+            )
+        });
+
+    ParseResult {
+        root: GreenNode::new(error_kind, [], TextSize::zero()),
+        errors,
+        warnings: Vec::new(),
+        metrics: ParseMetrics::default(),
+        _phantom: std::marker::PhantomData,
+    }
+}
+
 /// Parser state for LL parser
 #[derive(Debug)]
 pub struct LlParserState<T, N>
@@ -340,8 +412,134 @@ where
     }
 }
 
+/// Parse a delimited expression with error recovery
+#[allow(clippy::too_many_arguments)]
+fn parse_delimited<T, N>(
+    ctx: &mut ParseContext<'_, T, N>,
+    pos: &mut ParsePosition,
+    open: &Expr<T, N>,
+    content: &Expr<T, N>,
+    close: &Expr<T, N>,
+    recover: bool,
+    output: &mut ParseOutput<'_, T::Kind>,
+    session: Option<&crate::incremental::IncrementalSession<'_, T::Kind>>,
+) -> Result<(), ParseError>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    parse_expr_inner(ctx, pos, open, output, session)?;
+    let saved_pos = pos.pos;
+    let saved_text_pos = pos.text_pos;
+    let result = parse_expr_inner(ctx, pos, content, output, session);
+
+    if result.is_err() && recover && ctx.config.error_recovery {
+        // Error recovery: try to find and consume the close token
+        let close_first = close.first_set(ctx.grammar);
+        let mut recovered = false;
+
+        while pos.pos < ctx.input.len() {
+            if let Some(token) = ctx.input.get(pos.pos) {
+                if close_first.contains(token) {
+                    recovered = true;
+                    break;
+                }
+                pos.pos += 1;
+                pos.text_pos += token.text_len();
+            } else {
+                break;
+            }
+        }
+
+        if recovered {
+            parse_expr_inner(ctx, pos, close, output, session)?;
+            let span_len =
+                TextSize::from((pos.text_pos).into().saturating_sub(saved_text_pos.into()));
+            output.warnings.push(ParseWarning {
+                span: crate::syntax::TextRange::at(saved_text_pos, span_len),
+                message: "Recovered from error in delimited expression".to_string(),
+                severity: crate::error::Severity::Warning,
+            });
+            Ok(())
+        } else {
+            pos.pos = saved_pos;
+            pos.text_pos = saved_text_pos;
+            parse_expr_inner(ctx, pos, close, output, session)?;
+            result
+        }
+    } else {
+        parse_expr_inner(ctx, pos, close, output, session)?;
+        result
+    }
+}
+
+/// Parse a separated list expression
+#[allow(clippy::too_many_arguments)]
+fn parse_separated<T, N>(
+    ctx: &mut ParseContext<'_, T, N>,
+    pos: &mut ParsePosition,
+    item: &Expr<T, N>,
+    separator: &Expr<T, N>,
+    min: usize,
+    trailing: crate::grammar::TrailingSeparator,
+    output: &mut ParseOutput<'_, T::Kind>,
+    session: Option<&crate::incremental::IncrementalSession<'_, T::Kind>>,
+) -> Result<(), ParseError>
+where
+    T: Token,
+    N: NonTerminal,
+{
+    let mut count = 0;
+    let mut first = true;
+
+    loop {
+        if !first {
+            let saved_pos = pos.pos;
+            let saved_text_pos = pos.text_pos;
+            if parse_expr_inner(ctx, pos, separator, output, session).is_err() {
+                pos.pos = saved_pos;
+                pos.text_pos = saved_text_pos;
+                break;
+            }
+        }
+        first = false;
+
+        let saved_pos = pos.pos;
+        let saved_text_pos = pos.text_pos;
+        if parse_expr_inner(ctx, pos, item, output, session).is_err() {
+            pos.pos = saved_pos;
+            pos.text_pos = saved_text_pos;
+            break;
+        }
+        count += 1;
+    }
+
+    // Check trailing separator
+    match trailing {
+        crate::grammar::TrailingSeparator::Forbid | crate::grammar::TrailingSeparator::Allow => {
+            // Already handled
+        }
+        crate::grammar::TrailingSeparator::Require => {
+            let saved_pos = pos.pos;
+            let saved_text_pos = pos.text_pos;
+            if parse_expr_inner(ctx, pos, separator, output, session).is_err() {
+                pos.pos = saved_pos;
+                pos.text_pos = saved_text_pos;
+            }
+        }
+    }
+
+    if count < min {
+        Err(ParseError::InvalidSyntax {
+            span: crate::syntax::TextRange::at(pos.text_pos, DEFAULT_ERROR_SPAN_LEN),
+            message: format!("Expected at least {min} items, got {count}"),
+        })
+    } else {
+        Ok(())
+    }
+}
+
 /// Parse input using LL parser
-#[allow(clippy::too_many_lines)]
 pub fn parse<T, N>(
     grammar: &Grammar<T, N>,
     table: &ParsingTable<T, N>,
@@ -357,7 +555,6 @@ where
     let mut builder = GreenNodeBuilder::new();
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
-    let mut metrics = ParseMetrics::default();
 
     let start_time = std::time::Instant::now();
 
@@ -399,22 +596,7 @@ where
     }
 
     // Don't call finish_node() on root - finish() expects it on the stack
-    let node_count = builder.node_count();
-    let root = match builder.finish() {
-        Ok(root) => root,
-        Err(e) => {
-            errors.push(ParseError::InvalidSyntax {
-                span: crate::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
-                message: format!("Builder error: {e}"),
-            });
-            // Return a minimal error tree
-            GreenNode::new(root_kind, [], TextSize::zero())
-        }
-    };
-
-    metrics.parse_time = start_time.elapsed();
-    metrics.tokens_consumed = pos;
-    metrics.nodes_created = node_count;
+    let (root, metrics) = build_parse_result(builder, root_kind, pos, start_time, &mut errors);
 
     ParseResult {
         root,
@@ -450,7 +632,7 @@ where
 }
 
 /// Parse with incremental session support, attempting node reuse
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 fn parse_incremental_with_session<T, N>(
     grammar: &Grammar<T, N>,
     table: &ParsingTable<T, N>,
@@ -467,7 +649,6 @@ where
     let mut builder = GreenNodeBuilder::new();
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
-    let mut metrics = ParseMetrics::default();
 
     let start_time = std::time::Instant::now();
 
@@ -485,35 +666,7 @@ where
                 entry.name()
             ),
         });
-        let error_kind = input
-            .first()
-            .map(crate::grammar::Token::kind)
-            .or_else(|| entry.default_syntax_kind())
-            .or_else(|| grammar.try_get_fallback_kind())
-            .unwrap_or_else(|| {
-                errors.push(ParseError::InvalidSyntax {
-                    span: crate::syntax::TextRange::at(TextSize::zero(), DEFAULT_ERROR_SPAN_LEN),
-                    message: format!(
-                        "Cannot determine syntax kind for error result. \
-                         Entry point '{}' must implement NonTerminal::default_syntax_kind() \
-                         to return Some for error cases, or provide at least one token in input.",
-                        entry.name()
-                    ),
-                });
-                entry.default_syntax_kind().expect(
-                    "CRITICAL: Cannot create error result - no syntax kind available. \
-                          This is a configuration error. You must implement \
-                          NonTerminal::default_syntax_kind() to return Some for error cases.",
-                )
-            });
-
-        return ParseResult {
-            root: GreenNode::new(error_kind, [], TextSize::zero()),
-            errors,
-            warnings,
-            metrics,
-            _phantom: std::marker::PhantomData,
-        };
+        return create_incremental_error_result(entry, input, grammar, errors);
     };
     builder.start_node(root_kind);
 
@@ -549,21 +702,7 @@ where
     }
 
     // Don't call finish_node() on root - finish() expects it on the stack
-    let node_count = builder.node_count();
-    let root = match builder.finish() {
-        Ok(root) => root,
-        Err(e) => {
-            errors.push(ParseError::InvalidSyntax {
-                span: crate::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
-                message: format!("Builder error: {e}"),
-            });
-            GreenNode::new(root_kind, [], TextSize::zero())
-        }
-    };
-
-    metrics.parse_time = start_time.elapsed();
-    metrics.tokens_consumed = pos;
-    metrics.nodes_created = node_count;
+    let (root, metrics) = build_parse_result(builder, root_kind, pos, start_time, &mut errors);
 
     ParseResult {
         root,
@@ -639,14 +778,18 @@ where
     result
 }
 
+/// Parameters for node reuse attempt
+struct ReuseParams<'a, T: Token> {
+    text_pos: &'a mut TextSize,
+    pos: &'a mut usize,
+    input: &'a [T],
+    expected_kind: Option<T::Kind>,
+}
+
 /// Helper to try reusing a node at the current position
-#[allow(clippy::too_many_arguments)]
 fn try_reuse_node<T>(
     session: Option<&crate::incremental::IncrementalSession<'_, T::Kind>>,
-    text_pos: &mut TextSize,
-    pos: &mut usize,
-    input: &[T],
-    expected_kind: Option<T::Kind>,
+    params: &mut ReuseParams<'_, T>,
     builder: &mut GreenNodeBuilder<T::Kind>,
 ) -> Result<bool, ParseError>
 where
@@ -656,29 +799,29 @@ where
         return Ok(false);
     };
 
-    if let Some(candidate) = session.find_reusable_at(*text_pos, expected_kind) {
+    if let Some(candidate) = session.find_reusable_at(*params.text_pos, params.expected_kind) {
         // Reuse the node
         builder
             .reuse_node(candidate.node.clone())
             .map_err(|_| ParseError::InvalidSyntax {
-                span: crate::syntax::TextRange::at(*text_pos, TextSize::from(1)),
+                span: crate::syntax::TextRange::at(*params.text_pos, TextSize::from(1)),
                 message: "Failed to reuse node in builder".to_string(),
             })?;
 
         // Advance token position by counting tokens until we've consumed the node's text length
         let target_text_pos = candidate.range.end();
-        let mut current_text = *text_pos;
-        while *pos < input.len() && current_text < target_text_pos {
-            let token = &input[*pos];
+        let mut current_text = *params.text_pos;
+        while *params.pos < params.input.len() && current_text < target_text_pos {
+            let token = &params.input[*params.pos];
             let token_len = token.text_len();
             if current_text + token_len > target_text_pos {
                 break;
             }
-            *pos += 1;
+            *params.pos += 1;
             current_text += token_len;
         }
 
-        *text_pos = current_text;
+        *params.text_pos = current_text;
         Ok(true)
     } else {
         Ok(false)
@@ -898,14 +1041,13 @@ where
                 .or_else(|| ctx.input.get(pos.pos).map(crate::grammar::Token::kind))
                 .or_else(|| nt.default_syntax_kind());
 
-            if try_reuse_node(
-                session,
-                &mut pos.text_pos,
-                &mut pos.pos,
-                ctx.input,
+            let mut reuse_params = ReuseParams {
+                text_pos: &mut pos.text_pos,
+                pos: &mut pos.pos,
+                input: ctx.input,
                 expected_kind,
-                output.builder,
-            )? {
+            };
+            if try_reuse_node(session, &mut reuse_params, output.builder)? {
                 return Ok(());
             }
 
@@ -1083,116 +1225,14 @@ where
             separator,
             min,
             trailing,
-        } => {
-            let mut count = 0;
-            let mut first = true;
-
-            loop {
-                if !first {
-                    let saved_pos = pos.pos;
-                    let saved_text_pos = pos.text_pos;
-                    if parse_expr_inner(ctx, pos, separator, output, session).is_err() {
-                        pos.pos = saved_pos;
-                        pos.text_pos = saved_text_pos;
-                        break;
-                    }
-                }
-                first = false;
-
-                let saved_pos = pos.pos;
-                let saved_text_pos = pos.text_pos;
-                if parse_expr_inner(ctx, pos, item, output, session).is_err() {
-                    pos.pos = saved_pos;
-                    pos.text_pos = saved_text_pos;
-                    break;
-                }
-                count += 1;
-            }
-
-            // Check trailing separator
-            match trailing {
-                crate::grammar::TrailingSeparator::Forbid
-                | crate::grammar::TrailingSeparator::Allow => {
-                    // Already handled - separator parse failed or optional
-                }
-                crate::grammar::TrailingSeparator::Require => {
-                    let saved_pos = pos.pos;
-                    let saved_text_pos = pos.text_pos;
-                    if parse_expr_inner(ctx, pos, separator, output, session).is_ok() {
-                        // Good
-                    } else {
-                        pos.pos = saved_pos;
-                        pos.text_pos = saved_text_pos;
-                    }
-                }
-            }
-
-            if count < *min {
-                Err(ParseError::InvalidSyntax {
-                    span: crate::syntax::TextRange::at(pos.text_pos, DEFAULT_ERROR_SPAN_LEN),
-                    message: format!("Expected at least {min} items, got {count}"),
-                })
-            } else {
-                Ok(())
-            }
-        }
+        } => parse_separated(ctx, pos, item, separator, *min, *trailing, output, session),
 
         Expr::Delimited {
             open,
             content,
             close,
             recover,
-        } => {
-            parse_expr_inner(ctx, pos, open, output, session)?;
-            let saved_pos = pos.pos;
-            let saved_text_pos = pos.text_pos;
-            let result = parse_expr_inner(ctx, pos, content, output, session);
-
-            if result.is_err() && *recover && ctx.config.error_recovery {
-                // Error recovery: try to find and consume the close token
-                // Skip tokens until we find the close token or EOF
-                let close_first = close.first_set(ctx.grammar);
-                let mut recovered = false;
-
-                while pos.pos < ctx.input.len() {
-                    if let Some(token) = ctx.input.get(pos.pos) {
-                        if close_first.contains(token) {
-                            // Found close token, consume it
-                            recovered = true;
-                            break;
-                        }
-                        // Skip this token
-                        pos.pos += 1;
-                        pos.text_pos += token.text_len();
-                    } else {
-                        break;
-                    }
-                }
-
-                if recovered {
-                    // Parse the close token
-                    parse_expr_inner(ctx, pos, close, output, session)?;
-                    // Report the recovery
-                    let span_len =
-                        TextSize::from((pos.text_pos).into().saturating_sub(saved_text_pos.into()));
-                    output.warnings.push(ParseWarning {
-                        span: crate::syntax::TextRange::at(saved_text_pos, span_len),
-                        message: "Recovered from error in delimited expression".to_string(),
-                        severity: crate::error::Severity::Warning,
-                    });
-                    Ok(())
-                } else {
-                    // Couldn't recover, restore position and return error
-                    pos.pos = saved_pos;
-                    pos.text_pos = saved_text_pos;
-                    parse_expr_inner(ctx, pos, close, output, session)?;
-                    result
-                }
-            } else {
-                parse_expr_inner(ctx, pos, close, output, session)?;
-                result
-            }
-        }
+        } => parse_delimited(ctx, pos, open, content, close, *recover, output, session),
 
         Expr::RecoveryPoint { expr, sync_tokens } => {
             let result = parse_expr_inner(ctx, pos, expr, output, session);

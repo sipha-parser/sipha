@@ -9,6 +9,13 @@ pub struct LrConfig {
 
     /// Use LALR(1) instead of canonical LR(1) (smaller tables, same power for most grammars)
     pub use_lalr: bool,
+
+    /// Enable token insertion for error recovery
+    ///
+    /// When enabled, the parser will try inserting expected tokens before skipping tokens.
+    /// This can help recover from missing tokens (e.g., missing semicolons) without
+    /// skipping valid user code.
+    pub enable_token_insertion: bool,
 }
 
 impl Default for LrConfig {
@@ -17,6 +24,7 @@ impl Default for LrConfig {
             error_recovery: true,
             max_errors: 100,
             use_lalr: true, // LALR(1) is more practical for most grammars
+            enable_token_insertion: true, // Enable token insertion by default
         }
     }
 }

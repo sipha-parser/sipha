@@ -1,9 +1,12 @@
 #[cfg(feature = "query")]
 use crate::syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
-/// Type alias for custom predicate function
+/// Type alias for custom predicate function.
+///
+/// The complexity comes from the trait object, which is necessary for
+/// dynamic predicate functions. The common case (kind matching) avoids
+/// this complexity by using the `NodePredicate::Kind` variant.
 #[cfg(feature = "query")]
-#[allow(clippy::type_complexity)]
 type NodePredicateFn<K> = Box<dyn Fn(&SyntaxNode<K>) -> bool>;
 
 /// Predicate for matching nodes - avoids boxing for common cases

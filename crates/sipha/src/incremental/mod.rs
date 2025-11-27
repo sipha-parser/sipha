@@ -71,7 +71,73 @@ use crate::syntax::{GreenNode, TextRange, TextSize};
 use std::sync::Arc;
 
 const LOOKBACK_PADDING: TextSize = TextSize::from(16);
-const MAX_REUSE_CANDIDATES: usize = 256;
+
+/// Configuration for reuse candidate budget in incremental parsing.
+#[derive(Debug, Clone, Copy)]
+pub enum ReuseBudget {
+    /// Fixed budget with a maximum number of candidates.
+    Fixed(usize),
+    /// Heuristic-based budget calculation.
+    Heuristic {
+        /// Maximum tree depth to consider (deeper trees allow more candidates).
+        max_depth: usize,
+        /// Maximum number of nodes to consider (larger files allow more candidates).
+        max_nodes: usize,
+    },
+}
+
+impl Default for ReuseBudget {
+    fn default() -> Self {
+        Self::Heuristic {
+            max_depth: 20,
+            max_nodes: 1000,
+        }
+    }
+}
+
+impl ReuseBudget {
+    /// Calculate the budget based on the heuristic parameters.
+    ///
+    /// The calculation considers:
+    /// - Tree depth: deeper trees get more candidates (up to `max_depth`)
+    /// - File size: larger files get more candidates (up to `max_nodes`)
+    /// - Affected region size: smaller affected regions get more candidates
+    fn calculate(&self, tree_depth: usize, file_size: TextSize, affected_size: TextSize) -> usize {
+        match self {
+            Self::Fixed(budget) => *budget,
+            Self::Heuristic {
+                max_depth,
+                max_nodes,
+            } => {
+                // Base budget from tree depth (deeper = more candidates)
+                let depth_factor = (tree_depth.min(*max_depth) * 10).max(50);
+
+                // File size factor (larger files = more candidates, but with diminishing returns)
+                let file_size_u64 = u64::from(file_size.into());
+                let size_factor = ((file_size_u64 / 100) as usize).min(*max_nodes / 2);
+
+                // Affected region factor (smaller affected regions = more candidates)
+                let affected_size_u64 = u64::from(affected_size.into());
+                let total_size_u64 = u64::from(file_size.into());
+                // Intentional: precision loss acceptable for ratio calculation
+                #[allow(clippy::cast_precision_loss)]
+                let affected_ratio = if total_size_u64 > 0 {
+                    affected_size_u64 as f64 / total_size_u64 as f64
+                } else {
+                    1.0
+                };
+                // Inverse relationship: smaller affected ratio = more candidates
+                // Intentional: truncation acceptable for factor calculation
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let affected_factor = ((1.0 - affected_ratio.min(1.0)) * 200.0) as usize;
+
+                // Combine factors with reasonable bounds
+                let budget = depth_factor + size_factor + affected_factor;
+                budget.min(*max_nodes).max(50) // Ensure minimum of 50, maximum of max_nodes
+            }
+        }
+    }
+}
 
 pub struct IncrementalParser<P, T: crate::grammar::Token, N> {
     parser: P,
@@ -89,12 +155,28 @@ pub struct IncrementalSession<'a, K: crate::syntax::SyntaxKind> {
 }
 
 impl<'a, K: crate::syntax::SyntaxKind> IncrementalSession<'a, K> {
+    /// Create a new incremental session with default heuristic budget.
     #[must_use]
     pub fn new(old_tree: Option<&'a GreenNode<K>>, edits: &'a [TextEdit]) -> Self {
+        Self::new_with_budget(old_tree, edits, ReuseBudget::default())
+    }
+
+    /// Create a new incremental session with a custom reuse budget.
+    #[must_use]
+    pub fn new_with_budget(
+        old_tree: Option<&'a GreenNode<K>>,
+        edits: &'a [TextEdit],
+        budget: ReuseBudget,
+    ) -> Self {
         let affected = AffectedRegion::from_edits(edits, old_tree.map(GreenNode::text_len));
         let reusable = match old_tree {
             Some(tree) if !edits.is_empty() => {
-                find_reusable_nodes(tree, affected.expanded(), MAX_REUSE_CANDIDATES)
+                // Calculate budget based on tree characteristics
+                let tree_depth = calculate_tree_depth(tree);
+                let file_size = tree.text_len();
+                let affected_size = affected.union().len();
+                let budget_value = budget.calculate(tree_depth, file_size, affected_size);
+                find_reusable_nodes(tree, affected.expanded(), budget_value)
             }
             _ => Vec::new(),
         };
@@ -328,15 +410,24 @@ where
         &mut self.parser
     }
 
+    /// Parse with incremental support, optionally populating the cache if grammar is provided.
+    ///
+    /// If `grammar` is provided, the cache will be automatically populated with nodes from
+    /// the parse result, enabling better performance for subsequent incremental parses.
+    ///
+    /// This method combines the functionality of `parse_incremental` and
+    /// `parse_incremental_with_grammar` into a single method for convenience.
     pub fn parse_incremental(
         &mut self,
         input: &[T],
         old_tree: Option<&GreenNode<T::Kind>>,
         edits: &[TextEdit],
         entry: N,
+        grammar: Option<&crate::grammar::Grammar<T, N>>,
     ) -> crate::error::ParseResult<T, N>
     where
         T: crate::grammar::Token,
+        N: crate::grammar::NonTerminal,
     {
         let session = IncrementalSession::new(old_tree, edits);
         let result = if edits.is_empty() {
@@ -345,11 +436,14 @@ where
             self.parser.parse_with_session(input, entry, &session)
         };
 
-        // Note: We can't update the cache here because we don't have access to the grammar.
-        // The cache will be populated by the parser backend if it supports it.
-        // For now, we just increment the version for invalidation.
-        self.cache.version += 1;
-        self.cache.evict_old_entries(2);
+        // Automatically populate cache if grammar is provided
+        if let Some(grammar) = grammar {
+            self.update_cache(&result.root, grammar);
+        } else {
+            // No grammar provided - just increment version for invalidation
+            self.cache.version += 1;
+            self.cache.evict_old_entries(2);
+        }
 
         result
     }
@@ -413,6 +507,11 @@ where
     /// );
     /// // Cache is now populated with reusable nodes
     /// ```
+    ///
+    /// # Deprecated
+    ///
+    /// This method is now a convenience wrapper around `parse_incremental` with grammar.
+    /// Consider using `parse_incremental` with `Some(grammar)` instead.
     pub fn parse_incremental_with_grammar(
         &mut self,
         input: &[T],
@@ -423,18 +522,9 @@ where
     ) -> crate::error::ParseResult<T, N>
     where
         T: crate::grammar::Token,
+        N: crate::grammar::NonTerminal,
     {
-        let session = IncrementalSession::new(old_tree, edits);
-        let result = if edits.is_empty() {
-            self.parser.parse(input, entry)
-        } else {
-            self.parser.parse_with_session(input, entry, &session)
-        };
-
-        // Update cache with nodes from the parse result
-        self.update_cache(&result.root, grammar);
-
-        result
+        self.parse_incremental(input, old_tree, edits, entry, Some(grammar))
     }
 
     /// Update cache after parsing by populating it with nodes from the parse result.
@@ -538,6 +628,18 @@ impl<K: crate::syntax::SyntaxKind> ParseCache<K> {
         let min_version = self.version.saturating_sub(max_versions);
         self.nodes.retain(|key, _| key.version >= min_version);
     }
+}
+
+/// Calculate the maximum depth of a green tree.
+fn calculate_tree_depth<K: crate::syntax::SyntaxKind>(root: &GreenNode<K>) -> usize {
+    let mut max_depth = 0;
+    crate::syntax::utils::visit_green_spans(
+        root,
+        |span: crate::syntax::utils::GreenNodeSpan<'_, K>| {
+            max_depth = max_depth.max(span.depth);
+        },
+    );
+    max_depth
 }
 
 fn find_reusable_nodes<K: crate::syntax::SyntaxKind>(

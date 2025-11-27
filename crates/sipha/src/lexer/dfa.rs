@@ -4,9 +4,10 @@ use crate::lexer::{Token, TokenValue};
 use crate::syntax::{SyntaxKind, TextRange, TextSize};
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
-// Text positions are extremely unlikely to exceed u32::MAX (4GB)
-#[allow(clippy::cast_possible_truncation)]
 /// State ID in the DFA
+///
+/// Uses u32 which is sufficient for all practical DFA sizes.
+/// Conversions to usize for indexing are safe on all platforms (usize >= 32 bits).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct StateId(u32);
 

@@ -221,6 +221,10 @@ where
         result
     }
 
+    /// Internal recursive helper for computing `FIRST_k` sets.
+    ///
+    /// This function is intentionally recursive to traverse expression trees.
+    /// The `only_used_in_recursion` warning is expected for this algorithm.
     #[allow(clippy::only_used_in_recursion)]
     fn compute_first_k_impl(
         grammar: &Grammar<T, N>,

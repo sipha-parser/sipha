@@ -86,6 +86,9 @@ type ActionTable<T> = HashMap<(usize, ActionKey<T>), Action, ahash::RandomState>
 /// Type alias for goto table: (state, non-terminal) -> state
 type GotoTable<N> = HashMap<(usize, N), usize, ahash::RandomState>;
 
+/// Type alias for LR state transitions: symbol -> set of items
+type Transition<T, N> = (Symbol<T, N>, HashSet<LrItem<T, N>>);
+
 /// Production rule for LR parsing
 #[derive(Debug, Clone)]
 pub struct Production<T, N> {
@@ -173,9 +176,9 @@ where
 
         // Build LR(1) automaton
         let (states, num_states) = if use_lalr {
-            Self::build_lalr1_automaton(grammar, &productions, &follow_sets)?
+            Self::build_lalr1_automaton(grammar, &productions, &follow_sets)
         } else {
-            Self::build_lr1_automaton(grammar, &productions)?
+            Self::build_lr1_automaton(grammar, &productions)
         };
 
         // Build action and goto tables
@@ -263,8 +266,7 @@ where
                 productions.push(Production::empty(lhs.clone(), prod_id));
             }
             Expr::Repeat { expr, min, max } => {
-                // For bounded repeats (max is Some and reasonable), expand to multiple productions
-                // For unbounded repeats, we'd need helper non-terminals which we can't create dynamically
+                // For bounded repeats with small max, expand to multiple productions
                 if let Some(max_val) = max {
                     if *max_val <= 10 {
                         // Expand to productions for each count from min to max
@@ -277,33 +279,72 @@ where
                             productions.push(Production::new(lhs.clone(), items, prod_id));
                         }
                     } else {
-                        return Err(format!(
-                            "Repeat expression with max={max_val} is too large to expand. \
-                             Consider using a helper non-terminal for unbounded repeats."
-                        ));
+                        // High-count bounded repeat: use recursive productions
+                        // First, create productions for the minimum count
+                        if *min > 0 {
+                            let mut items = Vec::new();
+                            for _ in 0..*min {
+                                Self::flatten_expr_to_items(expr, &mut items)?;
+                            }
+                            let prod_id = productions.len();
+                            productions.push(Production::new(lhs.clone(), items, prod_id));
+                        }
+
+                        // Then create recursive productions for additional items
+                        // Pattern: lhs -> expr lhs (for 1 more item)
+                        let mut recursive_items = Vec::new();
+                        Self::flatten_expr_to_items(expr, &mut recursive_items)?;
+                        recursive_items.push(ProductionItem::NonTerminal(lhs.clone()));
+                        let prod_id = productions.len();
+                        productions.push(Production::new(lhs.clone(), recursive_items, prod_id));
+
+                        // Also add empty production if min is 0
+                        if *min == 0 {
+                            let prod_id = productions.len();
+                            productions.push(Production::empty(lhs.clone(), prod_id));
+                        }
+
+                        // Note: The bounded nature (max) is not enforced by the grammar
+                        // but by the parser's runtime behavior. This is acceptable for LR parsers.
                     }
                 } else {
-                    // Unbounded repeat - would need helper non-terminal
-                    // For now, expand to a reasonable number of productions (0 to 10)
-                    // This is a limitation - proper support would require helper non-terminals
-                    let max_count = 10.min(*min + 10);
-                    for count in *min..=max_count {
+                    // Unbounded repeat: use recursive productions
+                    if *min == 0 {
+                        // Pattern: lhs -> ε | expr lhs
+                        // Empty production
+                        let prod_id = productions.len();
+                        productions.push(Production::empty(lhs.clone(), prod_id));
+
+                        // Recursive production: lhs -> expr lhs
+                        let mut recursive_items = Vec::new();
+                        Self::flatten_expr_to_items(expr, &mut recursive_items)?;
+                        recursive_items.push(ProductionItem::NonTerminal(lhs.clone()));
+                        let prod_id = productions.len();
+                        productions.push(Production::new(lhs.clone(), recursive_items, prod_id));
+                    } else if *min == 1 {
+                        // Pattern: lhs -> expr | expr lhs
+                        // Single item production
                         let mut items = Vec::new();
-                        for _ in 0..count {
+                        Self::flatten_expr_to_items(expr, &mut items)?;
+                        let prod_id = productions.len();
+                        productions.push(Production::new(lhs.clone(), items, prod_id));
+                    } else {
+                        // min > 1: create productions for min count, then recursive
+                        // Productions for exact min count
+                        let mut items = Vec::new();
+                        for _ in 0..*min {
                             Self::flatten_expr_to_items(expr, &mut items)?;
                         }
                         let prod_id = productions.len();
-                        productions.push(Production {
-                            lhs: lhs.clone(),
-                            rhs: items,
-                            _production_id: prod_id,
-                        });
+                        productions.push(Production::new(lhs.clone(), items, prod_id));
                     }
-                    // Also add empty production if min is 0
-                    if *min == 0 {
-                        let prod_id = productions.len();
-                        productions.push(Production::empty(lhs.clone(), prod_id));
-                    }
+                    // Recursive production: lhs -> expr lhs (for additional items)
+                    // This is common to both min == 1 and min > 1 cases
+                    let mut recursive_items = Vec::new();
+                    Self::flatten_expr_to_items(expr, &mut recursive_items)?;
+                    recursive_items.push(ProductionItem::NonTerminal(lhs.clone()));
+                    let prod_id = productions.len();
+                    productions.push(Production::new(lhs.clone(), recursive_items, prod_id));
                 }
             }
             Expr::Delimited {
@@ -488,32 +529,78 @@ where
 
     /// Build LR(1) automaton (canonical LR)
     ///
-    /// # Implementation Status
+    /// Canonical LR(1) construction builds states distinguished by both core items
+    /// (production and dot position) AND lookahead sets. Unlike LALR(1), states with
+    /// the same core but different lookahead sets are kept separate.
     ///
-    /// **Intentionally not implemented**: This function returns an error directing users
-    /// to use LALR(1) instead, which is more practical for most grammars.
-    ///
-    /// LALR(1) has the same parsing power as LR(1) for most practical grammars but with
-    /// significantly smaller table sizes. Canonical LR(1) construction is more complex
-    /// and produces larger tables without practical benefits for most use cases.
-    ///
-    /// If canonical LR(1) is truly needed, it can be implemented by:
-    /// 1. Building LR(1) items with full lookahead sets (not merged like LALR)
-    /// 2. Computing the full canonical collection of LR(1) item sets
-    /// 3. Building the automaton without state merging
+    /// This produces larger parsing tables than LALR(1) but can handle more complex
+    /// grammars that LALR(1) cannot parse correctly.
     fn build_lr1_automaton(
-        _grammar: &Grammar<T, N>,
-        _productions: &[Production<T, N>],
-    ) -> Result<(Vec<LrState<T, N>>, usize), String> {
-        Err(
-            "Full LR(1) automaton construction not yet implemented. Use LALR(1) instead."
-                .to_string(),
-        )
+        grammar: &Grammar<T, N>,
+        productions: &[Production<T, N>],
+    ) -> (Vec<LrState<T, N>>, usize) {
+        // Pre-compute FOLLOW sets for use in closure
+        let follow_sets = grammar.compute_follow_sets();
+
+        // Build LR(1) items with full lookahead sets (not merged like LALR)
+        let mut states = Vec::new();
+        let mut state_map: HashMap<LrState<T, N>, usize> = HashMap::new();
+
+        // Create initial state with item [S' -> .S, $]
+        // For LR(1), we use a special lookahead token if available, or None
+        // The reduce action for entry production will handle EOF explicitly
+        let mut initial_items: HashSet<LrItem<T, N>> = HashSet::new();
+        // Start with item without lookahead - closure will propagate lookahead properly
+        initial_items.insert(LrItem::without_lookahead(0, 0));
+
+        let initial_state = LrState::new(initial_items);
+        let initial_state_id = states.len();
+        states.push(initial_state.clone());
+        state_map.insert(initial_state, initial_state_id);
+
+        // Build closure and transitions
+        let mut worklist = vec![initial_state_id];
+        let mut visited = HashSet::new();
+        visited.insert(initial_state_id);
+
+        while let Some(state_id) = worklist.pop() {
+            let state = &states[state_id];
+
+            // Compute closure with full lookahead propagation
+            let closure = Self::closure(grammar, productions, state, &follow_sets);
+
+            // Find transitions
+            let transitions = Self::compute_transitions(grammar, productions, &closure);
+
+            for (_symbol, next_items) in transitions {
+                // Compute closure of the next state
+                let next_state_base = LrState::new(next_items);
+                let next_closure =
+                    Self::closure(grammar, productions, &next_state_base, &follow_sets);
+                let next_state = LrState::new(next_closure);
+
+                // For canonical LR(1), states are distinguished by BOTH core AND lookahead
+                // No merging happens - each distinct set of items (including lookahead) is a separate state
+                if let Some(&id) = state_map.get(&next_state) {
+                    // State already exists (same core AND lookahead) - reuse it
+                    let _ = id; // Suppress unused warning
+                } else {
+                    // New state - add it
+                    let id = states.len();
+                    states.push(next_state.clone());
+                    state_map.insert(next_state, id);
+                    if visited.insert(id) {
+                        worklist.push(id);
+                    }
+                }
+            }
+        }
+
+        let num_states = states.len();
+        (states, num_states)
     }
 
     /// Build LALR(1) automaton (more practical, smaller tables)
-    // Note: Returns Result for API consistency with build_lr1_automaton, even though this implementation never fails
-    #[allow(clippy::unnecessary_wraps)] // Result wrapper is kept for consistency with other build functions
     fn build_lalr1_automaton(
         grammar: &Grammar<T, N>,
         productions: &[Production<T, N>],
@@ -522,7 +609,7 @@ where
             hashbrown::HashSet<T, ahash::RandomState>,
             ahash::RandomState,
         >,
-    ) -> Result<(Vec<LrState<T, N>>, usize), String> {
+    ) -> (Vec<LrState<T, N>>, usize) {
         // Build LR(0) items first
         let mut states = Vec::new();
         let mut state_map: HashMap<LrState<T, N>, usize> = HashMap::new();
@@ -575,7 +662,7 @@ where
         }
 
         let num_states = states.len();
-        Ok((states, num_states))
+        (states, num_states)
     }
 
     /// Compute closure of LR items
@@ -698,13 +785,11 @@ where
     /// For each symbol (terminal or non-terminal) that appears after the dot
     /// in some item in the closure, compute the set of items reachable by
     /// advancing the dot over that symbol.
-    #[allow(clippy::type_complexity)] // The tuple structure is important and clear in context
     fn compute_transitions(
         _grammar: &Grammar<T, N>,
         productions: &[Production<T, N>],
         closure: &HashSet<LrItem<T, N>>,
-    ) -> Vec<(Symbol<T, N>, HashSet<LrItem<T, N>>)> {
-        // Type alias would reduce clarity here - the tuple structure is important
+    ) -> Vec<Transition<T, N>> {
         let mut transitions: HashMap<Symbol<T, N>, HashSet<LrItem<T, N>>> = HashMap::new();
 
         // For each item in the closure, if the dot is not at the end,
@@ -786,8 +871,261 @@ where
         state_transitions
     }
 
+    /// Check if an expression contains a specific token.
+    fn expr_contains_token(expr: &Expr<T, N>, token: &T) -> bool
+    where
+        T: PartialEq,
+    {
+        match expr {
+            Expr::Token(t) => t == token,
+            Expr::Seq(exprs) | Expr::Choice(exprs) => {
+                exprs.iter().any(|e| Self::expr_contains_token(e, token))
+            }
+            Expr::Opt(inner)
+            | Expr::Repeat { expr: inner, .. }
+            | Expr::Label { expr: inner, .. }
+            | Expr::Node { expr: inner, .. }
+            | Expr::Flatten(inner)
+            | Expr::Prune(inner)
+            | Expr::Lookahead(inner)
+            | Expr::NotLookahead(inner)
+            | Expr::RecoveryPoint { expr: inner, .. } => Self::expr_contains_token(inner, token),
+            Expr::Separated {
+                item, separator, ..
+            } => {
+                Self::expr_contains_token(item, token)
+                    || Self::expr_contains_token(separator, token)
+            }
+            Expr::Delimited {
+                open,
+                content,
+                close,
+                ..
+            } => {
+                Self::expr_contains_token(open, token)
+                    || Self::expr_contains_token(content, token)
+                    || Self::expr_contains_token(close, token)
+            }
+            _ => false,
+        }
+    }
+
+    /// Get precedence hint for a token by searching rules that use it.
+    ///
+    /// Returns the precedence and associativity if found in any rule that uses this token.
+    fn get_token_precedence(
+        grammar: &Grammar<T, N>,
+        token: &T,
+    ) -> Option<(u32, crate::grammar::Associativity)>
+    where
+        T: PartialEq,
+    {
+        // Search through all rules to find one that uses this token and has precedence
+        for (_lhs, rule) in grammar.rules() {
+            if let Some(hint) = rule.metadata.get_hint::<crate::grammar::PrecedenceHint>() {
+                // Check if this rule's expression uses the token
+                if Self::expr_contains_token(&rule.rhs, token) {
+                    return Some((hint.precedence, hint.associativity));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get precedence hint for a production by looking up its LHS rule.
+    fn get_production_precedence(
+        grammar: &Grammar<T, N>,
+        production: &Production<T, N>,
+    ) -> Option<(u32, crate::grammar::Associativity)> {
+        grammar.get_rule(&production.lhs).and_then(|rule| {
+            rule.metadata
+                .get_hint::<crate::grammar::PrecedenceHint>()
+                .map(|hint| (hint.precedence, hint.associativity))
+        })
+    }
+
+    /// Resolve a shift/reduce conflict using precedence and associativity.
+    ///
+    /// Returns true if reduce should be preferred, false if shift should be preferred.
+    fn resolve_shift_reduce_conflict(
+        grammar: &Grammar<T, N>,
+        token: &T,
+        production: &Production<T, N>,
+    ) -> bool
+    where
+        T: PartialEq,
+    {
+        let token_prec = Self::get_token_precedence(grammar, token);
+        let prod_prec = Self::get_production_precedence(grammar, production);
+
+        match (token_prec, prod_prec) {
+            (Some((tok_prec, tok_assoc)), Some((prod_prec, prod_assoc))) => {
+                // Both have precedence - compare
+                match tok_prec.cmp(&prod_prec) {
+                    std::cmp::Ordering::Greater => {
+                        // Token has higher precedence - prefer shift
+                        false
+                    }
+                    std::cmp::Ordering::Less => {
+                        // Production has higher precedence - prefer reduce
+                        true
+                    }
+                    std::cmp::Ordering::Equal => {
+                        // Equal precedence - use associativity
+                        match (tok_assoc, prod_assoc) {
+                            (crate::grammar::Associativity::Left, _) => {
+                                // Left associative - prefer reduce
+                                true
+                            }
+                            (
+                                crate::grammar::Associativity::Right
+                                | crate::grammar::Associativity::None,
+                                _,
+                            ) => {
+                                // Right associative or non-associative - prefer shift
+                                false
+                            }
+                        }
+                    }
+                }
+            }
+            (Some(_) | None, None) => {
+                // Token has precedence (production doesn't) or neither has precedence - prefer shift
+                false
+            }
+            (None, Some(_)) => {
+                // Production has precedence, token doesn't - prefer reduce
+                true
+            }
+        }
+    }
+
+    /// Handle shift action insertion with conflict resolution
+    fn handle_shift_action(
+        grammar: &Grammar<T, N>,
+        state_id: usize,
+        token: &T,
+        next_state: usize,
+        _state_transitions: &HashMap<(usize, Symbol<T, N>), usize>,
+        productions: &[Production<T, N>],
+        action_table: &mut ActionTable<T>,
+    ) {
+        let key = (state_id, ActionKey::token(token.clone()));
+        match action_table.get(&key) {
+            Some(Action::Shift(_)) => {
+                // Shift-shift conflict - keep existing (shouldn't happen in valid grammar)
+            }
+            Some(Action::Reduce(reduce_prod)) => {
+                // Shift-reduce conflict - resolve using precedence
+                let reduce_production = &productions[*reduce_prod];
+                if Self::resolve_shift_reduce_conflict(grammar, token, reduce_production) {
+                    // Precedence says reduce - keep the reduce action
+                } else {
+                    // Precedence says shift - use shift
+                    action_table.insert(key, Action::shift(next_state));
+                }
+            }
+            _ => {
+                action_table.insert(key, Action::shift(next_state));
+            }
+        }
+    }
+
+    /// Handle reduce action insertion with conflict resolution
+    fn handle_reduce_action(
+        grammar: &Grammar<T, N>,
+        state_id: usize,
+        item: &LrItem<T, N>,
+        production: &Production<T, N>,
+        productions: &[Production<T, N>],
+        lookahead_tokens: Vec<T>,
+        action_table: &mut ActionTable<T>,
+    ) {
+        for token in lookahead_tokens {
+            let key = (state_id, ActionKey::token(token.clone()));
+            match action_table.get(&key) {
+                Some(Action::Shift(_)) => {
+                    // Shift-reduce conflict - resolve using precedence
+                    if Self::resolve_shift_reduce_conflict(grammar, &token, production) {
+                        // Precedence says reduce - replace shift with reduce
+                        action_table.insert(key, Action::reduce(item.production));
+                    }
+                    // Otherwise keep shift
+                }
+                Some(Action::Reduce(other_prod)) => {
+                    // Reduce-reduce conflict - resolve using precedence
+                    if *other_prod != item.production {
+                        Self::resolve_reduce_reduce_conflict(
+                            grammar,
+                            state_id,
+                            item.production,
+                            *other_prod,
+                            productions,
+                            &token,
+                            action_table,
+                        );
+                    }
+                }
+                _ => {
+                    action_table.insert(key, Action::reduce(item.production));
+                }
+            }
+        }
+    }
+
+    /// Resolve reduce-reduce conflict using precedence
+    fn resolve_reduce_reduce_conflict(
+        grammar: &Grammar<T, N>,
+        state_id: usize,
+        current_prod: usize,
+        other_prod: usize,
+        productions: &[Production<T, N>],
+        token: &T,
+        action_table: &mut ActionTable<T>,
+    ) {
+        let current_production = &productions[current_prod];
+        let other_production = &productions[other_prod];
+
+        let current_prec = Self::get_production_precedence(grammar, current_production);
+        let other_prec = Self::get_production_precedence(grammar, other_production);
+
+        let key = (state_id, ActionKey::token(token.clone()));
+        match (current_prec, other_prec) {
+            (Some((curr_prec, _)), Some((other_prec, _))) => {
+                // Both have precedence - prefer higher
+                match curr_prec.cmp(&other_prec) {
+                    std::cmp::Ordering::Greater => {
+                        action_table.insert(key, Action::reduce(current_prod));
+                    }
+                    std::cmp::Ordering::Less => {
+                        // Keep other production (already in table)
+                    }
+                    std::cmp::Ordering::Equal => {
+                        // Equal precedence - prefer earlier production (lower index)
+                        if current_prod < other_prod {
+                            action_table.insert(key, Action::reduce(current_prod));
+                        }
+                    }
+                }
+            }
+            (Some(_), None) => {
+                // Current has precedence, other doesn't - prefer current
+                action_table.insert(key, Action::reduce(current_prod));
+            }
+            (None, Some(_)) => {
+                // Other has precedence, current doesn't - keep other
+            }
+            (None, None) => {
+                // Neither has precedence - prefer earlier production
+                if current_prod < other_prod {
+                    action_table.insert(key, Action::reduce(current_prod));
+                }
+            }
+        }
+    }
+
     /// Build action table entries for a single state.
-    #[allow(clippy::too_many_arguments)] // Complex function that needs all these parameters
+    #[allow(clippy::too_many_arguments)]
     fn build_action_entries_for_state(
         state_id: usize,
         state: &LrState<T, N>,
@@ -812,21 +1150,15 @@ where
                     if let Some(&next_state) =
                         state_transitions.get(&(state_id, Symbol::token(token.clone())))
                     {
-                        let key = (state_id, ActionKey::token(token.clone()));
-                        // Check for conflicts
-                        match action_table.get(&key) {
-                            Some(Action::Shift(_)) => {
-                                // Shift-shift conflict - keep existing (shouldn't happen in valid grammar)
-                            }
-                            Some(Action::Reduce(_)) => {
-                                // Shift-reduce conflict - prefer shift (default resolution)
-                                // In a full implementation, we'd use precedence/associativity
-                                action_table.insert(key, Action::shift(next_state));
-                            }
-                            _ => {
-                                action_table.insert(key, Action::shift(next_state));
-                            }
-                        }
+                        Self::handle_shift_action(
+                            grammar,
+                            state_id,
+                            token,
+                            next_state,
+                            state_transitions,
+                            productions,
+                            action_table,
+                        );
                     }
                 }
             } else {
@@ -859,28 +1191,15 @@ where
                         |lookahead| vec![lookahead.clone()],
                     );
 
-                    for token in lookahead_tokens {
-                        let key = (state_id, ActionKey::token(token));
-                        // Check for conflicts
-                        match action_table.get(&key) {
-                            Some(Action::Shift(_)) => {
-                                // Shift-reduce conflict - prefer shift (default)
-                                // In a full implementation, we'd use precedence
-                            }
-                            Some(Action::Reduce(other_prod)) => {
-                                // Reduce-reduce conflict
-                                if *other_prod != item.production {
-                                    // Prefer the production with lower index (default)
-                                    if item.production < *other_prod {
-                                        action_table.insert(key, Action::reduce(item.production));
-                                    }
-                                }
-                            }
-                            _ => {
-                                action_table.insert(key, Action::reduce(item.production));
-                            }
-                        }
-                    }
+                    Self::handle_reduce_action(
+                        grammar,
+                        state_id,
+                        item,
+                        &productions[item.production],
+                        productions,
+                        lookahead_tokens,
+                        action_table,
+                    );
                 }
             }
         }
@@ -989,6 +1308,27 @@ where
     #[allow(dead_code)] // Public API for debugging and statistics
     pub const fn num_states(&self) -> usize {
         self.num_states
+    }
+
+    /// Get expected tokens for a given state (tokens that have valid actions)
+    ///
+    /// This is useful for error recovery - it returns all tokens that would
+    /// result in a valid action (shift, reduce, or accept) in the given state.
+    #[must_use]
+    pub fn get_expected_tokens(&self, state: usize) -> Vec<T>
+    where
+        T: Clone,
+    {
+        let mut expected = Vec::new();
+        for ((s, key), action) in &self.action_table {
+            if *s == state
+                && !matches!(action, Action::Error)
+                && let ActionKey::Token(token) = key
+            {
+                expected.push(token.clone());
+            }
+        }
+        expected
     }
 }
 

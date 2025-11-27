@@ -5,8 +5,9 @@ use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 use std::fmt::Write;
 
-// Rule counts are extremely unlikely to exceed u32::MAX
-#[allow(clippy::cast_possible_truncation)]
+/// Builder for creating lexers from token patterns.
+///
+/// Rule counts use `u32::try_from()` for safe conversion, with fallback to 0.
 pub struct LexerBuilder<K: SyntaxKind> {
     rules: SmallVec<[LexRule<K>; 16]>,
     keywords: HashMap<compact_str::CompactString, K, ahash::RandomState>,
