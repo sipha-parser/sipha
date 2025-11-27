@@ -59,6 +59,8 @@ where
     /// and enabling fast string comparisons. Rule names are automatically interned when
     /// the grammar is built via `GrammarBuilder`.
     interner: Rodeo,
+    #[cfg(feature = "grammar-docs")]
+    token_descriptions: HashMap<T, String, ahash::RandomState>,
 }
 
 /// Production rule
@@ -77,7 +79,11 @@ where
         Self {
             lhs: self.lhs.clone(),
             rhs: self.rhs.clone(),
-            metadata: RuleMetadata::new(), // Metadata doesn't need to be cloned
+            metadata: RuleMetadata {
+                hints: SmallVec::new(), // Hints don't need to be cloned
+                #[cfg(feature = "grammar-docs")]
+                description: self.metadata.description.clone(),
+            },
         }
     }
 }
@@ -85,6 +91,8 @@ where
 /// Metadata for a rule
 pub struct RuleMetadata {
     hints: SmallVec<[Box<dyn BackendHint>; 2]>,
+    #[cfg(feature = "grammar-docs")]
+    description: Option<String>,
 }
 
 impl Default for RuleMetadata {
@@ -98,6 +106,8 @@ impl RuleMetadata {
     pub fn new() -> Self {
         Self {
             hints: SmallVec::new(),
+            #[cfg(feature = "grammar-docs")]
+            description: None,
         }
     }
 
@@ -111,6 +121,21 @@ impl RuleMetadata {
             .iter()
             .find_map(|h| h.as_any().downcast_ref::<H>())
     }
+
+    #[cfg(feature = "grammar-docs")]
+    /// Set a description for this rule
+    #[must_use]
+    pub fn with_description(mut self, description: String) -> Self {
+        self.description = Some(description);
+        self
+    }
+
+    #[cfg(feature = "grammar-docs")]
+    /// Get the description for this rule, if any
+    #[must_use]
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
 }
 
 impl<T, N> Grammar<T, N>
@@ -121,6 +146,100 @@ where
     #[must_use]
     pub fn get_rule(&self, lhs: &N) -> Option<&Rule<T, N>> {
         self.rules.get(lhs)
+    }
+
+    #[cfg(feature = "grammar-docs")]
+    /// Get the description for a token, if any
+    #[must_use]
+    pub fn token_description(&self, token: &T) -> Option<&str> {
+        self.token_descriptions.get(token).map(String::as_str)
+    }
+
+    #[cfg(feature = "grammar-docs")]
+    /// Generate markdown documentation for this grammar
+    ///
+    /// The `token_name` closure is used to format token names when no description is available.
+    /// Typically, this would format the token using its Debug implementation or a custom mapping.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{GrammarBuilder, Expr, NonTerminal, Token};
+    /// # use sipha::syntax::SyntaxKind;
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # enum MySyntaxKind { Plus, Expr }
+    /// # impl SyntaxKind for MySyntaxKind {
+    /// #     fn is_terminal(self) -> bool { matches!(self, Self::Plus) }
+    /// #     fn is_trivia(self) -> bool { false }
+    /// # }
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # enum MyToken { Plus }
+    /// # impl Token for MyToken {
+    /// #     type Kind = MySyntaxKind;
+    /// #     fn kind(&self) -> Self::Kind { MySyntaxKind::Plus }
+    /// # }
+    /// # #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    /// # enum MyNonTerminal { Expr }
+    /// # impl NonTerminal for MyNonTerminal {
+    /// #     fn name(&self) -> &str { "Expr" }
+    /// # }
+    /// # let grammar = GrammarBuilder::<MyToken, MyNonTerminal>::new()
+    /// #     .entry_point(MyNonTerminal::Expr)
+    /// #     .rule(MyNonTerminal::Expr, Expr::Empty)
+    /// #     .build()
+    /// #     .unwrap();
+    /// let markdown = grammar.to_markdown(&|t| format!("{t:?}"));
+    /// println!("{markdown}");
+    /// ```
+    #[cfg(feature = "grammar-docs")]
+    pub fn to_markdown(&self, token_name: &impl Fn(&T) -> String) -> String {
+        crate::grammar::docs::generate_markdown(self, token_name)
+    }
+
+    /// Generate markdown documentation with custom configuration
+    ///
+    /// This method allows you to customize what information is included in the generated documentation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{GrammarBuilder, Expr, NonTerminal, Token, docs::MarkdownConfig};
+    /// # use sipha::syntax::SyntaxKind;
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # enum MySyntaxKind { Plus, Expr }
+    /// # impl SyntaxKind for MySyntaxKind {
+    /// #     fn is_terminal(self) -> bool { matches!(self, Self::Plus) }
+    /// #     fn is_trivia(self) -> bool { false }
+    /// # }
+    /// # #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    /// # enum MyNonTerminal { Expr }
+    /// # impl NonTerminal for MyNonTerminal {
+    /// #     fn name(&self) -> &str { "Expr" }
+    /// # }
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # struct MyToken;
+    /// # impl Token for MyToken {
+    /// #     type Kind = MySyntaxKind;
+    /// #     fn kind(&self) -> Self::Kind { MySyntaxKind::Plus }
+    /// # }
+    /// # let grammar = GrammarBuilder::<MyToken, MyNonTerminal>::new()
+    /// #     .entry_point(MyNonTerminal::Expr)
+    /// #     .rule(MyNonTerminal::Expr, Expr::Empty)
+    /// #     .build()
+    /// #     .unwrap();
+    /// let mut config = MarkdownConfig::default();
+    /// config.include_dependencies = false;
+    /// config.include_token_usage = false;
+    /// config.max_line_length = 100;
+    /// let markdown = grammar.to_markdown_with_config(&|t: &MyToken| format!("{t:?}"), &config);
+    /// ```
+    #[cfg(feature = "grammar-docs")]
+    pub fn to_markdown_with_config(
+        &self,
+        token_name: &impl Fn(&T) -> String,
+        config: &crate::grammar::docs::MarkdownConfig,
+    ) -> String {
+        crate::grammar::docs::generate_markdown_with_config(self, token_name, config)
     }
 
     #[must_use]
@@ -391,6 +510,8 @@ pub struct GrammarBuilder<T, N> {
     rules: Vec<Rule<T, N>>,
     entry_point: Option<N>,
     interner: Rodeo,
+    #[cfg(feature = "grammar-docs")]
+    token_descriptions: HashMap<T, String, ahash::RandomState>,
 }
 
 impl<T, N> Default for GrammarBuilder<T, N>
@@ -414,6 +535,8 @@ where
             rules: Vec::new(),
             entry_point: None,
             interner: Rodeo::new(),
+            #[cfg(feature = "grammar-docs")]
+            token_descriptions: HashMap::with_hasher(ahash::RandomState::new()),
         }
     }
 
@@ -446,6 +569,88 @@ where
         self
     }
 
+    #[cfg(feature = "grammar-docs")]
+    /// Add a rule with a description
+    ///
+    /// This is a convenience method for adding a rule with documentation.
+    /// It's equivalent to calling `rule_with` and setting the description in the closure.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{GrammarBuilder, Expr, NonTerminal, Token};
+    /// # use sipha::syntax::SyntaxKind;
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # enum MySyntaxKind { Plus, Expr }
+    /// # impl SyntaxKind for MySyntaxKind {
+    /// #     fn is_terminal(self) -> bool { matches!(self, Self::Plus) }
+    /// #     fn is_trivia(self) -> bool { false }
+    /// # }
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # enum MyToken { Plus }
+    /// # impl Token for MyToken {
+    /// #     type Kind = MySyntaxKind;
+    /// #     fn kind(&self) -> Self::Kind { MySyntaxKind::Plus }
+    /// # }
+    /// # #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    /// # enum MyNonTerminal { Expr }
+    /// # impl NonTerminal for MyNonTerminal {
+    /// #     fn name(&self) -> &str { "Expr" }
+    /// # }
+    /// GrammarBuilder::<MyToken, MyNonTerminal>::new()
+    ///     .rule_with_description(
+    ///         MyNonTerminal::Expr,
+    ///         Expr::Empty,
+    ///         "An expression rule".to_string(),
+    ///     );
+    /// ```
+    #[must_use]
+    pub fn rule_with_description(mut self, lhs: N, rhs: Expr<T, N>, description: String) -> Self {
+        // Intern the rule name for efficient storage
+        let _ = self.interner.get_or_intern(lhs.name());
+        let metadata = RuleMetadata::new().with_description(description);
+
+        self.rules.push(Rule { lhs, rhs, metadata });
+        self
+    }
+
+    #[cfg(feature = "grammar-docs")]
+    /// Add a description for a token
+    ///
+    /// This allows you to document tokens that appear in the grammar.
+    /// Token descriptions will be included in the generated markdown documentation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{GrammarBuilder, Expr, NonTerminal, Token};
+    /// # use sipha::syntax::SyntaxKind;
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # enum MySyntaxKind { Plus, Expr }
+    /// # impl SyntaxKind for MySyntaxKind {
+    /// #     fn is_terminal(self) -> bool { matches!(self, Self::Plus) }
+    /// #     fn is_trivia(self) -> bool { false }
+    /// # }
+    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// # enum MyToken { Plus }
+    /// # impl Token for MyToken {
+    /// #     type Kind = MySyntaxKind;
+    /// #     fn kind(&self) -> Self::Kind { MySyntaxKind::Plus }
+    /// # }
+    /// # #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    /// # enum MyNonTerminal { Expr }
+    /// # impl NonTerminal for MyNonTerminal {
+    /// #     fn name(&self) -> &str { "Expr" }
+    /// # }
+    /// GrammarBuilder::<MyToken, MyNonTerminal>::new()
+    ///     .token_description(MyToken::Plus, "The plus operator (+)".to_string());
+    /// ```
+    #[must_use]
+    pub fn token_description(mut self, token: T, description: String) -> Self {
+        self.token_descriptions.insert(token, description);
+        self
+    }
+
     /// Build the grammar from the configured rules.
     ///
     /// # Errors
@@ -464,6 +669,8 @@ where
             rules: self.rules.into_iter().map(|r| (r.lhs.clone(), r)).collect(),
             entry_point,
             interner: self.interner,
+            #[cfg(feature = "grammar-docs")]
+            token_descriptions: self.token_descriptions,
         })
     }
 }

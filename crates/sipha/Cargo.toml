@@ -76,3 +76,6 @@ tree-index = []
 backend-ll = []
 backend-lr = []
 
+# Grammar documentation and visualization
+grammar-docs = []
+

@@ -89,11 +89,17 @@ pub mod expr;
 pub mod hint;
 pub mod validate;
 
+#[cfg(feature = "grammar-docs")]
+pub mod docs;
+
 pub use analysis::*;
 pub use builder::*;
 pub use expr::*;
 pub use hint::*;
 pub use validate::*;
+
+#[cfg(feature = "grammar-docs")]
+pub use docs::*;
 
 // Re-exported types for convenience
 

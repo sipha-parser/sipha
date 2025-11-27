@@ -108,6 +108,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Visitor pattern support
 - Unicode support (optional feature)
 - Rich diagnostics with miette integration (optional feature)
+- **Grammar Documentation Generation** (`grammar-docs` feature): Comprehensive markdown documentation generator for grammars
+  - EBNF representation of grammar rules
+  - Statistics table with rule counts, token counts, and recursion analysis
+  - Rule dependency graphs (Mermaid format)
+  - Token reference tables with literal examples and usage context
+  - Grammar design notes (error recovery, nullable rules, recursion patterns)
+  - Configurable documentation output via `MarkdownConfig`
+  - Support for rule and token descriptions
+  - Enhanced token usage analysis (by rule and by token)
 
 [Unreleased]: https://github.com/nyaleph/sipha/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/nyaleph/sipha/releases/tag/v0.5.0
