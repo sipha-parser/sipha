@@ -102,7 +102,7 @@ jobs:
           mkdir -p doc/book/api
           cp -r target/doc/* doc/book/api/ || true
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: doc/book/
       - name: Deploy to GitHub Pages
