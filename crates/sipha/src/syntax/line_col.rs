@@ -109,7 +109,7 @@ impl LineIndex {
     /// let index = LineIndex::new(text);
     /// let pos = index.line_col(TextSize::from(10));
     /// assert_eq!(pos.line, 1);
-    /// assert_eq!(pos.column, 2); // "li" in "line 2"
+    /// assert_eq!(pos.column, 3); // "n" in "line 2" (offset 10 = position 3 on line 1)
     /// ```
     #[must_use]
     pub fn line_col(&self, offset: TextSize) -> LineCol {

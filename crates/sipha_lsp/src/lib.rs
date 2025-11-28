@@ -18,17 +18,25 @@
 //! use sipha::syntax::{SyntaxNode, SyntaxKind};
 //! use sipha::syntax::TextRange;
 //!
+//! # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+//! # enum MySyntaxKind { Expr, Number }
+//! # impl SyntaxKind for MySyntaxKind {
+//! #     fn is_terminal(self) -> bool { matches!(self, Self::Number) }
+//! #     fn is_trivia(self) -> bool { false }
+//! # }
+//! # fn example() {
 //! // Convert parse error to LSP diagnostic
-//! let error: ParseError = /* ... */;
+//! # let error: ParseError = todo!();
 //! let diagnostic = error.to_diagnostic();
 //!
 //! // Convert text range to LSP range
-//! let range: TextRange = /* ... */;
+//! # let range: TextRange = todo!();
 //! let lsp_range = range.to_range();
 //!
 //! // Convert syntax node to document symbol
-//! let node: SyntaxNode<MySyntaxKind> = /* ... */;
+//! # let node: SyntaxNode<MySyntaxKind> = todo!();
 //! let symbol = node.to_document_symbol();
+//! # }
 //! ```
 
 pub mod conversions;

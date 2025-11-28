@@ -45,7 +45,7 @@ impl<K: crate::syntax::SyntaxKind> SharedStackPrefix<K> {
 /// }
 ///
 /// let mut stack = GlrStack::with_initial_state(0);
-/// let node = Arc::new(GreenNode::new(Kind::Root, vec![], TextSize::from(0)));
+/// let node = GreenNode::new(Kind::Root, vec![], TextSize::from(0));
 /// stack.push(1, vec![node.clone()]);
 ///
 /// let forked = stack.fork();

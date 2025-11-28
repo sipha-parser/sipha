@@ -230,8 +230,8 @@ where
     /// #     .build()
     /// #     .unwrap();
     /// let mut config = MarkdownConfig::default();
-    /// config.include_dependencies = false;
-    /// config.include_token_usage = false;
+    /// config.sections.include_dependencies = false;
+    /// config.sections.include_token_usage = false;
     /// config.max_line_length = 100;
     /// let markdown = grammar.to_markdown_with_config(&|t: &MyToken| format!("{t:?}"), &config);
     /// ```
