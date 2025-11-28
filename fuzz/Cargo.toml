@@ -8,8 +8,6 @@ repository = "https://github.com/nyaleph/sipha"
 readme = "README.md"
 keywords = ["parser", "parsing", "fuzzing"]
 categories = ["parsing", "development-tools"]
-# Fuzzer targets are meant to be run with `cargo fuzz`, not `cargo test`
-test = false
 
 [package.metadata]
 cargo-fuzz = true
