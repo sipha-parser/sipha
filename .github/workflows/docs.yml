@@ -41,7 +41,7 @@ jobs:
             exit 1
           fi
       - name: Upload API docs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: api-docs
           path: target/doc/
@@ -62,7 +62,7 @@ jobs:
       - name: Check for broken links
         run: mdbook test doc
       - name: Upload book artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: book
           path: doc/book/
