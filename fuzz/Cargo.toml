@@ -1,0 +1,31 @@
+[package]
+name = "sipha-fuzz"
+version = "0.5.0"
+edition = "2024"
+description = "Fuzzing targets for Sipha parser library"
+license = "MIT"
+repository = "https://github.com/nyaleph/sipha"
+readme = "README.md"
+keywords = ["parser", "parsing", "fuzzing"]
+categories = ["parsing", "development-tools"]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+sipha = { path = "../crates/sipha", features = ["backend-ll", "backend-glr"] }
+libfuzzer-sys = "0.4"
+compact_str = "0.9"
+
+[[bin]]
+name = "parser_fuzz"
+path = "fuzz_targets/parser_fuzz.rs"
+
+[[bin]]
+name = "incremental_fuzz"
+path = "fuzz_targets/incremental_fuzz.rs"
+
+[[bin]]
+name = "glr_parser_fuzz"
+path = "fuzz_targets/glr_parser_fuzz.rs"
+

@@ -49,6 +49,11 @@ pub mod ll;
 #[cfg(feature = "backend-lr")]
 pub mod lr;
 
+#[cfg(feature = "backend-glr")]
+pub mod glr;
+
+pub mod common;
+
 /// Main parser backend trait
 pub trait ParserBackend<T, N>: Sized + Send
 where

@@ -1,0 +1,61 @@
+name: Mark Stale Issues and PRs
+
+on:
+  schedule:
+    # Run weekly on Mondays at 00:00 UTC
+    - cron: '0 0 * * 1'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  stale:
+    name: Mark Stale
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v9
+        with:
+          # Issues configuration
+          stale-issue-message: |
+            This issue has been automatically marked as stale because it has not had recent activity.
+            It will be closed if no further activity occurs within 7 days. Thank you for your contributions!
+          close-issue-message: |
+            This issue was automatically closed due to inactivity. If you believe this was done in error,
+            please feel free to reopen the issue or create a new one.
+          stale-issue-label: 'stale'
+          days-before-issue-stale: 90
+          days-before-issue-close: 7
+          
+          # PRs configuration
+          stale-pr-message: |
+            This pull request has been automatically marked as stale because it has not had recent activity.
+            It will be closed if no further activity occurs within 7 days. Thank you for your contributions!
+          close-pr-message: |
+            This pull request was automatically closed due to inactivity. If you believe this was done in error,
+            please feel free to reopen the PR or create a new one.
+          stale-pr-label: 'stale'
+          days-before-pr-stale: 60
+          days-before-pr-close: 7
+          
+          # Labels to exempt from stale marking
+          exempt-issue-labels: 'pinned,security,good first issue,help wanted'
+          exempt-pr-labels: 'pinned,security,work in progress,blocked'
+          
+          # Milestones to exempt
+          exempt-all-issue-milestones: false
+          exempt-all-pr-milestones: false
+          
+          # Only mark issues/PRs that have no activity
+          only-issue-labels: ''
+          only-pr-labels: ''
+          
+          # Operations per run limit
+          operations-per-run: 30
+          
+          # Remove stale labels when updated or commented
+          remove-stale-when-updated: true
+          
+          # Debug mode (set to true for testing)
+          debug-only: false
+

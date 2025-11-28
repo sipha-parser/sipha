@@ -1,9 +1,12 @@
 use crate::syntax::{SyntaxKind, TextSize};
 use compact_str::CompactString;
+#[cfg(feature = "serialize")]
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Immutable, shareable green tree node
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct GreenNode<K: SyntaxKind> {
     kind: K,
     text_len: TextSize,
@@ -11,6 +14,7 @@ pub struct GreenNode<K: SyntaxKind> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 enum GreenChildren<K: SyntaxKind> {
     Empty,
     One(GreenElement<K>),
@@ -18,6 +22,7 @@ enum GreenChildren<K: SyntaxKind> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub enum GreenElement<K: SyntaxKind> {
     Node(Arc<GreenNode<K>>),
     Token(GreenToken<K>),
@@ -137,6 +142,37 @@ impl<K: SyntaxKind> GreenElement<K> {
             Self::Node(n) => n.text_len(),
             Self::Token(t) => t.text_len(),
         }
+    }
+}
+
+#[cfg(feature = "serialize")]
+impl<K> serde::Serialize for GreenToken<K>
+where
+    K: SyntaxKind + serde::Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (self.kind, self.text.as_str()).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serialize")]
+impl<'de, K> serde::Deserialize<'de> for GreenToken<K>
+where
+    K: SyntaxKind + serde::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (kind, text): (K, String) = serde::Deserialize::deserialize(deserializer)?;
+
+        Ok(Self {
+            kind,
+            text: text.into(),
+        })
     }
 }
 

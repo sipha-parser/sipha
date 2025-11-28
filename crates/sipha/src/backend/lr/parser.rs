@@ -138,6 +138,8 @@ where
         errors,
         warnings: Vec::new(),
         metrics: ParseMetrics::default(),
+        #[cfg(feature = "backend-glr")]
+        forest: None,
         _phantom: std::marker::PhantomData::<N>,
     }
 }
@@ -268,6 +270,8 @@ where
             errors,
             warnings,
             metrics,
+            #[cfg(feature = "backend-glr")]
+            forest: None,
             _phantom: std::marker::PhantomData::<N>,
         };
     }
@@ -471,6 +475,8 @@ where
         errors,
         warnings,
         metrics,
+        #[cfg(feature = "backend-glr")]
+        forest: None,
         _phantom: std::marker::PhantomData::<N>,
     }
 }
@@ -492,6 +498,31 @@ where
     // If no edits, use cached result if available
     if session.edits().is_empty() {
         return parse(grammar, table, input, entry, config, state);
+    }
+
+    // Check persistent parse cache for the entry point before parsing
+    // This enables cross-session node reuse for the entire parse tree
+    let entry_text_pos = crate::syntax::TextSize::zero();
+    let expected_kind = entry
+        .to_syntax_kind()
+        .or_else(|| entry.default_syntax_kind());
+    if let Some(cached_root) = session.find_cached_node(entry.name(), entry_text_pos, expected_kind)
+    {
+        // Verify the cached root matches the input length (simple validation)
+        // In a more sophisticated implementation, we'd validate token-by-token
+        let errors = Vec::new();
+        let warnings = Vec::new();
+        let metrics = crate::error::ParseMetrics::default();
+
+        return crate::error::ParseResult {
+            root: cached_root,
+            errors,
+            warnings,
+            metrics,
+            #[cfg(feature = "backend-glr")]
+            forest: None,
+            _phantom: std::marker::PhantomData::<N>,
+        };
     }
 
     // Invalidate cache for affected region

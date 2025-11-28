@@ -1,5 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use sipha::backend::ParserBackend;
+#[cfg(feature = "backend-glr")]
+use sipha::backend::glr::GlrStack;
 use sipha::backend::ll::{LlConfig, LlParser};
 use sipha::grammar::{Expr, GrammarBuilder, NonTerminal, Token};
 use sipha::syntax::SyntaxKind;
@@ -90,6 +92,17 @@ fn create_multiply_token() -> BenchToken {
         kind: BenchSyntaxKind::Multiply,
         text: "*".into(),
     }
+}
+
+#[cfg(not(feature = "backend-glr"))]
+fn glr_leaf_node() -> std::sync::Arc<sipha::syntax::GreenNode<BenchSyntaxKind>> {
+    use sipha::syntax::{GreenNode, TextSize};
+    use std::sync::Arc;
+    Arc::new(GreenNode::new(
+        BenchSyntaxKind::Number,
+        vec![],
+        TextSize::from(1),
+    ))
 }
 
 fn setup_grammar() -> sipha::grammar::Grammar<BenchToken, BenchNonTerminal> {
@@ -239,10 +252,62 @@ fn bench_grammar_analysis(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "backend-glr")]
+#[allow(dead_code)]
+fn glr_leaf_node() -> std::sync::Arc<sipha::syntax::GreenNode<BenchSyntaxKind>> {
+    use sipha::syntax::{GreenNode, TextSize};
+    // Create a simple leaf node for benchmarking
+    // GreenNode::new already returns Arc
+    GreenNode::new(BenchSyntaxKind::Number, vec![], TextSize::from(1))
+}
+
+#[cfg(feature = "backend-glr")]
+fn bench_glr_stack_sharing(c: &mut Criterion) {
+    let leaf = glr_leaf_node();
+
+    c.bench_function("glr_stack_fork_merge", |b| {
+        b.iter(|| {
+            let mut base = GlrStack::with_initial_state(0);
+            for state in 1..64 {
+                base.push(state, vec![leaf.clone()]);
+            }
+            let mut fork = base.fork();
+            fork.push(128, vec![leaf.clone()]);
+            let mut merged = base.clone();
+            merged.merge(&fork);
+            black_box(merged.len());
+        });
+    });
+
+    c.bench_function("glr_stack_shared_prefix_len", |b| {
+        b.iter(|| {
+            let mut left = GlrStack::with_initial_state(0);
+            let mut right = GlrStack::with_initial_state(0);
+            for state in 1..128 {
+                let nodes = vec![glr_leaf_node()];
+                left.push(state, nodes.clone());
+                right.push(state, nodes);
+            }
+            right.push(256, vec![glr_leaf_node()]);
+            black_box(left.shared_prefix_len(&right));
+        });
+    });
+}
+
+#[cfg(not(feature = "backend-glr"))]
 criterion_group!(
     benches,
     bench_full_parse,
     bench_incremental_parse,
     bench_grammar_analysis
+);
+
+#[cfg(feature = "backend-glr")]
+criterion_group!(
+    benches,
+    bench_full_parse,
+    bench_incremental_parse,
+    bench_grammar_analysis,
+    bench_glr_stack_sharing
 );
 criterion_main!(benches);

@@ -1,0 +1,142 @@
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers when pushing tags starting with 'v'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Pre-publish checks
+  pre-publish:
+    name: Pre-publish Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-publish-
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: |
+          cargo clippy --all-targets --all-features --workspace -- \
+            -W clippy::pedantic \
+            -W clippy::nursery \
+            -W clippy::cargo \
+            -D warnings
+      - name: Run tests
+        run: cargo test --all-features --workspace
+      - name: Verify version consistency
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Tag version: $TAG_VERSION"
+          
+          # Check sipha_derive version
+          DERIVE_VERSION=$(grep '^version = ' crates/sipha_derive/Cargo.toml | cut -d'"' -f2)
+          echo "sipha_derive version: $DERIVE_VERSION"
+          if [ "$DERIVE_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: sipha_derive version ($DERIVE_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+          
+          # Check sipha version
+          SIPHA_VERSION=$(grep '^version = ' crates/sipha/Cargo.toml | cut -d'"' -f2)
+          echo "sipha version: $SIPHA_VERSION"
+          if [ "$SIPHA_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: sipha version ($SIPHA_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+          
+          # Check sipha_lsp version
+          LSP_VERSION=$(grep '^version = ' crates/sipha_lsp/Cargo.toml | cut -d'"' -f2)
+          echo "sipha_lsp version: $LSP_VERSION"
+          if [ "$LSP_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: sipha_lsp version ($LSP_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+          
+          echo "All versions match tag: $TAG_VERSION"
+
+  # Publish crates in dependency order
+  publish:
+    name: Publish Crates
+    runs-on: ubuntu-latest
+    needs: pre-publish
+    permissions:
+      id-token: write     # Required for OIDC token exchange
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-publish-
+      - name: Authenticate with crates.io
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish sipha_derive
+        run: |
+          cd crates/sipha_derive
+          cargo publish --token ${{ steps.auth.outputs.token }}
+      - name: Wait for sipha_derive to be available
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Waiting for sipha_derive v$TAG_VERSION to be available on crates.io..."
+          for i in {1..30}; do
+            if cargo search sipha_derive --limit 1 | grep -q "sipha_derive = \"$TAG_VERSION\""; then
+              echo "sipha_derive v$TAG_VERSION is now available"
+              break
+            fi
+            echo "Attempt $i/30: Waiting 10 seconds..."
+            sleep 10
+          done
+      - name: Publish sipha
+        run: |
+          cd crates/sipha
+          cargo publish --token ${{ steps.auth.outputs.token }}
+      - name: Wait for sipha to be available
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Waiting for sipha v$TAG_VERSION to be available on crates.io..."
+          for i in {1..30}; do
+            if cargo search sipha --limit 1 | grep -q "sipha = \"$TAG_VERSION\""; then
+              echo "sipha v$TAG_VERSION is now available"
+              break
+            fi
+            echo "Attempt $i/30: Waiting 10 seconds..."
+            sleep 10
+          done
+      - name: Publish sipha_lsp
+        run: |
+          cd crates/sipha_lsp
+          cargo publish --token ${{ steps.auth.outputs.token }}
+

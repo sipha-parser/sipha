@@ -94,7 +94,9 @@ type Transition<T, N> = (Symbol<T, N>, HashSet<LrItem<T, N>>);
 pub struct Production<T, N> {
     pub lhs: N,
     pub rhs: Vec<ProductionItem<T, N>>,
-    pub _production_id: usize,
+    /// Production ID for internal tracking
+    #[allow(dead_code)] // Reserved for future use in debugging/statistics
+    pub production_id: usize,
 }
 
 impl<T, N> Production<T, N> {
@@ -104,7 +106,7 @@ impl<T, N> Production<T, N> {
         Self {
             lhs,
             rhs,
-            _production_id: production_id,
+            production_id,
         }
     }
 
@@ -153,6 +155,14 @@ where
     T: Token,
     N: NonTerminal,
 {
+    /// Create a new LR parsing table from a grammar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if:
+    /// - The grammar cannot be converted to LR productions
+    /// - The LR automaton construction fails
+    /// - Conflicts are detected that cannot be resolved
     pub fn new(grammar: &Grammar<T, N>, use_lalr: bool) -> Result<Self, String> {
         // Convert grammar to productions
         let mut productions = Vec::new();
@@ -613,6 +623,7 @@ where
         // Build LR(0) items first
         let mut states = Vec::new();
         let mut state_map: HashMap<LrState<T, N>, usize> = HashMap::new();
+        let mut closure_cache: Vec<Option<HashSet<LrItem<T, N>>>> = Vec::new();
 
         // Create initial state with item [S' -> .S, $]
         let mut initial_items: HashSet<LrItem<T, N>> = HashSet::new();
@@ -622,6 +633,7 @@ where
         let initial_state_id = states.len();
         states.push(initial_state.clone());
         state_map.insert(initial_state, initial_state_id);
+        closure_cache.push(None);
 
         // Build closure and transitions
         let mut worklist = vec![initial_state_id];
@@ -632,7 +644,15 @@ where
             let state = &states[state_id];
 
             // Compute closure
-            let closure = Self::closure(grammar, productions, state, follow_sets);
+            let closure = if let Some(Some(cached)) = closure_cache.get(state_id) {
+                cached.clone()
+            } else {
+                let computed = Self::closure(grammar, productions, state, follow_sets);
+                if let Some(slot) = closure_cache.get_mut(state_id) {
+                    *slot = Some(computed.clone());
+                }
+                computed
+            };
 
             // Find transitions
             let transitions = Self::compute_transitions(grammar, productions, &closure);
@@ -642,7 +662,7 @@ where
                 let next_state_base = LrState::new(next_items);
                 let next_closure =
                     Self::closure(grammar, productions, &next_state_base, follow_sets);
-                let next_state = LrState::new(next_closure);
+                let next_state = LrState::new(next_closure.clone());
 
                 if let Some(&id) = state_map.get(&next_state) {
                     // State already exists, no need to add it again
@@ -651,6 +671,7 @@ where
                     let id = states.len();
                     states.push(next_state.clone());
                     state_map.insert(next_state, id);
+                    closure_cache.push(Some(next_closure));
                     if visited.insert(id) {
                         worklist.push(id);
                     }
@@ -990,8 +1011,9 @@ where
                 }
             }
             (Some(_) | None, None) => {
-                // Token has precedence (production doesn't) or neither has precedence - prefer shift
-                false
+                // Token has precedence (production doesn't) or neither has precedence
+                // Heuristic: prefer reducing short productions (helps with postfix operators)
+                production.rhs.len() <= 1
             }
             (None, Some(_)) => {
                 // Production has precedence, token doesn't - prefer reduce

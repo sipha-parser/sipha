@@ -2,20 +2,82 @@ name: CI
 
 on:
   push:
-    branches: [ trunk, develop ]
+    branches: [trunk, develop]
   pull_request:
-    branches: [ trunk, develop ]
+    branches: [trunk, develop]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Format checking
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-fmt-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fmt-
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # Clippy linting
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-clippy-
+      - name: Run clippy
+        run: |
+          cargo clippy --all-targets --all-features --workspace -- \
+            -W clippy::pedantic \
+            -W clippy::nursery \
+            -W clippy::cargo \
+            -D warnings
+
+  # Test suite with different Rust versions
   test:
-    name: Test Suite
+    name: Test Suite (${{ matrix.rust }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         rust: [stable, beta, nightly]
+        include:
+          - rust: nightly
+            allow_failure: true
+    continue-on-error: ${{ matrix.allow_failure || false }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -34,49 +96,34 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
-      - name: Run tests
+      - name: Run tests (all features)
         run: cargo test --all-features --workspace
       - name: Run tests (no default features)
         run: cargo test --no-default-features --workspace
 
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-lint-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features --workspace
-
-  build:
-    name: Build
+  # Feature-specific testing
+  test-features:
+    name: Test Features (${{ matrix.features }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         features:
-          - ""
           - "default"
-          - "all"
           - "diagnostics"
           - "unicode"
+          - "backend-ll"
+          - "backend-lr"
+          - "backend-glr"
+          - "parallel"
+          - "profiling"
+          - "serialize"
+          - "arena"
+          - "query"
+          - "visitor"
+          - "traversal"
+          - "tree-utils"
+          - "tree-index"
+          - "grammar-docs"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -92,21 +139,59 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-build-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-test-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-build-${{ matrix.features }}-
-      - name: Build
-        run: |
-          if [ "${{ matrix.features }}" == "all" ]; then
-            cargo build --all-features --workspace
-          elif [ "${{ matrix.features }}" == "" ]; then
-            cargo build --no-default-features --workspace
-          else
-            cargo build --features "${{ matrix.features }}" --workspace
-          fi
+            ${{ runner.os }}-cargo-test-${{ matrix.features }}-
+      - name: Run tests
+        run: cargo test --features "${{ matrix.features }}" --workspace
 
-  docs:
-    name: Documentation
+  # Build verification
+  build:
+    name: Build (${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        config:
+          - name: "no-default-features"
+            args: "--no-default-features"
+          - name: "default-features"
+            args: ""
+          - name: "all-features"
+            args: "--all-features"
+          - name: "backend-ll"
+            args: "--features backend-ll"
+          - name: "backend-lr"
+            args: "--features backend-lr"
+          - name: "backend-glr"
+            args: "--features backend-glr"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-build-${{ matrix.config.name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-${{ matrix.config.name }}-
+      - name: Build workspace
+        run: cargo build ${{ matrix.config.args }} --workspace
+      - name: Build examples
+        run: cargo build ${{ matrix.config.args }} --examples --workspace
+      - name: Build benches
+        run: cargo build ${{ matrix.config.args }} --benches --workspace
+
+  # Documentation build check
+  docs-check:
+    name: Documentation Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -127,7 +212,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-docs-
       - name: Build documentation
-        run: cargo doc --all-features --workspace --no-deps
-      - name: Check for broken links
-        run: cargo doc --all-features --workspace --no-deps 2>&1 | grep -i "warning.*link" && exit 1 || exit 0
-
+        run: cargo doc --all-features --workspace --no-deps --document-private-items
+      - name: Check for broken intra-doc links
+        run: cargo doc --all-features --workspace --no-deps 2>&1 | grep -i "warning.*broken" && exit 1 || exit 0

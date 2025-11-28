@@ -82,6 +82,8 @@
 //! When the `diagnostics` feature is enabled, errors integrate with [`miette`]
 //! for rich error reporting with source code snippets and suggestions.
 
+#[cfg(feature = "backend-glr")]
+use crate::backend::glr::ParseForest;
 use crate::syntax::TextRange;
 use thiserror::Error;
 
@@ -289,6 +291,138 @@ impl ParseError {
             }
         }
     }
+
+    /// Get a "did you mean" suggestion for unexpected tokens
+    ///
+    /// This compares the expected tokens with common typos or similar tokens
+    /// to provide helpful suggestions.
+    ///
+    /// # Panics
+    ///
+    /// This function may panic if `best_match` is `None` when calling `unwrap()`.
+    /// This should not happen in normal usage as the code checks `is_none()` first.
+    #[must_use]
+    pub fn did_you_mean(&self, actual: &str) -> Option<String> {
+        match self {
+            Self::UnexpectedToken { expected, .. } | Self::UnexpectedEof { expected, .. } => {
+                // Simple string similarity check (Levenshtein-like)
+                let mut best_match: Option<(&String, f64)> = None;
+                for candidate in expected {
+                    let similarity = string_similarity(actual, candidate);
+                    if similarity > 0.6 {
+                        // Threshold for similarity
+                        if best_match.is_none() || similarity > best_match.unwrap().1 {
+                            best_match = Some((candidate, similarity));
+                        }
+                    }
+                }
+                best_match.map(|(suggestion, _)| format!("Did you mean '{suggestion}'?"))
+            }
+            _ => None,
+        }
+    }
+
+    /// Get surrounding context for error messages
+    ///
+    /// This can be used to show code snippets around the error location.
+    /// Returns a tuple of (`before_context`, `error_span`, `after_context`).
+    #[must_use]
+    pub fn get_context(&self, source: &str) -> Option<(String, String, String)> {
+        let span = self.span();
+        let start = span.start().into() as usize;
+        let end = span.end().into() as usize;
+
+        if end > source.len() {
+            return None;
+        }
+
+        // Get context before (up to 20 characters)
+        let context_before_start = start.saturating_sub(20);
+        let before = source[context_before_start..start].to_string();
+
+        // Get error span
+        let error_span = source[start..end.min(source.len())].to_string();
+
+        // Get context after (up to 20 characters)
+        let after_end = (end + 20).min(source.len());
+        let after = source[end..after_end].to_string();
+
+        Some((before, error_span, after))
+    }
+
+    /// Format error with enhanced context and suggestions
+    #[must_use]
+    pub fn format_with_context(&self, source: &str, actual_token: Option<&str>) -> String {
+        use std::fmt::Write;
+        let mut result = String::new();
+
+        // Add main error message
+        let _ = write!(result, "{self}");
+
+        // Add context if available
+        if let Some((before, error_span, after)) = self.get_context(source) {
+            result.push_str("\n\nContext:\n");
+            let _ = write!(result, "  ...{before}[{error_span}]{after}...");
+        }
+
+        // Add "did you mean" suggestion if available
+        if let Some(actual) = actual_token
+            && let Some(suggestion) = self.did_you_mean(actual)
+        {
+            result.push_str("\n\n");
+            result.push_str(&suggestion);
+        }
+
+        // Add expected tokens
+        if let Some(expected_str) = match self {
+            Self::UnexpectedToken { expected, .. } | Self::UnexpectedEof { expected, .. } => {
+                if expected.is_empty() {
+                    None
+                } else {
+                    Some(format!("Expected: {}", self.format_expected()))
+                }
+            }
+            _ => None,
+        } {
+            result.push('\n');
+            result.push_str(&expected_str);
+        }
+
+        result
+    }
+}
+
+/// Simple string similarity metric (0.0 to 1.0)
+/// Uses a basic character overlap approach
+fn string_similarity(s1: &str, s2: &str) -> f64 {
+    if s1 == s2 {
+        return 1.0;
+    }
+
+    let s1_lower = s1.to_lowercase();
+    let s2_lower = s2.to_lowercase();
+
+    // Count common characters
+    let mut common = 0;
+    let s1_chars: Vec<char> = s1_lower.chars().collect();
+    let s2_chars: Vec<char> = s2_lower.chars().collect();
+
+    let min_len = s1_chars.len().min(s2_chars.len());
+    let max_len = s1_chars.len().max(s2_chars.len());
+
+    if max_len == 0 {
+        return 1.0;
+    }
+
+    for i in 0..min_len {
+        if s1_chars[i] == s2_chars[i] {
+            common += 1;
+        }
+    }
+
+    // Simple similarity: common characters / max length
+    // Note: usize to f64 may lose precision on 64-bit systems, but acceptable for similarity calculation
+    f64::from(common) / f64::from(u32::try_from(max_len).unwrap_or(u32::MAX))
 }
 
 impl LexerError {
@@ -385,6 +519,8 @@ where
     pub errors: Vec<ParseError>,
     pub warnings: Vec<ParseWarning>,
     pub metrics: ParseMetrics,
+    #[cfg(feature = "backend-glr")]
+    pub forest: Option<ParseForest<T::Kind>>,
     pub(crate) _phantom: std::marker::PhantomData<N>,
 }
 
@@ -432,8 +568,17 @@ where
             errors,
             warnings,
             metrics,
+            #[cfg(feature = "backend-glr")]
+            forest: None,
             _phantom: std::marker::PhantomData,
         }
+    }
+
+    #[cfg(feature = "backend-glr")]
+    /// Access the parse forest for ambiguous GLR parses, when available.
+    #[must_use]
+    pub const fn forest(&self) -> Option<&ParseForest<T::Kind>> {
+        self.forest.as_ref()
     }
 }
 

@@ -5,7 +5,7 @@ mod table;
 
 pub use config::LrConfig;
 pub use state::LrParserState;
-use table::LrParsingTable;
+pub use table::{Action, LrParsingTable, Production};
 
 use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
@@ -115,7 +115,7 @@ where
         // Check for undefined rules
         for (_lhs, rule) in grammar.rules() {
             // Check if rule references undefined non-terminals
-            Self::check_undefined_references(grammar, &rule.rhs, &mut errors);
+            crate::backend::common::check_undefined_references(grammar, &rule.rhs, &mut errors);
         }
 
         errors
@@ -143,52 +143,4 @@ where
     T: crate::grammar::Token,
     N: crate::grammar::NonTerminal,
 {
-    /// Check for undefined non-terminal references
-    fn check_undefined_references(
-        grammar: &Grammar<T, N>,
-        expr: &crate::grammar::Expr<T, N>,
-        errors: &mut Vec<crate::grammar::GrammarError<T, N>>,
-    ) {
-        match expr {
-            crate::grammar::Expr::Rule(nt) => {
-                if grammar.get_rule(nt).is_none() {
-                    errors.push(crate::grammar::GrammarError::UndefinedRule(nt.clone()));
-                }
-            }
-            crate::grammar::Expr::Seq(exprs) | crate::grammar::Expr::Choice(exprs) => {
-                for e in exprs {
-                    Self::check_undefined_references(grammar, e, errors);
-                }
-            }
-            crate::grammar::Expr::Opt(e) | crate::grammar::Expr::Repeat { expr: e, .. } => {
-                Self::check_undefined_references(grammar, e, errors);
-            }
-            crate::grammar::Expr::Separated {
-                item, separator, ..
-            } => {
-                Self::check_undefined_references(grammar, item, errors);
-                Self::check_undefined_references(grammar, separator, errors);
-            }
-            crate::grammar::Expr::Delimited {
-                open,
-                content,
-                close,
-                ..
-            } => {
-                Self::check_undefined_references(grammar, open, errors);
-                Self::check_undefined_references(grammar, content, errors);
-                Self::check_undefined_references(grammar, close, errors);
-            }
-            crate::grammar::Expr::Node { expr, .. }
-            | crate::grammar::Expr::Label { expr, .. }
-            | crate::grammar::Expr::Flatten(expr)
-            | crate::grammar::Expr::Prune(expr)
-            | crate::grammar::Expr::Lookahead(expr)
-            | crate::grammar::Expr::NotLookahead(expr)
-            | crate::grammar::Expr::RecoveryPoint { expr, .. } => {
-                Self::check_undefined_references(grammar, expr, errors);
-            }
-            _ => {}
-        }
-    }
 }

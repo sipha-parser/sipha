@@ -158,6 +158,41 @@ When reporting bugs, please include:
 - Your environment (Rust version, OS, etc.)
 - Minimal code example if possible
 
+## Fuzz Testing
+
+Sipha includes fuzz testing infrastructure to ensure robustness and correctness. Fuzz tests help find edge cases and potential panics in the parser.
+
+### Prerequisites
+
+Install `cargo-fuzz`:
+
+```bash
+cargo install cargo-fuzz
+```
+
+### Running Fuzz Tests
+
+Navigate to the `fuzz` directory and run the fuzz targets:
+
+```bash
+cd fuzz
+cargo fuzz run parser_fuzz
+cargo fuzz run incremental_fuzz
+```
+
+### Fuzz Targets
+
+- **`parser_fuzz`**: Tests the parser with random byte streams to ensure no panics occur.
+- **`incremental_fuzz`**: Differential fuzzing that compares incremental parsing results with full re-parsing to ensure correctness.
+
+### Adding New Fuzz Targets
+
+To add a new fuzz target:
+
+1. Create a new file in `fuzz/fuzz_targets/` with your fuzz target code
+2. Add a `[[bin]]` entry in `fuzz/Cargo.toml` pointing to your target
+3. Run `cargo fuzz list` to verify the target is registered
+
 ## Questions?
 
 Feel free to open an issue for questions or discussions. We're happy to help!

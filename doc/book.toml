@@ -1,0 +1,59 @@
+[book]
+title = "The Sipha Book"
+description = "A comprehensive guide to the Sipha incremental parsing library"
+authors = ["Chloe Magnier <contact@nyaleph.com>"]
+language = "en"
+src = "src"
+
+[build]
+# Directory where the book will be built
+build-dir = "book"
+# Don't automatically create missing files referenced in SUMMARY.md
+create-missing = false
+
+[output.html]
+# Theme configuration
+default-theme = "navy"
+preferred-dark-theme = "navy"
+
+# Git repository integration
+git-repository-url = "https://github.com/sipha-parser/sipha"
+edit-url-template = "https://github.com/sipha-parser/sipha/edit/trunk/doc/src/{path}"
+
+# Site configuration
+site-url = ""
+
+# Markdown enhancements
+smart-punctuation = true  # Convert quotes, dashes, etc. to typographic equivalents
+admonitions = true         # Enable note, warning, tip, etc. blocks
+definition-lists = true    # Enable definition lists
+
+# Math support
+mathjax-support = false
+
+# Custom assets
+# Note: CSS files in theme/ are automatically included via head.hbs
+# For additional CSS, use paths relative to src/ directory
+additional-css = []
+additional-js = []
+
+# Section folding
+fold = { enable = true, level = 1 }
+
+# Cache busting for assets
+hash-files = true
+
+[output.html.search]
+enable = true
+limit-results = 30
+teaser-word-count = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 1
+boost-paragraph = 1
+expand = true
+heading-split-level = 3
+
+[output.html.print]
+enable = true
+

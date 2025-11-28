@@ -4,9 +4,12 @@
 use sipha::backend::ParserBackend;
 #[cfg(feature = "backend-lr")]
 use sipha::backend::lr::{LrConfig, LrError, LrParser};
+#[cfg(feature = "backend-lr")]
 use sipha::grammar::{Expr, GrammarBuilder, NonTerminal, Token};
+#[cfg(feature = "backend-lr")]
 use sipha::syntax::{SyntaxKind, TextSize};
 
+#[cfg(feature = "backend-lr")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 enum TestSyntaxKind {
@@ -26,6 +29,7 @@ enum TestSyntaxKind {
     Factor,
 }
 
+#[cfg(feature = "backend-lr")]
 impl SyntaxKind for TestSyntaxKind {
     fn is_terminal(self) -> bool {
         !matches!(self, Self::Expr | Self::Term | Self::Factor)
@@ -36,12 +40,14 @@ impl SyntaxKind for TestSyntaxKind {
     }
 }
 
+#[cfg(feature = "backend-lr")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TestToken {
     kind: TestSyntaxKind,
     text: compact_str::CompactString,
 }
 
+#[cfg(feature = "backend-lr")]
 impl Token for TestToken {
     type Kind = TestSyntaxKind;
 
@@ -58,6 +64,7 @@ impl Token for TestToken {
     }
 }
 
+#[cfg(feature = "backend-lr")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 enum TestNonTerminal {
@@ -66,6 +73,7 @@ enum TestNonTerminal {
     Factor,
 }
 
+#[cfg(feature = "backend-lr")]
 impl NonTerminal for TestNonTerminal {
     fn name(&self) -> &str {
         match self {
@@ -87,6 +95,7 @@ impl NonTerminal for TestNonTerminal {
 }
 
 // Helper to create tokens
+#[cfg(feature = "backend-lr")]
 fn create_token(kind: TestSyntaxKind, text: &str, _offset: u32) -> TestToken {
     TestToken {
         kind,

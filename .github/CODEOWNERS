@@ -1,0 +1,46 @@
+# CODEOWNERS file
+# This file defines code owners for automatic reviewer assignment on pull requests.
+# Each line is a file pattern followed by one or more owners.
+# Owners are defined as GitHub usernames or email addresses.
+#
+# More information: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owners - review everything
+* @nyaleph
+
+# Core library
+/crates/sipha/ @nyaleph
+/crates/sipha/src/ @nyaleph
+
+# Procedural macros
+/crates/sipha_derive/ @nyaleph
+
+# LSP integration
+/crates/sipha_lsp/ @nyaleph
+
+# Fuzzing
+/fuzz/ @nyaleph
+
+# Documentation
+/doc/ @nyaleph
+README.md @nyaleph
+CHANGELOG.md @nyaleph
+CONTRIBUTING.md @nyaleph
+
+# GitHub workflows and configuration
+/.github/ @nyaleph
+/.github/workflows/ @nyaleph
+/.github/ISSUE_TEMPLATE/ @nyaleph
+
+# Configuration files
+Cargo.toml @nyaleph
+.gitignore @nyaleph
+.gitattributes @nyaleph
+.editorconfig @nyaleph
+
+# Examples
+/crates/sipha/examples/ @nyaleph
+
+# Tests
+/crates/sipha/tests/ @nyaleph
+

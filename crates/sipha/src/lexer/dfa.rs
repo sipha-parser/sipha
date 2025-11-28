@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 /// Uses u32 which is sufficient for all practical DFA sizes.
 /// Conversions to usize for indexing are safe on all platforms (usize >= 32 bits).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct StateId(u32);
+pub struct StateId(pub u32);
 
 /// Character range for transitions
 /// Uses Rust's `RangeInclusive` for idiomatic character ranges
@@ -411,8 +411,7 @@ pub(crate) fn nfa_to_dfa(nfa: &Nfa, dfa: &mut Dfa) {
 pub struct LexerState {
     /// Current position in input
     pos: usize,
-    /// Current DFA state (if using DFA)
-    #[allow(dead_code)]
+    /// Current DFA state (if using DFA) - cached at token boundaries for fast resumption
     dfa_state: Option<StateId>,
     /// Last token boundary position
     last_boundary: usize,
@@ -443,6 +442,28 @@ impl LexerState {
             dfa_state: None,
             last_boundary: pos,
         }
+    }
+
+    /// Create a lexer state at a specific position with a cached DFA state
+    #[must_use]
+    pub const fn at_position_with_state(pos: usize, dfa_state: Option<StateId>) -> Self {
+        Self {
+            pos,
+            dfa_state,
+            last_boundary: pos,
+        }
+    }
+
+    /// Get the cached DFA state
+    #[must_use]
+    pub const fn dfa_state(&self) -> Option<StateId> {
+        self.dfa_state
+    }
+
+    /// Set the cached DFA state
+    #[allow(clippy::missing_const_for_fn)] // Cannot be const: mutates self
+    pub fn set_dfa_state(&mut self, state: Option<StateId>) {
+        self.dfa_state = state;
     }
 }
 
@@ -596,9 +617,10 @@ impl<K: SyntaxKind> CompiledLexer<K> {
                 break;
             }
 
-            // Tokenize from current position
-            match self.next_token(input, state.pos) {
-                Ok((token, new_pos)) => {
+            // Tokenize from current position, using cached DFA state if available
+            let start_dfa_state = state.dfa_state;
+            match self.next_token_from_state(input, state.pos, start_dfa_state) {
+                Ok((token, new_pos, end_dfa_state)) => {
                     let mut final_token = token;
                     if final_token.kind == self.ident_kind
                         && let Some(kw_kind) = self.keywords.get(&final_token.text)
@@ -610,16 +632,11 @@ impl<K: SyntaxKind> CompiledLexer<K> {
                         tokens.push(final_token);
                     }
 
-                    // Update state
+                    // Update state with new position and cached DFA state
                     state.last_boundary = state.pos;
                     state.pos = new_pos;
-
-                    // Save DFA state if available (for resumable lexing)
-                    // Could cache DFA state here for even faster resumption
-                    // For now, we'll recompute from position
-                    if self.dfa.is_some() {
-                        // Future: cache DFA state at token boundaries
-                    }
+                    // Cache DFA state at token boundary for fast resumption
+                    state.dfa_state = end_dfa_state;
                 }
                 Err(e) => {
                     errors.push(e);
@@ -646,19 +663,42 @@ impl<K: SyntaxKind> CompiledLexer<K> {
     }
 
     fn next_token(&self, input: &str, pos: usize) -> Result<(Token<K>, usize), LexerError> {
+        self.next_token_from_state(input, pos, None)
+            .map(|(token, new_pos, _)| (token, new_pos))
+    }
+
+    /// Tokenize from a specific position, optionally starting from a cached DFA state.
+    /// Returns the token, new position, and the DFA state at the end of the token (for caching).
+    #[allow(clippy::too_many_lines)]
+    fn next_token_from_state(
+        &self,
+        input: &str,
+        pos: usize,
+        start_dfa_state: Option<StateId>,
+    ) -> Result<(Token<K>, usize, Option<StateId>), LexerError> {
         let slice = &input[pos..];
         let mut best_match: Option<(usize, u32, K, TokenValue)> = None; // (len, priority, kind, value)
+        let mut end_dfa_state: Option<StateId> = None;
 
         // Try DFA first if available
-        if let Some(dfa) = &self.dfa
-            && let Some((len, rule_idx)) = Self::run_dfa(dfa, input, pos)
-        {
-            let rule = &self.rules[self.dfa_kind_to_rule[rule_idx]];
-            match rule {
-                CompiledRule::Dfa { kind, priority } => {
-                    Self::update_best(&mut best_match, len, *priority, *kind, TokenValue::None);
+        if let Some(dfa) = &self.dfa {
+            let dfa_result = start_dfa_state.map_or_else(
+                || Self::run_dfa(dfa, input, pos),
+                |start_state| Self::run_dfa_from_state(dfa, input, pos, start_state),
+            );
+
+            if let Some((len, rule_idx)) = dfa_result {
+                // Track the final DFA state for caching by running DFA to the end of the match
+                let final_state = Self::run_dfa_to_state(dfa, input, pos, len, start_dfa_state);
+                end_dfa_state = Some(final_state);
+
+                let rule = &self.rules[self.dfa_kind_to_rule[rule_idx]];
+                match rule {
+                    CompiledRule::Dfa { kind, priority } => {
+                        Self::update_best(&mut best_match, len, *priority, *kind, TokenValue::None);
+                    }
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
             }
         }
 
@@ -724,7 +764,11 @@ impl<K: SyntaxKind> CompiledLexer<K> {
                 TextSize::from(u32::try_from(pos).unwrap_or(0)),
                 TextSize::from(u32::try_from(len).unwrap_or(0)),
             );
-            return Ok((Token::new(kind, &input[pos..pos + len], range), pos + len));
+            return Ok((
+                Token::new(kind, &input[pos..pos + len], range),
+                pos + len,
+                end_dfa_state,
+            ));
         }
 
         if let Some((len, _, kind, value)) = best_match {
@@ -740,6 +784,7 @@ impl<K: SyntaxKind> CompiledLexer<K> {
                     value,
                 },
                 pos + len,
+                end_dfa_state,
             ))
         } else {
             Err(LexerError {
@@ -757,7 +802,18 @@ impl<K: SyntaxKind> CompiledLexer<K> {
     /// Run DFA on input starting at pos, return (length, `rule_index`) of longest match
     /// Optimized with cached state lookups and O(1) accepting state access
     fn run_dfa(dfa: &Dfa, input: &str, pos: usize) -> Option<(usize, usize)> {
-        let mut state = dfa.start_state;
+        Self::run_dfa_from_state(dfa, input, pos, dfa.start_state)
+    }
+
+    /// Run DFA on input starting at pos with a specific starting state
+    /// Returns (length, `rule_index`) of longest match
+    fn run_dfa_from_state(
+        dfa: &Dfa,
+        input: &str,
+        pos: usize,
+        start_state: StateId,
+    ) -> Option<(usize, usize)> {
+        let mut state = start_state;
         let mut best_match: Option<(usize, usize)> = None; // (length, rule_index)
         let mut current_len = 0;
 
@@ -811,6 +867,52 @@ impl<K: SyntaxKind> CompiledLexer<K> {
         }
 
         best_match
+    }
+
+    /// Run DFA to a specific length and return the final state
+    /// This is used to cache the DFA state at token boundaries
+    fn run_dfa_to_state(
+        dfa: &Dfa,
+        input: &str,
+        pos: usize,
+        len: usize,
+        start_state: Option<StateId>,
+    ) -> StateId {
+        let mut state = start_state.unwrap_or(dfa.start_state);
+        let bytes = input.as_bytes();
+        let mut byte_pos = pos;
+        let mut current_len = 0;
+
+        while byte_pos < bytes.len() && current_len < len {
+            // Fast path: ASCII character (single byte)
+            if bytes[byte_pos].is_ascii() {
+                let c = bytes[byte_pos] as char;
+                if let Some(next_state) = dfa.state(state).find_transition(c) {
+                    state = next_state;
+                    current_len += 1;
+                    byte_pos += 1;
+                } else {
+                    break;
+                }
+            } else {
+                // Unicode character: use char iteration
+                let remaining = &input[byte_pos..];
+                let Some(c) = remaining.chars().next() else {
+                    break;
+                };
+                let char_len = c.len_utf8();
+
+                if let Some(next_state) = dfa.state(state).find_transition(c) {
+                    state = next_state;
+                    current_len += char_len;
+                    byte_pos += char_len;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        state
     }
 
     fn update_best(

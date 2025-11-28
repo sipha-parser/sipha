@@ -1,0 +1,20 @@
+[package]
+name = "sipha_lsp"
+version = "0.5.0"
+edition = "2024"
+authors = ["Chloe Magnier <contact@nyaleph.com>"]
+description = "LSP integration layer for Sipha parser library"
+license = "MIT"
+repository = "https://github.com/nyaleph/sipha"
+homepage = "https://github.com/nyaleph/sipha"
+readme = "README.md"
+keywords = ["parser", "parsing", "lsp", "language-server"]
+categories = ["parsing", "development-tools"]
+
+[dependencies]
+sipha = { path = "../sipha" }
+lsp-types = "0.97"
+
+[dev-dependencies]
+tower-lsp = "0.20"
+

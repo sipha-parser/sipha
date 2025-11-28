@@ -86,6 +86,7 @@ fn create_token(kind: ArithSyntaxKind, text: &str, _offset: u32) -> ArithToken {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Basic Arithmetic Parser Example ===\n");
 

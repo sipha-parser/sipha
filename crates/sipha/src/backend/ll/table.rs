@@ -33,6 +33,12 @@ enum LookaheadKey<T> {
     Eof,
 }
 
+type FirstKCache<T, N> =
+    HashMap<(N, usize), HashSet<SmallVec<[T; 4]>, ahash::RandomState>, ahash::RandomState>;
+
+type FollowKCache<T, N> =
+    HashMap<(N, usize), HashSet<SmallVec<[T; 4]>, ahash::RandomState>, ahash::RandomState>;
+
 impl<T, N> ParsingTable<T, N>
 where
     T: Token,
@@ -53,6 +59,9 @@ where
 
         // Build parsing table
         let mut table = HashMap::with_hasher(ahash::RandomState::new());
+        let mut first_k_cache: FirstKCache<T, N> = HashMap::with_hasher(ahash::RandomState::new());
+        let mut follow_k_cache: FollowKCache<T, N> =
+            HashMap::with_hasher(ahash::RandomState::new());
 
         for (lhs, rule) in grammar.rules() {
             if k == 1 {
@@ -72,6 +81,8 @@ where
                     &first_sets,
                     &follow_sets,
                     &mut table,
+                    &mut first_k_cache,
+                    &mut follow_k_cache,
                     k,
                 )?;
             }
@@ -137,6 +148,7 @@ where
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_table_entry_llk(
         grammar: &Grammar<T, N>,
         lhs: &N,
@@ -144,6 +156,8 @@ where
         first_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
         follow_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
         table: &mut HashMap<(N, LookaheadKey<T>), usize, ahash::RandomState>,
+        first_k_cache: &mut FirstKCache<T, N>,
+        follow_k_cache: &mut FollowKCache<T, N>,
         k: usize,
     ) -> Result<(), String> {
         // For LL(k) with k > 1, we need to compute FIRST_k sets
@@ -152,7 +166,8 @@ where
         if let Expr::Choice(alternatives) = expr {
             for (alt_idx, alt) in alternatives.iter().enumerate() {
                 // Compute FIRST_k for this alternative
-                let first_k = Self::compute_first_k(grammar, alt, first_sets, k);
+                let first_k =
+                    Self::compute_first_k_cached(grammar, alt, first_sets, k, first_k_cache);
                 let nullable = alt.is_nullable(grammar);
 
                 // For each sequence in FIRST_k, add entry
@@ -167,7 +182,14 @@ where
 
                 // If nullable, add FOLLOW_k entries
                 if nullable {
-                    let follow_k = Self::compute_follow_k(grammar, lhs, follow_sets, first_sets, k);
+                    let follow_k = Self::compute_follow_k_cached(
+                        grammar,
+                        lhs,
+                        follow_sets,
+                        first_sets,
+                        k,
+                        follow_k_cache,
+                    );
                     for seq in follow_k {
                         let key = (lhs.clone(), LookaheadKey::Sequence(seq));
                         if table.insert(key, alt_idx).is_some() {
@@ -180,7 +202,7 @@ where
             }
         } else {
             // Single production (not a choice)
-            let first_k = Self::compute_first_k(grammar, expr, first_sets, k);
+            let first_k = Self::compute_first_k_cached(grammar, expr, first_sets, k, first_k_cache);
             let nullable = expr.is_nullable(grammar);
 
             for seq in first_k {
@@ -189,7 +211,14 @@ where
             }
 
             if nullable {
-                let follow_k = Self::compute_follow_k(grammar, lhs, follow_sets, first_sets, k);
+                let follow_k = Self::compute_follow_k_cached(
+                    grammar,
+                    lhs,
+                    follow_sets,
+                    first_sets,
+                    k,
+                    follow_k_cache,
+                );
                 for seq in follow_k {
                     let key = (lhs.clone(), LookaheadKey::Sequence(seq));
                     table.insert(key, 0);
@@ -204,7 +233,7 @@ where
     fn compute_first_k(
         grammar: &Grammar<T, N>,
         expr: &Expr<T, N>,
-        first_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
+        _first_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
         k: usize,
     ) -> HashSet<SmallVec<[T; 4]>, ahash::RandomState> {
         let mut result = HashSet::with_hasher(ahash::RandomState::new());
@@ -212,7 +241,6 @@ where
         Self::compute_first_k_impl(
             grammar,
             expr,
-            first_sets,
             k,
             &mut result,
             &mut visited,
@@ -224,12 +252,9 @@ where
     /// Internal recursive helper for computing `FIRST_k` sets.
     ///
     /// This function is intentionally recursive to traverse expression trees.
-    /// The `only_used_in_recursion` warning is expected for this algorithm.
-    #[allow(clippy::only_used_in_recursion)]
-    fn compute_first_k_impl(
+    pub fn compute_first_k_impl(
         grammar: &Grammar<T, N>,
         expr: &Expr<T, N>,
-        first_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
         k: usize,
         result: &mut HashSet<SmallVec<[T; 4]>, ahash::RandomState>,
         visited: &mut HashSet<N, ahash::RandomState>,
@@ -249,14 +274,12 @@ where
                 if visited.insert(n.clone())
                     && let Some(rule) = grammar.get_rule(n)
                 {
-                    Self::compute_first_k_impl(
-                        grammar, &rule.rhs, first_sets, k, result, visited, current,
-                    );
+                    Self::compute_first_k_impl(grammar, &rule.rhs, k, result, visited, current);
                 }
             }
             Expr::Seq(exprs) => {
                 for e in exprs {
-                    Self::compute_first_k_impl(grammar, e, first_sets, k, result, visited, current);
+                    Self::compute_first_k_impl(grammar, e, k, result, visited, current);
                     if !e.is_nullable(grammar) {
                         break;
                     }
@@ -264,11 +287,11 @@ where
             }
             Expr::Choice(exprs) => {
                 for e in exprs {
-                    Self::compute_first_k_impl(grammar, e, first_sets, k, result, visited, current);
+                    Self::compute_first_k_impl(grammar, e, k, result, visited, current);
                 }
             }
             Expr::Opt(e) | Expr::Repeat { expr: e, .. } => {
-                Self::compute_first_k_impl(grammar, e, first_sets, k, result, visited, current);
+                Self::compute_first_k_impl(grammar, e, k, result, visited, current);
             }
             _ => {}
         }
@@ -300,6 +323,46 @@ where
         }
 
         result
+    }
+
+    fn compute_first_k_cached(
+        grammar: &Grammar<T, N>,
+        expr: &Expr<T, N>,
+        first_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
+        k: usize,
+        cache: &mut FirstKCache<T, N>,
+    ) -> HashSet<SmallVec<[T; 4]>, ahash::RandomState> {
+        if let Expr::Rule(nt) = expr {
+            let key = (nt.clone(), k);
+            if let Some(cached) = cache.get(&key) {
+                return cached.clone();
+            }
+            let computed = grammar.get_rule(nt).map_or_else(
+                || HashSet::with_hasher(ahash::RandomState::new()),
+                |rule| Self::compute_first_k(grammar, &rule.rhs, first_sets, k),
+            );
+            cache.insert(key, computed.clone());
+            computed
+        } else {
+            Self::compute_first_k(grammar, expr, first_sets, k)
+        }
+    }
+
+    fn compute_follow_k_cached(
+        grammar: &Grammar<T, N>,
+        nt: &N,
+        follow_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
+        first_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
+        k: usize,
+        cache: &mut FollowKCache<T, N>,
+    ) -> HashSet<SmallVec<[T; 4]>, ahash::RandomState> {
+        let key = (nt.clone(), k);
+        if let Some(cached) = cache.get(&key) {
+            return cached.clone();
+        }
+        let computed = Self::compute_follow_k(grammar, nt, follow_sets, first_sets, k);
+        cache.insert(key, computed.clone());
+        computed
     }
 
     /// Get the production index for a non-terminal and lookahead

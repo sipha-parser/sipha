@@ -227,6 +227,51 @@ Incremental parsing is fully implemented with complete node reuse and cache mana
 
 The parser automatically integrates reusable nodes from previous parses, providing significant performance improvements for interactive editing scenarios.
 
+## GLR Parsing
+
+Sipha includes a GLR (Generalized LR) parser backend for handling ambiguous grammars. GLR parsing extends LR parsing to handle non-deterministic grammars by maintaining multiple parser stacks and forking on conflicts.
+
+### When to Use GLR
+
+Use the GLR backend when:
+- Your grammar has inherent ambiguities (e.g., C++ template syntax)
+- You need to handle multiple valid parse trees
+- You want to disambiguate at parse time using precedence/associativity rules
+
+### Basic Usage
+
+```rust
+use sipha::backend::glr::{GlrParser, GlrConfig};
+use sipha::backend::ParserBackend;
+
+// Create GLR parser
+let config = GlrConfig::default();
+let parser = GlrParser::new(&grammar, config)
+    .expect("Failed to create GLR parser");
+
+// Parse with GLR - returns a parse forest for ambiguous results
+let result = parser.parse(&tokens, entry_point);
+
+// Handle ambiguity if present
+if let Some(forest) = result.forest {
+    // Multiple parse trees exist - disambiguate
+    let disambiguated = forest.disambiguate(|alternatives| {
+        // Custom disambiguation logic
+        alternatives.first().cloned()
+    });
+}
+```
+
+### Disambiguation
+
+GLR parsers can produce parse forests when multiple valid parse trees exist. Sipha provides several disambiguation strategies:
+
+- **Precedence-based**: Resolve conflicts using operator precedence
+- **Associativity-based**: Resolve conflicts using operator associativity
+- **Custom strategies**: Implement your own disambiguation logic
+
+For more details, see the [`backend::glr`](crates/sipha/src/backend/glr/mod.rs) module documentation.
+
 ## Architecture Overview
 
 ### Parsing Backends
@@ -242,7 +287,14 @@ Sipha supports multiple parsing algorithms via feature flags:
   - Efficient for many grammar types
   - Good error recovery
 
-- **Planned**: GLR, PEG, Packrat, Earley parsers
+- **GLR Parser** (`backend-glr`): Generalized LR parsing for ambiguous grammars
+  - Handles non-deterministic and ambiguous grammars
+  - Parse forest representation for ambiguity tracking
+  - Configurable disambiguation strategies (precedence, associativity)
+  - Incremental parsing support
+  - Ideal for complex languages like C++ with inherent ambiguities
+
+- **Planned**: PEG, Packrat, Earley parsers
 
 ### Syntax Trees
 
@@ -325,6 +377,7 @@ For batch parsing (non-interactive), Sipha is competitive with other Rust parsin
 - Need incremental parsing for interactive editing
 - Want flexibility in choosing parsing algorithms
 - Need rich syntax tree manipulation
+- Parsing ambiguous grammars (use GLR backend)
 
 **When to consider alternatives:**
 - Simple one-off parsers (pest or nom might be simpler)
@@ -341,7 +394,7 @@ Sipha is under active development. Planned features include:
 - **Better diagnostics**: Improved error messages and suggestions
 
 ### Medium Term
-- **Additional backends**: GLR, PEG, Packrat, and Earley parsers
+- **Additional backends**: PEG, Packrat, and Earley parsers
 - **Grammar analysis**: Tools for analyzing and optimizing grammars
 - **Performance optimizations**: Further speed improvements
 

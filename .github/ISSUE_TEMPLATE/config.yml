@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/nyaleph/sipha/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 📚 Documentation
+    url: https://github.com/nyaleph/sipha/tree/trunk/doc
+    about: Check the documentation for answers
+  - name: 🔒 Security Issue
+    url: https://github.com/nyaleph/sipha/security/advisories/new
+    about: Report a security vulnerability (please do not open a public issue)
+

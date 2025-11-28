@@ -1,0 +1,60 @@
+name: Security Audit
+
+on:
+  schedule:
+    # Run weekly on Mondays at 00:00 UTC
+    - cron: '0 0 * * 1'
+  push:
+    branches: [trunk, develop]
+  pull_request:
+    branches: [trunk, develop]
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      
+      - name: Install cargo-audit
+        run: |
+          cargo install cargo-audit --locked
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-audit-
+      
+      - name: Run cargo audit
+        run: |
+          cargo audit --version
+          cargo audit
+        continue-on-error: true
+      
+      - name: Upload SARIF file (if available)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: audit-results.sarif
+        continue-on-error: true
+

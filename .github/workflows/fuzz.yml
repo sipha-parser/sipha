@@ -1,0 +1,87 @@
+name: Fuzz Testing
+
+on:
+  schedule:
+    # Run weekly on Sundays at 02:00 UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:  # Allow manual triggering
+  push:
+    branches: [trunk]
+    paths:
+      - 'fuzz/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - parser_fuzz
+          - incremental_fuzz
+          - glr_parser_fuzz
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: rustfmt
+      
+      - name: Install cargo-fuzz
+        run: |
+          cargo install cargo-fuzz --locked
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            fuzz/target/
+          key: ${{ runner.os }}-cargo-fuzz-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fuzz-${{ matrix.target }}-
+      
+      - name: Run fuzzer
+        working-directory: fuzz
+        run: |
+          # Run fuzzer for a limited time (5 minutes per target)
+          timeout 300 cargo fuzz run ${{ matrix.target }} -- -max_total_time=300 || true
+        continue-on-error: true
+      
+      - name: Upload fuzz artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: |
+            fuzz/artifacts/
+            fuzz/corpus/
+          retention-days: 7
+        continue-on-error: true
+
+  # Continuous fuzzing with OSS-Fuzz integration (optional)
+  # This can be enabled if you set up OSS-Fuzz integration
+  oss-fuzz-check:
+    name: OSS-Fuzz Integration Check
+    runs-on: ubuntu-latest
+    if: false  # Set to true if OSS-Fuzz is set up
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check OSS-Fuzz status
+        run: |
+          echo "OSS-Fuzz integration would be checked here"
+          # Add OSS-Fuzz status check if integrated
+

@@ -1,11 +1,15 @@
+#[cfg(feature = "serialize")]
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Text size in bytes (UTF-8)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct TextSize(u32);
 
 /// Text range representing a span of text
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct TextRange {
     start: TextSize,
     end: TextSize,

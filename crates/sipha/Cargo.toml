@@ -41,7 +41,7 @@ puffin = { version = "0.19", optional = true }
 tracing = "0.1"
 
 # Serialization
-serde = { version = "1.0", features = ["derive"], optional = true }
+serde = { version = "1.0", features = ["derive", "rc"], optional = true }
 serde_json = { version = "1.0", optional = true }
 rkyv = { version = "0.8", optional = true }
 
@@ -57,7 +57,7 @@ name = "parsing_bench"
 harness = false
 
 [features]
-default = ["diagnostics", "unicode", "query", "visitor", "traversal", "tree-utils", "backend-ll"]
+default = ["diagnostics", "unicode", "query", "visitor", "traversal", "tree-utils", "backend-ll", "grammar-docs"]
 diagnostics = ["miette"]
 unicode = ["unicode-ident", "unicode-normalization"]
 parallel = ["rayon"]
@@ -75,6 +75,7 @@ tree-index = []
 # Backend features
 backend-ll = []
 backend-lr = []
+backend-glr = ["backend-lr"]
 
 # Grammar documentation and visualization
 grammar-docs = []

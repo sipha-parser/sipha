@@ -103,6 +103,16 @@ impl ReuseBudget {
     /// - File size: larger files get more candidates (up to `max_nodes`)
     /// - Affected region size: smaller affected regions get more candidates
     fn calculate(&self, tree_depth: usize, file_size: TextSize, affected_size: TextSize) -> usize {
+        /// Helper to safely convert f64 to usize for bounded values [0.0, 200.0]
+        /// The bounds check ensures the conversion is safe
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        fn f64_to_usize_bounded(value: f64, min: f64, max: f64) -> usize {
+            if (min..=max).contains(&value) {
+                value as usize
+            } else {
+                0
+            }
+        }
         match self {
             Self::Fixed(budget) => *budget,
             Self::Heuristic {
@@ -120,16 +130,19 @@ impl ReuseBudget {
                 let affected_size_u64 = u64::from(affected_size.into());
                 let total_size_u64 = u64::from(file_size.into());
                 // Intentional: precision loss acceptable for ratio calculation
+                // f64::from() doesn't exist for u64, so we must use as f64
                 #[allow(clippy::cast_precision_loss)]
+                // Precision loss acceptable for ratio calculation
                 let affected_ratio = if total_size_u64 > 0 {
-                    affected_size_u64 as f64 / total_size_u64 as f64
+                    (affected_size_u64 as f64) / (total_size_u64 as f64)
                 } else {
                     1.0
                 };
                 // Inverse relationship: smaller affected ratio = more candidates
-                // Intentional: truncation acceptable for factor calculation
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let affected_factor = ((1.0 - affected_ratio.min(1.0)) * 200.0) as usize;
+                // Factor is bounded between 0.0 and 200.0, so conversion is safe
+                let factor_f64 = (1.0 - affected_ratio.min(1.0)) * 200.0;
+                let factor_rounded = factor_f64.round();
+                let affected_factor = f64_to_usize_bounded(factor_rounded, 0.0, 200.0);
 
                 // Combine factors with reasonable bounds
                 let budget = depth_factor + size_factor + affected_factor;
@@ -152,6 +165,8 @@ pub struct IncrementalSession<'a, K: crate::syntax::SyntaxKind> {
     affected: AffectedRegion,
     reusable: Vec<ReuseCandidate<K>>,
     reusable_by_pos: hashbrown::HashMap<crate::syntax::TextSize, Vec<usize>, ahash::RandomState>,
+    /// Optional reference to persistent parse cache for cross-session node reuse
+    cache: Option<&'a ParseCache<K>>,
 }
 
 impl<'a, K: crate::syntax::SyntaxKind> IncrementalSession<'a, K> {
@@ -196,7 +211,20 @@ impl<'a, K: crate::syntax::SyntaxKind> IncrementalSession<'a, K> {
             affected,
             reusable,
             reusable_by_pos,
+            cache: None,
         }
+    }
+
+    /// Create a new incremental session with cache access for persistent node reuse.
+    #[must_use]
+    pub fn with_cache(
+        old_tree: Option<&'a GreenNode<K>>,
+        edits: &'a [TextEdit],
+        cache: &'a ParseCache<K>,
+    ) -> Self {
+        let mut session = Self::new(old_tree, edits);
+        session.cache = Some(cache);
+        session
     }
 
     #[must_use]
@@ -242,6 +270,36 @@ impl<'a, K: crate::syntax::SyntaxKind> IncrementalSession<'a, K> {
                 expected_kind.is_none_or(|kind| candidate.node.kind() == kind)
             })
             .max_by_key(|candidate| candidate.depth)
+    }
+
+    /// Query the persistent parse cache for a node at the given position and rule name.
+    /// This checks the persistent cache before falling back to session-local reusable nodes.
+    #[must_use]
+    pub fn find_cached_node(
+        &self,
+        rule_name: &str,
+        pos: crate::syntax::TextSize,
+        expected_kind: Option<K>,
+    ) -> Option<std::sync::Arc<GreenNode<K>>> {
+        let cache = self.cache?;
+
+        // Check if the position is in an affected region - if so, don't use cache
+        if self.affected.intersects(crate::syntax::TextRange::at(
+            pos,
+            crate::syntax::TextSize::from(1),
+        )) {
+            return None;
+        }
+
+        // Query the persistent cache
+        if let Some(cached_node) = cache.get(rule_name, pos) {
+            // Verify the cached node matches the expected kind if provided
+            if expected_kind.is_none_or(|kind| cached_node.kind() == kind) {
+                return Some(cached_node);
+            }
+        }
+
+        None
     }
 }
 
@@ -429,7 +487,8 @@ where
         T: crate::grammar::Token,
         N: crate::grammar::NonTerminal,
     {
-        let session = IncrementalSession::new(old_tree, edits);
+        // Create session with cache access for persistent node reuse
+        let session = IncrementalSession::with_cache(old_tree, edits, &self.cache);
         let result = if edits.is_empty() {
             self.parser.parse(input, entry)
         } else {
@@ -564,7 +623,6 @@ impl<K: crate::syntax::SyntaxKind> ParseCache<K> {
 
     /// Get a cached node for the given rule and position
     #[must_use]
-    #[allow(dead_code)] // Will be used when cache lookup is integrated
     pub(crate) fn get(
         &self,
         rule_name: &str,
@@ -829,6 +887,8 @@ mod tests {
                 errors: vec![],
                 warnings: vec![],
                 metrics: crate::error::ParseMetrics::default(),
+                #[cfg(feature = "backend-glr")]
+                forest: None,
                 _phantom: std::marker::PhantomData,
             }
         }

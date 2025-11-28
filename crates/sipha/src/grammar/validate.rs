@@ -1,6 +1,13 @@
 use crate::grammar::{Expr, GrammarError, NonTerminal, Token};
 use hashbrown::HashSet;
 
+/// Options that control grammar validation behavior.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GrammarValidationOptions {
+    /// Skip direct-left-recursion detection when true.
+    pub allow_left_recursion: bool,
+}
+
 /// Validate a grammar for common issues
 ///
 /// # Errors
@@ -13,8 +20,26 @@ where
     T: Token,
     N: NonTerminal,
 {
+    validate_grammar_with_options(rules, GrammarValidationOptions::default())
+}
+
+/// Validate a grammar using custom options.
+///
+/// # Errors
+///
+/// Returns `GrammarError::LeftRecursion` if left recursion is detected and not allowed.
+pub fn validate_grammar_with_options<T, N>(
+    rules: &[crate::grammar::Rule<T, N>],
+    options: GrammarValidationOptions,
+) -> Result<(), GrammarError<T, N>>
+where
+    T: Token,
+    N: NonTerminal,
+{
     // Check for left recursion
-    if let Some(cycles) = detect_left_recursion(rules) {
+    if !options.allow_left_recursion
+        && let Some(cycles) = detect_left_recursion(rules)
+    {
         return Err(GrammarError::LeftRecursion(cycles));
     }
 

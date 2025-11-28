@@ -1,0 +1,77 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers when pushing tags starting with 'v'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for changelog generation
+      
+      - name: Extract version from tag
+        id: tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$GITHUB_REF_NAME" >> $GITHUB_OUTPUT
+      
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          TAG_VERSION="${{ steps.tag.outputs.version }}"
+          TAG_NAME="${{ steps.tag.outputs.tag }}"
+          
+          # Extract changelog section for this version
+          if [ -f CHANGELOG.md ]; then
+            # Try to extract the section for this version
+            awk "/^## \[$TAG_VERSION\]/,/^## \[/" CHANGELOG.md | sed '$d' > release_notes.md || true
+            if [ -s release_notes.md ]; then
+              cat release_notes.md > release_notes_final.md
+            else
+              cat > release_notes_final.md <<EOF
+          Release $TAG_VERSION
+          
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/$TAG_NAME/CHANGELOG.md) for details.
+          EOF
+            fi
+          else
+            cat > release_notes_final.md <<EOF
+          Release $TAG_VERSION
+          EOF
+          fi
+          
+          # Use multiline output
+          {
+            echo 'notes<<RELEASE_NOTES_EOF'
+            cat release_notes_final.md
+            echo 'RELEASE_NOTES_EOF'
+          } >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.version }}
+          body_path: release_notes_final.md
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.version, '-') }}
+          generate_release_notes: false
+      
+      - name: Upload release artifacts (optional)
+        if: false  # Set to true if you want to upload build artifacts
+        run: |
+          # Example: Build and upload binaries if needed
+          # This is optional and can be customized based on needs
+          echo "Release artifacts upload would go here"
+

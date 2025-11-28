@@ -1,4 +1,6 @@
-use crate::grammar::{BackendHint, Expr, NonTerminal, Token, validate_grammar};
+use crate::grammar::{
+    BackendHint, Expr, GrammarValidationOptions, NonTerminal, Token, validate_grammar_with_options,
+};
 use hashbrown::HashMap;
 use lasso::Rodeo;
 use smallvec::SmallVec;
@@ -510,6 +512,7 @@ pub struct GrammarBuilder<T, N> {
     rules: Vec<Rule<T, N>>,
     entry_point: Option<N>,
     interner: Rodeo,
+    validation_options: GrammarValidationOptions,
     #[cfg(feature = "grammar-docs")]
     token_descriptions: HashMap<T, String, ahash::RandomState>,
 }
@@ -535,9 +538,18 @@ where
             rules: Vec::new(),
             entry_point: None,
             interner: Rodeo::new(),
+            validation_options: GrammarValidationOptions::default(),
             #[cfg(feature = "grammar-docs")]
             token_descriptions: HashMap::with_hasher(ahash::RandomState::new()),
         }
+    }
+
+    /// Allow direct left recursion during validation.
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // Cannot be const: mutates self
+    pub fn allow_left_recursion(mut self) -> Self {
+        self.validation_options.allow_left_recursion = true;
+        self
     }
 
     #[must_use]
@@ -663,7 +675,7 @@ where
         let _ = self.interner.get_or_intern(entry_point.name());
 
         // Validate grammar
-        validate_grammar(&self.rules)?;
+        validate_grammar_with_options(&self.rules, self.validation_options)?;
 
         Ok(Grammar {
             rules: self.rules.into_iter().map(|r| (r.lhs.clone(), r)).collect(),

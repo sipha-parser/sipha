@@ -9,8 +9,8 @@ use std::fmt::Write;
 /// Format an expression as EBNF.
 ///
 /// This function is intentionally recursive to handle nested expressions.
-/// The `only_used_in_recursion` warning is expected and acceptable for this use case.
-#[allow(clippy::too_many_lines, clippy::only_used_in_recursion)]
+/// It is public and used externally (in tests and by users), not just recursively.
+#[allow(clippy::too_many_lines, clippy::only_used_in_recursion)] // Public API, used in tests
 pub fn format_expr_ebnf<T, N>(
     expr: &Expr<T, N>,
     grammar: &Grammar<T, N>,
@@ -190,6 +190,7 @@ pub struct MarkdownConfig {
 
 /// Options for which sections to include in the markdown documentation
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // Multiple boolean flags for clarity in API
 pub struct SectionOptions {
     /// Include a table of contents with links to all sections
     pub include_toc: bool,
@@ -1407,13 +1408,11 @@ mod tests {
         }
     }
 
-    fn token_name_impl(t: TestToken) -> String {
-        format!("{t:?}")
-    }
-
-    // Wrapper to match API signature (Fn(&T) -> String) while satisfying clippy
+    // Wrapper to match API signature (Fn(&T) -> String)
+    // Note: TestToken is Copy, but the API requires &T, so we must accept by reference
+    #[allow(clippy::trivially_copy_pass_by_ref)] // Required by API signature: Fn(&T) -> String
     fn token_name(t: &TestToken) -> String {
-        token_name_impl(*t)
+        format!("{t:?}")
     }
 
     #[test]

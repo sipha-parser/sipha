@@ -84,6 +84,8 @@ where
         errors,
         warnings,
         metrics: ParseMetrics::default(),
+        #[cfg(feature = "backend-glr")]
+        forest: None,
         _phantom: std::marker::PhantomData,
     }
 }
@@ -156,6 +158,8 @@ where
         errors,
         warnings: Vec::new(),
         metrics: ParseMetrics::default(),
+        #[cfg(feature = "backend-glr")]
+        forest: None,
         _phantom: std::marker::PhantomData,
     }
 }
@@ -603,6 +607,8 @@ where
         errors,
         warnings,
         metrics,
+        #[cfg(feature = "backend-glr")]
+        forest: None,
         _phantom: std::marker::PhantomData::<N>,
     }
 }
@@ -709,6 +715,8 @@ where
         errors,
         warnings,
         metrics,
+        #[cfg(feature = "backend-glr")]
+        forest: None,
         _phantom: std::marker::PhantomData::<N>,
     }
 }
@@ -738,7 +746,37 @@ where
         .or_else(|| input.get(*pos).map(crate::grammar::Token::kind))
         .or_else(|| nt.default_syntax_kind());
 
-    // Check for reusable nodes from incremental session with kind matching
+    // First, check persistent parse cache for cross-session node reuse
+    if let Some(cached_node) = session.find_cached_node(nt.name(), *text_pos, expected_kind) {
+        // Reuse the cached node
+        builder
+            .reuse_node(cached_node.clone())
+            .map_err(|_| ParseError::InvalidSyntax {
+                span: crate::syntax::TextRange::at(*text_pos, TextSize::from(1)),
+                message: "Failed to reuse cached node in builder".to_string(),
+            })?;
+
+        // Advance token position by counting tokens until we've consumed the node's text length
+        let node_text_len = cached_node.text_len();
+        let target_text_pos = *text_pos + node_text_len;
+        let mut current_text = *text_pos;
+        while *pos < input.len() && current_text < target_text_pos {
+            let token = &input[*pos];
+            let token_len = token.text_len();
+            if current_text + token_len > target_text_pos {
+                break;
+            }
+            *pos += 1;
+            current_text += token_len;
+        }
+
+        // Update text position to match what we consumed
+        *text_pos = current_text;
+
+        return Ok(());
+    }
+
+    // Fall back to session-local reusable nodes
     if let Some(candidate) = session.find_reusable_at(*text_pos, expected_kind) {
         // Reuse the node
         builder
@@ -787,18 +825,52 @@ struct ReuseParams<'a, T: Token> {
 }
 
 /// Helper to try reusing a node at the current position
-fn try_reuse_node<T>(
+/// Checks persistent cache first, then session-local reusable nodes
+fn try_reuse_node<T, N>(
     session: Option<&crate::incremental::IncrementalSession<'_, T::Kind>>,
     params: &mut ReuseParams<'_, T>,
     builder: &mut GreenNodeBuilder<T::Kind>,
+    nt: &N,
 ) -> Result<bool, ParseError>
 where
     T: Token,
+    N: NonTerminal,
 {
     let Some(session) = session else {
         return Ok(false);
     };
 
+    // First, check persistent parse cache for cross-session node reuse
+    if let Some(cached_node) =
+        session.find_cached_node(nt.name(), *params.text_pos, params.expected_kind)
+    {
+        // Reuse the cached node
+        builder
+            .reuse_node(cached_node.clone())
+            .map_err(|_| ParseError::InvalidSyntax {
+                span: crate::syntax::TextRange::at(*params.text_pos, TextSize::from(1)),
+                message: "Failed to reuse cached node in builder".to_string(),
+            })?;
+
+        // Advance token position by counting tokens until we've consumed the node's text length
+        let node_text_len = cached_node.text_len();
+        let target_text_pos = *params.text_pos + node_text_len;
+        let mut current_text = *params.text_pos;
+        while *params.pos < params.input.len() && current_text < target_text_pos {
+            let token = &params.input[*params.pos];
+            let token_len = token.text_len();
+            if current_text + token_len > target_text_pos {
+                break;
+            }
+            *params.pos += 1;
+            current_text += token_len;
+        }
+
+        *params.text_pos = current_text;
+        return Ok(true);
+    }
+
+    // Fall back to session-local reusable nodes
     if let Some(candidate) = session.find_reusable_at(*params.text_pos, params.expected_kind) {
         // Reuse the node
         builder
@@ -855,6 +927,7 @@ where
     result
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_expr_impl<T, N>(
     ctx: &mut ParseContext<'_, T, N>,
     pos: &mut ParsePosition,
@@ -870,7 +943,43 @@ where
     let start_pos = pos.pos;
     let start_text_pos = pos.text_pos;
 
-    // Try to get a cached result for this non-terminal at this position
+    // First, check persistent parse cache for cross-session node reuse
+    if let Some(session) = session {
+        let expected_kind = nt.to_syntax_kind().or_else(|| nt.default_syntax_kind());
+        if let Some(cached_node) =
+            session.find_cached_node(nt.name(), start_text_pos, expected_kind)
+        {
+            // Reuse the cached node
+            output
+                .builder
+                .reuse_node(cached_node.clone())
+                .map_err(|_| ParseError::InvalidSyntax {
+                    span: crate::syntax::TextRange::at(start_text_pos, TextSize::from(1)),
+                    message: "Failed to reuse persistent cached node in builder".to_string(),
+                })?;
+
+            // Advance position by the node's text length
+            let node_text_len = cached_node.text_len();
+            let target_text_pos = start_text_pos + node_text_len;
+            let mut current_text_pos = start_text_pos;
+
+            // Count tokens until we've consumed the node's text length
+            while pos.pos < ctx.input.len() && current_text_pos < target_text_pos {
+                let token = &ctx.input[pos.pos];
+                let token_len = token.text_len();
+                if current_text_pos + token_len > target_text_pos {
+                    break;
+                }
+                pos.pos += 1;
+                current_text_pos += token_len;
+            }
+
+            pos.text_pos = current_text_pos;
+            return Ok(());
+        }
+    }
+
+    // Fall back to backend-local cache
     if let Some(cached_node) = ctx.state.get_cached(nt, start_pos, start_text_pos) {
         // Reuse the cached node
         output
@@ -1047,7 +1156,7 @@ where
                 input: ctx.input,
                 expected_kind,
             };
-            if try_reuse_node(session, &mut reuse_params, output.builder)? {
+            if try_reuse_node(session, &mut reuse_params, output.builder, nt)? {
                 return Ok(());
             }
 
