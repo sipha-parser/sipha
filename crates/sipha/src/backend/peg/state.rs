@@ -37,8 +37,7 @@ struct MemoKey<N: NonTerminal> {
 impl<N: NonTerminal> MemoKey<N> {
     /// Create a new memo key
     #[must_use]
-    #[allow(clippy::missing_const_for_fn)] // Cannot be const: generic type N
-    fn new(rule: N, position: usize, version: usize) -> Self {
+    const fn new(rule: N, position: usize, version: usize) -> Self {
         Self {
             rule,
             position,
