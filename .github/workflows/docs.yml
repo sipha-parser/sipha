@@ -67,7 +67,7 @@ jobs:
         with:
           mdbook-version: 'latest'
       - name: Install mdbook-mermaid
-        run: cargo install mdbook-mermaid
+        run: cargo install mdbook-mermaid --force
       - name: Build book
         run: mdbook build doc
       - name: Check for broken links
@@ -105,7 +105,7 @@ jobs:
         with:
           mdbook-version: 'latest'
       - name: Install mdbook-mermaid
-        run: cargo install mdbook-mermaid
+        run: cargo install mdbook-mermaid --force
       - name: Download API docs artifact
         uses: actions/download-artifact@v4
         with:
