@@ -8,7 +8,10 @@ This chapter provides an overview of Sipha's key types and traits.
 
 Trait for syntax kind identifiers:
 
-```rust
+```rust,ignore
+use std::fmt::Debug;
+use std::hash::Hash;
+
 pub trait SyntaxKind: Copy + Clone + PartialEq + Eq + Hash + Debug {
     fn is_terminal(self) -> bool;
     fn is_trivia(self) -> bool;
@@ -19,7 +22,11 @@ pub trait SyntaxKind: Copy + Clone + PartialEq + Eq + Hash + Debug {
 
 Trait for tokens:
 
-```rust
+```rust,ignore
+use std::hash::Hash;
+use sipha::syntax::{SyntaxKind, TextSize};
+use compact_str::CompactString;
+
 pub trait Token: Clone + PartialEq + Eq + Hash {
     type Kind: SyntaxKind;
     fn kind(&self) -> Self::Kind;
@@ -32,7 +39,9 @@ pub trait Token: Clone + PartialEq + Eq + Hash {
 
 Trait for non-terminals:
 
-```rust
+```rust,ignore
+use std::hash::Hash;
+
 pub trait NonTerminal: Clone + PartialEq + Eq + Hash {
     fn name(&self) -> &str;
 }
@@ -42,7 +51,9 @@ pub trait NonTerminal: Clone + PartialEq + Eq + Hash {
 
 Trait for parser backends:
 
-```rust
+```rust,ignore
+use sipha::grammar::Grammar;
+
 pub trait ParserBackend<T, N>: Sized + Send
 where
     T: Token,
@@ -64,9 +75,11 @@ where
 
 Grammar definition:
 
-```rust
+```rust,ignore
+use std::marker::PhantomData;
+
 pub struct Grammar<T, N> {
-    // ...
+    _phantom: PhantomData<(T, N)>,
 }
 ```
 
@@ -74,7 +87,9 @@ pub struct Grammar<T, N> {
 
 Parse result:
 
-```rust
+```rust,ignore
+use sipha::syntax::GreenNode;
+
 pub struct ParseResult<T, N> {
     pub root: GreenNode<T::Kind>,
     pub errors: Vec<ParseError<T, N>>,
@@ -89,9 +104,11 @@ pub struct ParseResult<T, N> {
 
 Green tree node:
 
-```rust
+```rust,ignore
+use sipha::syntax::SyntaxKind;
+
 pub struct GreenNode<K: SyntaxKind> {
-    // ...
+    _phantom: std::marker::PhantomData<K>,
 }
 ```
 
@@ -99,7 +116,7 @@ pub struct GreenNode<K: SyntaxKind> {
 
 Red tree node:
 
-```rust
+```rust,ignore
 pub struct SyntaxNode {
     // ...
 }
@@ -111,7 +128,7 @@ pub struct SyntaxNode {
 
 Build grammars:
 
-```rust
+```rust,ignore
 pub struct GrammarBuilder<T, N> {
     // ...
 }
@@ -128,17 +145,21 @@ impl<T, N> GrammarBuilder<T, N> {
 
 Build lexers:
 
-```rust
+```rust,ignore
+# use sipha::syntax::SyntaxKind;
+# use sipha::lexer::{LexerBuilder, Pattern, CompiledLexer};
+# type LexerError = ();
+# type K = ();
 pub struct LexerBuilder<K: SyntaxKind> {
-    // ...
+    _phantom: std::marker::PhantomData<K>,
 }
 
 impl<K: SyntaxKind> LexerBuilder<K> {
-    pub fn new() -> Self;
-    pub fn token(mut self, kind: K, pattern: Pattern) -> Self;
-    pub fn keyword(mut self, text: &str, kind: K) -> Self;
-    pub fn trivia(mut self, kind: K) -> Self;
-    pub fn build(self, eof_kind: K, ident_kind: K) -> Result<CompiledLexer<K>, LexerError>;
+    pub fn new() -> Self { todo!() }
+    pub fn token(self, kind: K, pattern: Pattern) -> Self { todo!() }
+    pub fn keyword(self, text: &str, kind: K) -> Self { todo!() }
+    pub fn trivia(self, kind: K) -> Self { todo!() }
+    pub fn build(self, eof_kind: K, ident_kind: K) -> Result<CompiledLexer<K>, LexerError> { todo!() }
 }
 ```
 
@@ -146,17 +167,21 @@ impl<K: SyntaxKind> LexerBuilder<K> {
 
 Build green trees:
 
-```rust
+```rust,ignore
+# use sipha::syntax::{GreenNode, SyntaxKind};
+# type K = ();
+# type BuilderError = ();
+# struct GreenNodeBuilder;
 pub struct GreenNodeBuilder {
-    // ...
+    _phantom: std::marker::PhantomData<()>,
 }
 
 impl GreenNodeBuilder {
-    pub fn new() -> Self;
-    pub fn start_node(&mut self, kind: K);
-    pub fn token(&mut self, kind: K, text: &str) -> Result<(), BuilderError>;
-    pub fn finish_node(&mut self) -> Result<(), BuilderError>;
-    pub fn finish(self) -> Result<GreenNode<K>, BuilderError>;
+    pub fn new() -> Self { todo!() }
+    pub fn start_node(&mut self, kind: K) { todo!() }
+    pub fn token(&mut self, kind: K, text: &str) -> Result<(), BuilderError> { todo!() }
+    pub fn finish_node(&mut self) -> Result<(), BuilderError> { todo!() }
+    pub fn finish(self) -> Result<GreenNode<K>, BuilderError> { todo!() }
 }
 ```
 
@@ -166,13 +191,20 @@ impl GreenNodeBuilder {
 
 Incremental parser wrapper:
 
-```rust
+```rust,ignore
+# use sipha::syntax::{GreenNode, SyntaxKind};
+# use sipha::grammar::Grammar;
+# use sipha::incremental::TextEdit;
+# type P = ();
+# type T = ();
+# type N = ();
+# type ParseResult<T, N> = ();
 pub struct IncrementalParser<P, T, N> {
-    // ...
+    _phantom: std::marker::PhantomData<(P, T, N)>,
 }
 
 impl<P, T, N> IncrementalParser<P, T, N> {
-    pub fn new(parser: P) -> Self;
+    pub fn new(parser: P) -> Self { todo!() }
     pub fn parse_incremental(
         &mut self,
         input: &[T],
@@ -180,7 +212,7 @@ impl<P, T, N> IncrementalParser<P, T, N> {
         edits: &[TextEdit],
         entry: N,
         grammar: Option<&Grammar<T, N>>,
-    ) -> ParseResult<T, N>;
+    ) -> ParseResult<T, N> { todo!() }
 }
 ```
 
@@ -188,16 +220,18 @@ impl<P, T, N> IncrementalParser<P, T, N> {
 
 Text edit:
 
-```rust
+```rust,ignore
+use sipha::syntax::{TextRange, TextSize};
+
 pub struct TextEdit {
     pub range: TextRange,
     pub new_text: String,
 }
 
 impl TextEdit {
-    pub fn replace(range: TextRange, new_text: impl Into<String>) -> Self;
-    pub fn insert(pos: TextSize, text: impl Into<String>) -> Self;
-    pub fn delete(range: TextRange) -> Self;
+    pub fn replace(range: TextRange, new_text: impl Into<String>) -> Self { todo!() }
+    pub fn insert(pos: TextSize, text: impl Into<String>) -> Self { todo!() }
+    pub fn delete(range: TextRange) -> Self { todo!() }
 }
 ```
 
@@ -207,7 +241,9 @@ impl TextEdit {
 
 Parsing error:
 
-```rust
+```rust,ignore
+use sipha::syntax::TextRange;
+
 pub struct ParseError<T, N> {
     pub span: TextRange,
     pub message: String,
@@ -220,7 +256,9 @@ pub struct ParseError<T, N> {
 
 Lexer error:
 
-```rust
+```rust,ignore
+use sipha::syntax::TextRange;
+
 pub struct LexerError {
     pub span: TextRange,
     pub kind: LexerErrorKind,

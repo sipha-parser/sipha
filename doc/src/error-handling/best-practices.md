@@ -6,7 +6,7 @@ This chapter provides guidelines and common patterns for error handling in Sipha
 
 Always check for errors, even if you expect success:
 
-```rust
+```rust,ignore
 let result = parser.parse(&tokens, entry_point);
 
 // Always check errors, even if you expect success
@@ -30,7 +30,7 @@ When reporting errors to users, include:
 - **Context**: Surrounding code
 - **Suggestions**: What was expected or how to fix it
 
-```rust
+```rust,ignore
 use sipha::error::ParseError;
 
 fn report_error(error: &ParseError, source: &str) {
@@ -53,7 +53,7 @@ fn report_error(error: &ParseError, source: &str) {
 
 Warnings don't prevent parsing, but should be addressed:
 
-```rust
+```rust,ignore
 use sipha::error::Severity;
 
 // Warnings don't prevent parsing, but should be addressed
@@ -83,7 +83,7 @@ Error recovery is great for IDEs, but consider disabling it for:
 - **Batch processing**: When errors should stop processing
 - **Testing**: When you want to catch all errors
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 
 // For strict validation
@@ -118,7 +118,7 @@ sipha = { version = "0.5.0", features = ["diagnostics"] }
 
 ### Pattern 1: Missing Delimiter
 
-```rust
+```rust,ignore
 // Input: "if (condition { ... }"
 // Error: UnexpectedEof with expected: [")"]
 
@@ -130,7 +130,7 @@ sipha = { version = "0.5.0", features = ["diagnostics"] }
 
 ### Pattern 2: Unexpected Token
 
-```rust
+```rust,ignore
 // Input: "let x = 42 +"
 // Error: UnexpectedToken with expected: [number, identifier, "("]
 
@@ -142,7 +142,7 @@ sipha = { version = "0.5.0", features = ["diagnostics"] }
 
 ### Pattern 3: Invalid Syntax
 
-```rust
+```rust,ignore
 // Input: "function() { return }"
 // Error: InvalidSyntax with message: "Missing return value"
 
@@ -178,7 +178,7 @@ Error handling has minimal performance impact:
 
 Test your error handling:
 
-```rust
+```rust,ignore
 #[test]
 fn test_error_handling() {
     let result = parser.parse(&invalid_tokens, entry_point);

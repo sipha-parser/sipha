@@ -6,7 +6,7 @@ This chapter covers common patterns and idioms for using Sipha in real-world app
 
 ### Structure
 
-```rust
+```rust,ignore
 struct LanguageServer {
     parser: IncrementalParser<LlParser, Token, NonTerminal>,
     grammar: Grammar<Token, NonTerminal>,
@@ -23,7 +23,7 @@ struct Document {
 
 ### Handling Changes
 
-```rust
+```rust,ignore
 impl LanguageServer {
     fn did_change(&mut self, uri: Uri, edits: Vec<TextEdit>, version: i32) {
         let doc = self.documents.get_mut(&uri).unwrap();
@@ -51,7 +51,7 @@ impl LanguageServer {
 
 ### Collecting Errors
 
-```rust
+```rust,ignore
 fn collect_errors(result: &ParseResult) -> Vec<Diagnostic> {
     result.errors
         .iter()
@@ -67,7 +67,7 @@ fn collect_errors(result: &ParseResult) -> Vec<Diagnostic> {
 
 ### Reporting to User
 
-```rust
+```rust,ignore
 fn report_errors(errors: &[Diagnostic]) {
     for error in errors {
         eprintln!("Error at {}: {}", error.range, error.message);
@@ -79,7 +79,7 @@ fn report_errors(errors: &[Diagnostic]) {
 
 ### Finding Nodes
 
-```rust
+```rust,ignore
 fn find_nodes_by_kind(root: &SyntaxNode, kind: SyntaxKind) -> Vec<SyntaxNode> {
     root.descendants()
         .filter(|n| n.kind() == kind)
@@ -89,7 +89,7 @@ fn find_nodes_by_kind(root: &SyntaxNode, kind: SyntaxKind) -> Vec<SyntaxNode> {
 
 ### Collecting Information
 
-```rust
+```rust,ignore
 fn collect_identifiers(root: &SyntaxNode) -> Vec<String> {
     root.descendants()
         .filter(|n| n.kind() == SyntaxKind::Ident)
@@ -103,7 +103,7 @@ fn collect_identifiers(root: &SyntaxNode) -> Vec<String> {
 
 ### Adding Rules
 
-```rust
+```rust,ignore
 fn extend_grammar(base: GrammarBuilder) -> GrammarBuilder {
     base
         .rule(MyNonTerminal::NewRule, Expr::token(new_token))
@@ -118,7 +118,7 @@ fn extend_grammar(base: GrammarBuilder) -> GrammarBuilder {
 
 ### Test Helpers
 
-```rust
+```rust,ignore
 fn parse_test(input: &str) -> ParseResult {
     let lexer = build_test_lexer();
     let grammar = build_test_grammar();

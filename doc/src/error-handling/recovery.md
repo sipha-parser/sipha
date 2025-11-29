@@ -15,7 +15,7 @@ Error recovery allows parsers to:
 
 By default, parsers use automatic error recovery:
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 
 // Default config includes error recovery
@@ -44,7 +44,7 @@ Parsers use several strategies to recover:
 Skip unexpected tokens and continue parsing.
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let x = 42 + + 10"
 // Parser skips the second "+" and continues
 // Error reported, but parsing continues
@@ -55,7 +55,7 @@ Skip unexpected tokens and continue parsing.
 Insert missing tokens (e.g., semicolons, closing delimiters).
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let x = 42 let y = 10"
 // Parser may insert a semicolon after "42"
 // Error reported, but both statements parsed
@@ -66,7 +66,7 @@ Insert missing tokens (e.g., semicolons, closing delimiters).
 Skip to next statement or block when current rule fails.
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let x = invalid; let y = 10;"
 // Parser skips the first statement and continues with the second
 // Error reported for first statement, second statement parsed successfully
@@ -77,7 +77,7 @@ Skip to next statement or block when current rule fails.
 Continue parsing despite errors, producing the best possible result.
 
 **Example:**
-```rust
+```rust,ignore
 // Input with multiple errors
 // Parser attempts to parse as much as possible
 // All errors reported, partial tree returned
@@ -89,7 +89,7 @@ The specific strategy depends on the parser backend and configuration.
 
 Different backends support different recovery options:
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 
 let config = LlConfig {
@@ -133,7 +133,7 @@ let mut parser = LlParser::new(&grammar, config)?;
 
 ### Example 1: Missing Delimiter
 
-```rust
+```rust,ignore
 // Input: "if (condition { ... }"
 // Parser behavior:
 // 1. Reports UnexpectedEof error expecting ")"
@@ -144,7 +144,7 @@ let mut parser = LlParser::new(&grammar, config)?;
 
 ### Example 2: Unexpected Token
 
-```rust
+```rust,ignore
 // Input: "let x = 42 +"
 // Parser behavior:
 // 1. Reports UnexpectedToken error
@@ -155,7 +155,7 @@ let mut parser = LlParser::new(&grammar, config)?;
 
 ### Example 3: Invalid Syntax
 
-```rust
+```rust,ignore
 // Input: "function() { return }"
 // Parser behavior:
 // 1. Reports InvalidSyntax error

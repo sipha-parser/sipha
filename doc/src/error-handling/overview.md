@@ -71,7 +71,7 @@ This section covers:
 
 The most basic error handling:
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 use sipha::backend::ParserBackend;
 

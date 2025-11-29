@@ -8,7 +8,7 @@ This chapter covers advanced usage of syntax kinds.
 
 The `SyntaxKind` trait provides optional methods:
 
-```rust
+```rust,ignore
 impl SyntaxKind for MySyntaxKind {
     fn is_terminal(self) -> bool {
         // ...
@@ -44,7 +44,7 @@ impl SyntaxKind for MySyntaxKind {
 
 Organize kinds logically:
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum MySyntaxKind {
     // Keywords
@@ -77,7 +77,7 @@ enum MySyntaxKind {
 
 Use macros to reduce boilerplate:
 
-```rust
+```rust,ignore
 macro_rules! define_syntax_kinds {
     (
         keywords: [$($keyword:ident),*],
@@ -105,7 +105,7 @@ macro_rules! define_syntax_kinds {
 
 ### Converting to/from Strings
 
-```rust
+```rust,ignore
 impl MySyntaxKind {
     pub fn as_str(self) -> &'static str {
         match self {

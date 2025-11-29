@@ -116,7 +116,7 @@ This project adheres to the Rust Code of Conduct. By participating, you are expe
 - Reference issue numbers when applicable (e.g., "Fix #123: description").
 
 Example:
-```
+```text
 Add incremental parsing cache invalidation
 
 Implements cache invalidation for incremental parsing when text edits

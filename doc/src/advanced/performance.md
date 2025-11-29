@@ -8,7 +8,7 @@ This chapter covers performance optimization tips and benchmarking for Sipha.
 
 For interactive applications, always use incremental parsing:
 
-```rust
+```rust,ignore
 let mut incremental = IncrementalParser::new(parser);
 // Much faster for small edits
 ```
@@ -31,7 +31,7 @@ let mut incremental = IncrementalParser::new(parser);
 
 Order patterns from most specific to least specific:
 
-```rust
+```rust,ignore
 // Good: Specific patterns first
 .token(MySyntaxKind::Keyword, Pattern::Literal("if".into()))
 .token(MySyntaxKind::Ident, Pattern::CharClass(CharSet::letters()))
@@ -45,7 +45,7 @@ Order patterns from most specific to least specific:
 
 Prefer character classes over regex when possible:
 
-```rust
+```rust,ignore
 // Good: Character class
 .token(MySyntaxKind::Number, Pattern::CharClass(CharSet::digits()))
 
@@ -63,7 +63,7 @@ Keywords are matched using a trie for O(m) performance where m is keyword length
 
 Always provide grammar for cache population:
 
-```rust
+```rust,ignore
 // Good: Cache populated
 parser.parse_incremental(&tokens, old_tree, &edits, entry, Some(&grammar))
 
@@ -75,7 +75,7 @@ parser.parse_incremental(&tokens, old_tree, &edits, entry, None)
 
 Adjust reuse budget based on use case:
 
-```rust
+```rust,ignore
 // For large files
 let budget = ReuseBudget::Heuristic {
     max_depth: 30,
@@ -100,7 +100,7 @@ Incremental parsing shares unchanged nodes, reducing memory usage.
 
 Cache automatically evicts old versions:
 
-```rust
+```rust,ignore
 // Keep last 2 versions (default)
 cache.evict_old_entries(2);
 ```
@@ -109,7 +109,7 @@ cache.evict_old_entries(2);
 
 ### Measure Parse Time
 
-```rust
+```rust,ignore
 let start = std::time::Instant::now();
 let result = parser.parse(&tokens, entry);
 let duration = start.elapsed();
@@ -120,7 +120,7 @@ println!("Metrics: {:?}", result.metrics);
 
 ### Compare Backends
 
-```rust
+```rust,ignore
 // LL parser
 let ll_start = Instant::now();
 ll_parser.parse(&tokens, entry);

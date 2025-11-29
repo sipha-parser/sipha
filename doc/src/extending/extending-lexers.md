@@ -8,7 +8,7 @@ This chapter shows how to extend lexers with custom tokenization logic.
 
 Use custom matchers for complex patterns:
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     .custom_token(MySyntaxKind::String, |text, pos| {
         // Custom string matching
@@ -26,7 +26,7 @@ See [Custom Patterns](../advanced/custom-patterns.md) for details.
 
 To add new pattern types, extend the `Pattern` enum:
 
-```rust
+```rust,ignore
 pub enum Pattern {
     Literal(CompactString),
     CharClass(CharSet),
@@ -42,7 +42,7 @@ pub enum Pattern {
 
 Implement pattern matching logic:
 
-```rust
+```rust,ignore
 impl Pattern {
     fn matches(&self, text: &str, pos: usize) -> Option<usize> {
         match self {
@@ -59,7 +59,7 @@ impl Pattern {
 
 Add pre-processing hooks:
 
-```rust
+```rust,ignore
 pub struct LexerBuilder<K: SyntaxKind> {
     // ...
     preprocessors: Vec<Box<dyn Fn(&str) -> String>>,
@@ -77,7 +77,7 @@ impl<K: SyntaxKind> LexerBuilder<K> {
 
 Add post-processing hooks:
 
-```rust
+```rust,ignore
 impl<K: SyntaxKind> LexerBuilder<K> {
     pub fn postprocess(mut self, f: impl Fn(&mut Vec<Token<K>>) + 'static) -> Self {
         self.postprocessors.push(Box::new(f));
@@ -92,7 +92,7 @@ impl<K: SyntaxKind> LexerBuilder<K> {
 
 Update tokens incrementally:
 
-```rust
+```rust,ignore
 pub struct IncrementalLexer<K: SyntaxKind> {
     lexer: CompiledLexer<K>,
     old_tokens: Vec<Token<K>>,

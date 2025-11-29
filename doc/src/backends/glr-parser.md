@@ -25,7 +25,7 @@ Use the GLR backend when:
 
 Configure the GLR parser with `GlrConfig`:
 
-```rust
+```rust,ignore
 use sipha::backend::glr::{GlrParser, GlrConfig};
 
 let config = GlrConfig {
@@ -40,7 +40,7 @@ let mut parser = GlrParser::new(&grammar, config)
 
 ## Usage
 
-```rust
+```rust,ignore
 use sipha::backend::glr::{GlrParser, GlrConfig};
 use sipha::backend::ParserBackend;
 
@@ -55,7 +55,7 @@ let result = parser.parse(&tokens, entry_point);
 
 GLR parsers can produce parse forests when multiple valid parse trees exist:
 
-```rust
+```rust,ignore
 if let Some(forest) = result.forest {
     // Multiple parse trees exist - disambiguate
     let disambiguated = forest.disambiguate(|alternatives| {
@@ -73,7 +73,7 @@ Sipha provides several disambiguation strategies:
 
 Resolve conflicts using operator precedence:
 
-```rust
+```rust,ignore
 use sipha::backend::glr::disambiguate_by_precedence;
 
 let disambiguated = forest.disambiguate(disambiguate_by_precedence(|op| {
@@ -89,7 +89,7 @@ let disambiguated = forest.disambiguate(disambiguate_by_precedence(|op| {
 
 Resolve conflicts using operator associativity:
 
-```rust
+```rust,ignore
 use sipha::backend::glr::disambiguate_by_associativity;
 
 let disambiguated = forest.disambiguate(disambiguate_by_associativity(|op| {
@@ -105,7 +105,7 @@ let disambiguated = forest.disambiguate(disambiguate_by_associativity(|op| {
 
 Implement your own disambiguation logic:
 
-```rust
+```rust,ignore
 let disambiguated = forest.disambiguate(|alternatives| {
     // Choose based on custom criteria
     alternatives
@@ -119,7 +119,7 @@ let disambiguated = forest.disambiguate(|alternatives| {
 
 A parse forest represents multiple parse trees:
 
-```rust
+```rust,ignore
 pub struct ParseForest<K: SyntaxKind> {
     roots: Vec<Arc<GreenNode<K>>>,
 }
@@ -135,7 +135,7 @@ The forest can be:
 
 The GLR parser supports incremental parsing:
 
-```rust
+```rust,ignore
 use sipha::incremental::IncrementalParser;
 
 let mut incremental = IncrementalParser::new(parser);
@@ -176,7 +176,7 @@ GLR parser limitations:
 
 ## Example: Ambiguous Expression
 
-```rust
+```rust,ignore
 // Grammar: Expr -> Expr + Expr | Expr * Expr | Number
 // Input: "1 + 2 * 3"
 // Ambiguous: Could be (1 + 2) * 3 or 1 + (2 * 3)

@@ -10,7 +10,7 @@ The lexer is the first stage of parsing. It takes source text and converts it in
 
 Use `LexerBuilder` to construct a lexer:
 
-```rust
+```rust,ignore
 use sipha::lexer::{LexerBuilder, Pattern, CharSet};
 
 let lexer = LexerBuilder::new()
@@ -38,7 +38,7 @@ Sipha supports several pattern types for matching tokens:
 
 Match exact strings:
 
-```rust
+```rust,ignore
 .token(MySyntaxKind::Plus, Pattern::Literal("+".into()))
 .token(MySyntaxKind::LParen, Pattern::Literal("(".into()))
 ```
@@ -47,7 +47,7 @@ Match exact strings:
 
 Match character ranges:
 
-```rust
+```rust,ignore
 use sipha::lexer::CharSet;
 
 // Match digits [0-9]
@@ -64,7 +64,7 @@ use sipha::lexer::CharSet;
 
 Match repeating patterns:
 
-```rust
+```rust,ignore
 // Match one or more digits
 .token(MySyntaxKind::Number, Pattern::Repeat {
     pattern: Box::new(Pattern::CharClass(CharSet::digits())),
@@ -91,7 +91,7 @@ Match repeating patterns:
 
 For complex patterns, use regex:
 
-```rust
+```rust,ignore
 // Match floating point numbers
 .token(MySyntaxKind::Float, Pattern::Regex(r"\d+\.\d+".into()))
 
@@ -103,7 +103,7 @@ For complex patterns, use regex:
 
 Match any single character:
 
-```rust
+```rust,ignore
 .token(MySyntaxKind::AnyChar, Pattern::Any)
 ```
 
@@ -111,7 +111,7 @@ Match any single character:
 
 Keywords are reserved words that should be matched as literals rather than identifiers:
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     .token(MySyntaxKind::Ident, Pattern::CharClass(CharSet::new(vec!['a'..='z', 'A'..='Z'])))
     .keyword("if", MySyntaxKind::If)
@@ -127,7 +127,7 @@ Keywords are matched with higher priority than general patterns, so `"if"` will 
 
 Trivia are tokens that don't affect parsing but are preserved in the syntax tree (e.g., whitespace, comments):
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     .token(MySyntaxKind::Whitespace, Pattern::CharClass(CharSet::whitespace()))
     .token(MySyntaxKind::Comment, Pattern::Regex(r"//.*".into()))
@@ -143,7 +143,7 @@ The parser will automatically skip trivia during parsing, but they'll still be a
 
 For complex tokenization logic, use custom matchers:
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     .custom_token(MySyntaxKind::String, |text, pos| {
         // Custom string matching logic
@@ -178,7 +178,7 @@ Custom matchers return `Option<(usize, TokenValue)>` where:
 
 Once the lexer is built, tokenize input:
 
-```rust
+```rust,ignore
 let input = "42 + 10";
 let tokens = lexer.tokenize(input)
     .expect("Failed to tokenize input");
@@ -210,7 +210,7 @@ When multiple patterns could match the same input, Sipha uses priority to resolv
 
 The lexer returns `LexerError` for invalid input:
 
-```rust
+```rust,ignore
 match lexer.tokenize(input) {
     Ok(tokens) => {
         // Process tokens
@@ -239,7 +239,7 @@ match lexer.tokenize(input) {
 
 ## Example: Complete Lexer
 
-```rust
+```rust,ignore
 use sipha::lexer::{LexerBuilder, Pattern, CharSet};
 
 let lexer = LexerBuilder::new()

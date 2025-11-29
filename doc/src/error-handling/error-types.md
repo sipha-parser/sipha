@@ -6,7 +6,7 @@ Sipha defines several error types to represent different kinds of problems that 
 
 `ParseError` represents errors that occur during parsing. It's an enum with four variants:
 
-```rust
+```rust,ignore
 use sipha::error::ParseError;
 use sipha::syntax::{TextRange, TextSize};
 
@@ -46,7 +46,7 @@ Occurs when the parser encounters a token that doesn't match any expected produc
 - Parser can often recover by skipping the unexpected token
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let x = 42 +"
 // Error: UnexpectedToken with expected: ["number", "identifier", "("]
 ```
@@ -60,7 +60,7 @@ Occurs when the input violates grammar rules in a way that can't be attributed t
 - May require more context to understand
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "function() { return }"
 // Error: InvalidSyntax with message: "Missing return value"
 ```
@@ -74,7 +74,7 @@ Occurs when the parser reaches the end of input but expects more tokens.
 - Indicates incomplete input
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "if (condition { ... }"
 // Error: UnexpectedEof with expected: [")"]
 ```
@@ -88,7 +88,7 @@ Occurs when the GLR parser finds multiple valid parse trees.
 - Only occurs with GLR parser backend
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "1 + 2 * 3" (ambiguous without precedence)
 // Error: Ambiguity with alternatives: ["(1 + 2) * 3", "1 + (2 * 3)"]
 ```
@@ -97,7 +97,7 @@ Occurs when the GLR parser finds multiple valid parse trees.
 
 `LexerError` represents errors that occur during tokenization (lexing):
 
-```rust
+```rust,ignore
 use sipha::error::{LexerError, LexerErrorKind};
 use sipha::syntax::{TextRange, TextSize};
 
@@ -117,7 +117,7 @@ An invalid character was encountered that doesn't match any token pattern.
 - Usually indicates a typo or unsupported character
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let x = 42#"
 // Error: UnexpectedChar { char: '#' }
 ```
@@ -130,7 +130,7 @@ A string literal was started but never closed.
 - Indicates incomplete string literal
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let s = \"hello world"
 // Error: UnterminatedString
 ```
@@ -143,7 +143,7 @@ An invalid escape sequence was found in a string.
 - Common with malformed escape sequences
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let s = \"hello\\zworld\""
 // Error: InvalidEscape { escape: "\\z" }
 ```
@@ -156,7 +156,7 @@ A number literal has invalid format.
 - Common with malformed numeric literals
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let x = 123abc"
 // Error: InvalidNumber { reason: "Invalid digit 'a' in number" }
 ```
@@ -169,7 +169,7 @@ End of file was reached unexpectedly during tokenization.
 - Common when input is cut off mid-token
 
 **Example:**
-```rust
+```rust,ignore
 // Input: "let x = 4" (cut off)
 // Error: UnexpectedEof
 ```
@@ -178,7 +178,7 @@ End of file was reached unexpectedly during tokenization.
 
 `ParseWarning` represents non-fatal issues that don't prevent parsing:
 
-```rust
+```rust,ignore
 use sipha::error::{ParseWarning, Severity};
 use sipha::syntax::{TextRange, TextSize};
 
@@ -229,7 +229,7 @@ Suggestions for improvement.
 
 Lexer errors can be converted to parse errors:
 
-```rust
+```rust,ignore
 use sipha::error::{LexerError, ParseError};
 
 let lexer_error: LexerError = /* ... */;
@@ -244,7 +244,7 @@ All error types provide useful methods:
 
 ### ParseError Methods
 
-```rust
+```rust,ignore
 use sipha::error::ParseError;
 
 // Get the error location
@@ -271,7 +271,7 @@ println!("{}", formatted);
 
 ### LexerError Methods
 
-```rust
+```rust,ignore
 use sipha::error::LexerError;
 
 // Get the error location

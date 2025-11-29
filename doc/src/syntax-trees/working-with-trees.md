@@ -6,7 +6,7 @@ This chapter shows how to traverse, query, and work with syntax trees in Sipha.
 
 Create a red tree from a parse result:
 
-```rust
+```rust,ignore
 use sipha::syntax::SyntaxNode;
 
 let root = SyntaxNode::new_root(result.root.clone());
@@ -18,7 +18,7 @@ let root = SyntaxNode::new_root(result.root.clone());
 
 Iterate over direct children:
 
-```rust
+```rust,ignore
 for child in root.children() {
     println!("Child: {:?}", child.kind());
 }
@@ -28,7 +28,7 @@ for child in root.children() {
 
 Iterate over all descendants (depth-first):
 
-```rust
+```rust,ignore
 for descendant in root.descendants() {
     println!("Descendant: {:?}", descendant.kind());
 }
@@ -38,7 +38,7 @@ for descendant in root.descendants() {
 
 Iterate over ancestors:
 
-```rust
+```rust,ignore
 if let Some(node) = root.descendants().find(|n| n.kind() == MySyntaxKind::Expr) {
     for ancestor in node.ancestors() {
         println!("Ancestor: {:?}", ancestor.kind());
@@ -50,7 +50,7 @@ if let Some(node) = root.descendants().find(|n| n.kind() == MySyntaxKind::Expr) 
 
 Access siblings:
 
-```rust
+```rust,ignore
 if let Some(node) = root.descendants().find(|n| n.kind() == MySyntaxKind::Expr) {
     if let Some(next) = node.next_sibling() {
         println!("Next sibling: {:?}", next.kind());
@@ -67,7 +67,7 @@ if let Some(node) = root.descendants().find(|n| n.kind() == MySyntaxKind::Expr) 
 
 Find nodes by syntax kind:
 
-```rust
+```rust,ignore
 let exprs: Vec<_> = root.descendants()
     .filter(|n| n.kind() == MySyntaxKind::Expr)
     .collect();
@@ -77,7 +77,7 @@ let exprs: Vec<_> = root.descendants()
 
 Find nodes at a specific position:
 
-```rust
+```rust,ignore
 use sipha::syntax::TextSize;
 
 let pos = TextSize::from(10);
@@ -90,7 +90,7 @@ if let Some(node) = root.token_at_offset(pos) {
 
 Find the parent of a node:
 
-```rust
+```rust,ignore
 if let Some(parent) = node.parent() {
     println!("Parent: {:?}", parent.kind());
 }
@@ -102,7 +102,7 @@ if let Some(parent) = node.parent() {
 
 Get the text covered by a node:
 
-```rust
+```rust,ignore
 let text = node.text();
 println!("Node text: {}", text);
 ```
@@ -111,7 +111,7 @@ println!("Node text: {}", text);
 
 Get the text of a token:
 
-```rust
+```rust,ignore
 if let Some(token) = node.first_token() {
     println!("Token text: {}", token.text());
 }
@@ -121,7 +121,7 @@ if let Some(token) = node.first_token() {
 
 Get the text range of a node:
 
-```rust
+```rust,ignore
 let range = node.text_range();
 println!("Range: {:?}", range);
 ```
@@ -130,7 +130,7 @@ println!("Range: {:?}", range);
 
 Use visitors to traverse trees:
 
-```rust
+```rust,ignore
 #[cfg(feature = "visitor")]
 use sipha::syntax::{SyntaxVisitor, SyntaxWalker};
 
@@ -154,7 +154,7 @@ root.walk(&mut visitor);
 
 Use XPath-like queries (requires `query` feature):
 
-```rust
+```rust,ignore
 #[cfg(feature = "query")]
 use sipha::syntax::{QueryBuilder, XPathQuery};
 
@@ -170,7 +170,7 @@ let results: Vec<_> = query.matches(&root).collect();
 
 Match tree patterns:
 
-```rust
+```rust,ignore
 // Match specific structure
 if let Some(expr) = root.descendants().find(|n| {
     n.kind() == MySyntaxKind::Expr &&
@@ -186,7 +186,7 @@ if let Some(expr) = root.descendants().find(|n| {
 
 Count nodes by kind:
 
-```rust
+```rust,ignore
 let expr_count = root.descendants()
     .filter(|n| n.kind() == MySyntaxKind::Expr)
     .count();
@@ -196,7 +196,7 @@ let expr_count = root.descendants()
 
 Collect text from nodes:
 
-```rust
+```rust,ignore
 let all_text: String = root.descendants()
     .filter_map(|n| n.first_token())
     .map(|t| t.text().to_string())

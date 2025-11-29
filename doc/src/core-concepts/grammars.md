@@ -14,7 +14,7 @@ A grammar in Sipha consists of:
 
 Use `GrammarBuilder` to construct grammars:
 
-```rust
+```rust,ignore
 use sipha::grammar::{GrammarBuilder, Expr, NonTerminal, Token};
 
 let grammar = GrammarBuilder::new()
@@ -32,7 +32,7 @@ Grammar rules use `Expr` to define right-hand sides:
 
 Match a specific token:
 
-```rust
+```rust,ignore
 use sipha::grammar::Expr;
 use sipha::lexer::Token;
 use sipha::syntax::{TextRange, TextSize};
@@ -49,7 +49,7 @@ let token = Token::new(
 
 Match a sequence of expressions:
 
-```rust
+```rust,ignore
 .rule(MyNonTerminal::Expr, Expr::seq(vec![
     Expr::non_terminal(MyNonTerminal::Term),
     Expr::token(plus_token),
@@ -61,7 +61,7 @@ Match a sequence of expressions:
 
 Match one of several alternatives:
 
-```rust
+```rust,ignore
 .rule(MyNonTerminal::Expr, Expr::choice(vec![
     Expr::non_terminal(MyNonTerminal::Term),
     Expr::non_terminal(MyNonTerminal::Expr),
@@ -72,7 +72,7 @@ Match one of several alternatives:
 
 Match an optional expression:
 
-```rust
+```rust,ignore
 .rule(MyNonTerminal::Stmt, Expr::seq(vec![
     Expr::non_terminal(MyNonTerminal::If),
     Expr::optional(Box::new(Expr::non_terminal(MyNonTerminal::Else))),
@@ -83,7 +83,7 @@ Match an optional expression:
 
 Match zero or more repetitions:
 
-```rust
+```rust,ignore
 // Zero or more
 .rule(MyNonTerminal::Args, Expr::repeat(
     Box::new(Expr::non_terminal(MyNonTerminal::Arg)),
@@ -103,13 +103,13 @@ Match zero or more repetitions:
 
 Match nothing (epsilon):
 
-```rust
+```rust,ignore
 .rule(MyNonTerminal::Optional, Expr::Empty)
 ```
 
 ## Complete Example: Arithmetic Grammar
 
-```rust
+```rust,ignore
 use sipha::grammar::{GrammarBuilder, Expr, NonTerminal};
 use sipha::lexer::Token as LexerToken;
 use sipha::syntax::{TextRange, TextSize};
@@ -171,7 +171,7 @@ let grammar = GrammarBuilder::new()
 
 Sipha validates grammars before use:
 
-```rust
+```rust,ignore
 let grammar = GrammarBuilder::new()
     .entry_point(MyNonTerminal::Expr)
     .rule(MyNonTerminal::Expr, Expr::token(some_token))
@@ -198,7 +198,7 @@ Common validation errors:
 
 Provide hints to backends about how to handle rules:
 
-```rust
+```rust,ignore
 use sipha::grammar::hint::PrecedenceHint;
 
 .rule(MyNonTerminal::Expr, Expr::choice(vec![

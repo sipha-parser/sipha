@@ -14,7 +14,7 @@ LR parsing works by:
 
 Configure the LR parser with `LrConfig`:
 
-```rust
+```rust,ignore
 use sipha::backend::lr::{LrParser, LrConfig};
 
 let config = LrConfig {
@@ -36,7 +36,7 @@ For most grammars, LALR is sufficient and faster.
 
 ## Usage
 
-```rust
+```rust,ignore
 use sipha::backend::lr::{LrParser, LrConfig};
 use sipha::backend::ParserBackend;
 

@@ -28,7 +28,7 @@ Green trees are the storage layer:
 
 A `GreenNode` represents a node in the green tree:
 
-```rust
+```rust,ignore
 pub struct GreenNode<K: SyntaxKind> {
     kind: K,
     children: Vec<SyntaxElement<K>>,
@@ -54,7 +54,7 @@ Red trees are the API layer:
 
 A `SyntaxNode` represents a node in the red tree:
 
-```rust
+```rust,ignore
 let root = SyntaxNode::new_root(green_root.clone());
 
 // Navigate
@@ -77,7 +77,7 @@ Tree elements can be:
 - **Nodes**: Non-terminal nodes (have children)
 - **Tokens**: Terminal nodes (leaf nodes)
 
-```rust
+```rust,ignore
 pub enum SyntaxElement<K: SyntaxKind> {
     Node(SyntaxNode),
     Token(SyntaxToken),
@@ -88,7 +88,7 @@ pub enum SyntaxElement<K: SyntaxKind> {
 
 Trees form a hierarchy:
 
-```
+```text
 Root (NonTerminal)
 ├── Child1 (NonTerminal)
 │   ├── Token1 (Terminal)
@@ -176,7 +176,7 @@ Benefits:
 
 Convert between green and red trees:
 
-```rust
+```rust,ignore
 // Green to Red
 let red_root = SyntaxNode::new_root(green_node.clone());
 

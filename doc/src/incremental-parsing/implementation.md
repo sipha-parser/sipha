@@ -10,7 +10,7 @@ Incremental parsing consists of several components:
 
 The `IncrementalParser` wraps a backend parser and manages the parse cache:
 
-```rust
+```rust,ignore
 pub struct IncrementalParser<P, T, N> {
     parser: P,
     cache: ParseCache<T::Kind>,
@@ -22,7 +22,7 @@ pub struct IncrementalParser<P, T, N> {
 
 The `IncrementalSession` provides context for incremental parsing:
 
-```rust
+```rust,ignore
 pub struct IncrementalSession<'a, K: SyntaxKind> {
     old_tree: Option<&'a GreenNode<K>>,
     edits: &'a [TextEdit],
@@ -37,7 +37,7 @@ pub struct IncrementalSession<'a, K: SyntaxKind> {
 
 The `ParseCache` stores parse results for reuse:
 
-```rust
+```rust,ignore
 pub struct ParseCache<K: SyntaxKind> {
     version: usize,
     nodes: HashMap<CacheKey, Arc<GreenNode<K>>>,
@@ -57,7 +57,7 @@ The node reuse algorithm works as follows:
 
 ### Finding Reusable Nodes
 
-```rust
+```rust,ignore
 fn find_reusable_nodes<K>(
     root: &GreenNode<K>,
     affected: TextRange,
@@ -94,7 +94,7 @@ Cache keys consist of:
 - **Start position**: Text position where parsing started
 - **Version**: Cache version for invalidation
 
-```rust
+```rust,ignore
 struct CacheKey {
     rule: Spur,        // Interned rule name
     start: TextSize,   // Start position
@@ -110,7 +110,7 @@ The cache uses versioning for invalidation:
 2. **Evict old entries**: Remove entries from old versions
 3. **Keep recent versions**: Maintain last N versions (default: 2)
 
-```rust
+```rust,ignore
 fn evict_old_entries(&mut self, max_versions: usize) {
     let min_version = self.version.saturating_sub(max_versions);
     self.nodes.retain(|key, _| key.version >= min_version);
@@ -121,7 +121,7 @@ fn evict_old_entries(&mut self, max_versions: usize) {
 
 Backends implement incremental parsing via `parse_with_session`:
 
-```rust
+```rust,ignore
 fn parse_with_session(
     &mut self,
     input: &[T],
@@ -140,7 +140,7 @@ fn parse_with_session(
 
 Reusable nodes are indexed by position for O(1) lookup:
 
-```rust
+```rust,ignore
 let mut reusable_by_pos = HashMap::new();
 for (idx, candidate) in reusable.iter().enumerate() {
     reusable_by_pos
@@ -154,7 +154,7 @@ for (idx, candidate) in reusable.iter().enumerate() {
 
 The heuristic budget considers multiple factors:
 
-```rust
+```rust,ignore
 fn calculate(&self, tree_depth: usize, file_size: TextSize, affected_size: TextSize) -> usize {
     // Depth factor: deeper trees = more candidates
     let depth_factor = (tree_depth.min(max_depth) * 10).max(50);

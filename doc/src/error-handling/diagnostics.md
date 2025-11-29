@@ -21,7 +21,7 @@ This enables:
 
 Errors automatically implement the `Diagnostic` trait from miette:
 
-```rust
+```rust,ignore
 #[cfg(feature = "diagnostics")]
 use sipha::error::ParseError;
 
@@ -42,7 +42,7 @@ eprintln!("{:#}", error);
 
 With diagnostics enabled, errors are displayed with rich formatting:
 
-```
+```text
 Error: Unexpected token
   ┌─ example.txt:10:15
   │
@@ -59,7 +59,7 @@ Error: Unexpected token
 
 Diagnostics automatically include source code around the error:
 
-```rust
+```rust,ignore
 let error: ParseError = /* ... */;
 eprintln!("{:#}", error);
 // Shows:
@@ -73,7 +73,7 @@ eprintln!("{:#}", error);
 
 Error locations are highlighted in the source code:
 
-```rust
+```rust,ignore
 // The error span is automatically highlighted
 // Multiple related errors can be shown together
 ```
@@ -82,7 +82,7 @@ Error locations are highlighted in the source code:
 
 Diagnostics can include suggestions:
 
-```rust
+```rust,ignore
 // "Did you mean" suggestions
 // Fix suggestions
 // Helpful hints
@@ -92,7 +92,7 @@ Diagnostics can include suggestions:
 
 Multiple related errors can be shown together:
 
-```rust
+```rust,ignore
 // Errors at different locations
 // Related errors in the same context
 // Error chains
@@ -111,7 +111,7 @@ Diagnostics integrate with editor tooling:
 
 You can customize diagnostic messages:
 
-```rust
+```rust,ignore
 use sipha::error::ParseError;
 
 // Create errors with custom messages
@@ -133,7 +133,7 @@ Diagnostics support different severity levels:
 
 ## Example: Full Diagnostic Output
 
-```rust
+```rust,ignore
 #[cfg(feature = "diagnostics")]
 use sipha::error::ParseError;
 use miette::Diagnostic;

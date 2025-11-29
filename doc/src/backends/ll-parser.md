@@ -14,7 +14,7 @@ LL(k) parsing works by:
 
 Configure the LL parser with `LlConfig`:
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 
 let config = LlConfig {
@@ -44,7 +44,7 @@ Higher lookahead values:
 
 Left recursion elimination allows parsing left-recursive grammars:
 
-```rust
+```rust,ignore
 // Without elimination: Expr -> Expr + Term (left-recursive)
 // With elimination: Automatically transformed
 ```
@@ -59,7 +59,7 @@ Error recovery strategies:
 
 ## Usage
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 use sipha::backend::ParserBackend;
 
@@ -74,7 +74,7 @@ let result = parser.parse(&tokens, MyNonTerminal::Expr);
 
 The LL parser supports incremental parsing:
 
-```rust
+```rust,ignore
 use sipha::incremental::IncrementalParser;
 
 let mut incremental = IncrementalParser::new(parser);

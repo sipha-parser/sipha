@@ -8,7 +8,7 @@ We'll parse an ambiguous expression grammar and disambiguate using precedence ru
 
 ## Ambiguous Grammar
 
-```rust
+```rust,ignore
 // Grammar: Expr -> Expr + Expr | Expr * Expr | Number
 // Input: "1 + 2 * 3"
 // Ambiguous: Could be (1 + 2) * 3 or 1 + (2 * 3)
@@ -16,7 +16,11 @@ We'll parse an ambiguous expression grammar and disambiguate using precedence ru
 
 ## Setup
 
-```rust
+```rust,ignore
+# use sipha::grammar::Grammar;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# let grammar: Grammar<MyToken, MyNonTerminal> = todo!();
 use sipha::backend::glr::{GlrParser, GlrConfig};
 use sipha::backend::glr::disambiguate_by_precedence;
 
@@ -27,7 +31,19 @@ let mut parser = GlrParser::new(&grammar, config)
 
 ## Parsing
 
-```rust
+```rust,ignore
+# use sipha::backend::glr::{GlrParser, GlrConfig};
+# use sipha::backend::glr::disambiguate_by_precedence;
+# use sipha::syntax::SyntaxNode;
+# use sipha::lexer::Token;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# struct Grammar;
+# let grammar = Grammar;
+# let config = GlrConfig::default();
+# let mut parser = GlrParser::new(&grammar, config).expect("Failed to create GLR parser");
+# let tokens: Vec<Token<MySyntaxKind>> = vec![];
 let result = parser.parse(&tokens, MyNonTerminal::Expr);
 
 // Check for ambiguity
@@ -55,9 +71,14 @@ if let Some(forest) = result.forest {
 
 ### Precedence
 
-```rust
-use sipha::backend::glr::disambiguate_by_precedence;
-
+```rust,ignore
+# use sipha::backend::glr::disambiguate_by_precedence;
+# type MySyntaxKind = ();
+# struct Forest;
+# impl Forest {
+#     fn disambiguate<F>(&self, _f: F) -> () { () }
+# }
+# let forest = Forest;
 let disambiguated = forest.disambiguate(disambiguate_by_precedence(|op| {
     match op {
         MySyntaxKind::Multiply => 2,
@@ -69,10 +90,15 @@ let disambiguated = forest.disambiguate(disambiguate_by_precedence(|op| {
 
 ### Associativity
 
-```rust
-use sipha::backend::glr::disambiguate_by_associativity;
-use sipha::backend::glr::Associativity;
-
+```rust,ignore
+# use sipha::backend::glr::disambiguate_by_associativity;
+# use sipha::backend::glr::Associativity;
+# type MySyntaxKind = ();
+# struct Forest;
+# impl Forest {
+#     fn disambiguate<F>(&self, _f: F) -> () { () }
+# }
+# let forest = Forest;
 let disambiguated = forest.disambiguate(disambiguate_by_associativity(|op| {
     match op {
         MySyntaxKind::Minus => Associativity::Left,
@@ -84,7 +110,13 @@ let disambiguated = forest.disambiguate(disambiguate_by_associativity(|op| {
 
 ### Custom
 
-```rust
+```rust,ignore
+# struct Forest;
+# impl Forest {
+#     fn disambiguate<F>(&self, _f: F) -> () { () }
+# }
+# let forest = Forest;
+# fn compute_complexity(_tree: &()) -> usize { 0 }
 let disambiguated = forest.disambiguate(|alternatives| {
     // Choose based on custom criteria
     alternatives

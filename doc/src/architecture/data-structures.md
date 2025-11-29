@@ -8,7 +8,9 @@ This chapter describes the key data structures in Sipha.
 
 Immutable, shareable tree node:
 
-```rust
+```rust,ignore
+use sipha::syntax::{SyntaxKind, TextSize};
+
 pub struct GreenNode<K: SyntaxKind> {
     kind: K,
     text_len: TextSize,
@@ -20,7 +22,10 @@ pub struct GreenNode<K: SyntaxKind> {
 
 Immutable token:
 
-```rust
+```rust,ignore
+use sipha::syntax::SyntaxKind;
+use compact_str::CompactString;
+
 pub struct GreenToken<K: SyntaxKind> {
     kind: K,
     text: CompactString,
@@ -31,7 +36,10 @@ pub struct GreenToken<K: SyntaxKind> {
 
 Tree element (node or token):
 
-```rust
+```rust,ignore
+use std::sync::Arc;
+use sipha::syntax::SyntaxKind;
+
 pub enum GreenElement<K: SyntaxKind> {
     Node(Arc<GreenNode<K>>),
     Token(GreenToken<K>),
@@ -44,7 +52,9 @@ pub enum GreenElement<K: SyntaxKind> {
 
 Red tree node for traversal:
 
-```rust
+```rust,ignore
+use std::sync::Arc;
+
 pub struct SyntaxNode {
     green: Arc<GreenNode>,
     parent: Option<Arc<SyntaxNode>>,
@@ -56,7 +66,9 @@ pub struct SyntaxNode {
 
 Red tree token:
 
-```rust
+```rust,ignore
+use std::sync::Arc;
+
 pub struct SyntaxToken {
     green: GreenToken,
     parent: Option<Arc<SyntaxNode>>,
@@ -70,7 +82,10 @@ pub struct SyntaxToken {
 
 Grammar definition:
 
-```rust
+```rust,ignore
+use std::collections::HashMap;
+use lasso::Rodeo;
+
 pub struct Grammar<T, N> {
     rules: HashMap<N, Rule<T, N>>,
     entry_point: N,
@@ -82,7 +97,7 @@ pub struct Grammar<T, N> {
 
 Production rule:
 
-```rust
+```rust,ignore
 pub struct Rule<T, N> {
     pub lhs: N,
     pub rhs: Expr<T, N>,
@@ -94,7 +109,7 @@ pub struct Rule<T, N> {
 
 Grammar expression:
 
-```rust
+```rust,ignore
 pub enum Expr<T, N> {
     Token(T),
     Rule(N),
@@ -110,7 +125,7 @@ pub enum Expr<T, N> {
 
 Incremental parser wrapper:
 
-```rust
+```rust,ignore
 pub struct IncrementalParser<P, T, N> {
     parser: P,
     cache: ParseCache<T::Kind>,
@@ -121,7 +136,7 @@ pub struct IncrementalParser<P, T, N> {
 
 Incremental parsing session:
 
-```rust
+```rust,ignore
 pub struct IncrementalSession<'a, K> {
     old_tree: Option<&'a GreenNode<K>>,
     edits: &'a [TextEdit],
@@ -135,7 +150,11 @@ pub struct IncrementalSession<'a, K> {
 
 Parse result cache:
 
-```rust
+```rust,ignore
+use std::collections::HashMap;
+use std::sync::Arc;
+use lasso::Rodeo;
+
 pub struct ParseCache<K> {
     version: usize,
     nodes: HashMap<CacheKey, Arc<GreenNode<K>>>,
@@ -149,7 +168,10 @@ pub struct ParseCache<K> {
 
 Compiled lexer:
 
-```rust
+```rust,ignore
+use std::collections::{HashMap, HashSet};
+use compact_str::CompactString;
+
 pub struct CompiledLexer<K> {
     rules: Vec<CompiledRule<K>>,
     dfa: Option<Dfa>,
@@ -162,7 +184,10 @@ pub struct CompiledLexer<K> {
 
 Lexer token:
 
-```rust
+```rust,ignore
+use compact_str::CompactString;
+use sipha::syntax::TextRange;
+
 pub struct Token<K> {
     pub kind: K,
     pub text: CompactString,
@@ -176,7 +201,9 @@ pub struct Token<K> {
 
 Parsing error:
 
-```rust
+```rust,ignore
+use sipha::syntax::TextRange;
+
 pub struct ParseError<T, N> {
     pub span: TextRange,
     pub message: String,
@@ -189,7 +216,9 @@ pub struct ParseError<T, N> {
 
 Lexer error:
 
-```rust
+```rust,ignore
+use sipha::syntax::TextRange;
+
 pub struct LexerError {
     pub span: TextRange,
     pub kind: LexerErrorKind,

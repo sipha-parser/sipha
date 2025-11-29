@@ -10,7 +10,7 @@ Parsing is the process of converting a stream of tokens into a syntax tree accor
 
 First, create a parser from a grammar:
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 use sipha::backend::ParserBackend;
 
@@ -29,7 +29,7 @@ Different backends have different configuration options:
 
 Parse a stream of tokens:
 
-```rust
+```rust,ignore
 let result = parser.parse(&tokens, MyNonTerminal::Expr);
 ```
 
@@ -41,7 +41,7 @@ The `parse` method takes:
 
 The `parse` method returns a `ParseResult`:
 
-```rust
+```rust,ignore
 pub struct ParseResult<T, N> {
     pub root: GreenNode<T::Kind>,
     pub errors: Vec<ParseError<T, N>>,
@@ -56,7 +56,7 @@ pub struct ParseResult<T, N> {
 
 The `root` field contains the syntax tree root. Even if there are errors, the parser attempts to produce a tree:
 
-```rust
+```rust,ignore
 let root = SyntaxNode::new_root(result.root.clone());
 println!("Root kind: {:?}", root.kind());
 ```
@@ -65,7 +65,7 @@ println!("Root kind: {:?}", root.kind());
 
 The `errors` field contains parsing errors:
 
-```rust
+```rust,ignore
 if !result.errors.is_empty() {
     for error in &result.errors {
         eprintln!("Parse error at {:?}: {}", error.span, error.message);
@@ -84,7 +84,7 @@ Common error types:
 
 The `warnings` field contains non-fatal issues:
 
-```rust
+```rust,ignore
 for warning in &result.warnings {
     eprintln!("Warning: {}", warning.message);
 }
@@ -94,7 +94,7 @@ for warning in &result.warnings {
 
 The `metrics` field contains parsing statistics:
 
-```rust
+```rust,ignore
 println!("Tokens consumed: {}", result.metrics.tokens_consumed);
 println!("Nodes created: {}", result.metrics.nodes_created);
 println!("Parse time: {:?}", result.metrics.parse_time);
@@ -104,7 +104,7 @@ println!("Parse time: {:?}", result.metrics.parse_time);
 
 When using the GLR backend, the `forest` field may contain multiple parse trees for ambiguous input:
 
-```rust
+```rust,ignore
 #[cfg(feature = "backend-glr")]
 if let Some(forest) = result.forest {
     // Handle ambiguity
@@ -129,7 +129,7 @@ See [Error Handling](../error-handling/overview.md) for more details.
 
 After parsing, work with the syntax tree:
 
-```rust
+```rust,ignore
 use sipha::syntax::SyntaxNode;
 
 let root = SyntaxNode::new_root(result.root.clone());
@@ -151,7 +151,7 @@ See [Syntax Trees](syntax-trees/working-with-trees.md) for more details.
 
 For interactive applications, use incremental parsing:
 
-```rust
+```rust,ignore
 use sipha::incremental::{IncrementalParser, TextEdit};
 
 let mut incremental_parser = IncrementalParser::new(parser);
@@ -190,7 +190,7 @@ See [Choosing a Backend](backends/choosing.md) for guidance.
 
 ## Complete Example
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 use sipha::backend::ParserBackend;
 use sipha::syntax::SyntaxNode;

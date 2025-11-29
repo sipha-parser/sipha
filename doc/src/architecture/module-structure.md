@@ -64,7 +64,7 @@ Parser traits and interfaces:
 
 ## Workspace Structure
 
-```
+```text
 sipha/
 ├── crates/
 │   ├── sipha/          # Main library
@@ -76,7 +76,7 @@ sipha/
 
 ## Module Dependencies
 
-```
+```text
 syntax
   ↑
   ├── lexer

@@ -6,7 +6,7 @@ This chapter covers how to check, report, and extract information from errors in
 
 After parsing, check the `ParseResult` for errors and warnings:
 
-```rust
+```rust,ignore
 use sipha::backend::ll::{LlParser, LlConfig};
 use sipha::backend::ParserBackend;
 use sipha::syntax::SyntaxNode;
@@ -49,7 +49,7 @@ let root = SyntaxNode::new_root(result.root.clone());
 
 `ParseError` provides several methods for extracting information:
 
-```rust
+```rust,ignore
 use sipha::error::ParseError;
 
 // Get the error location
@@ -76,7 +76,7 @@ println!("{}", formatted);
 
 ### Example: Comprehensive Error Reporting
 
-```rust
+```rust,ignore
 use sipha::error::ParseError;
 
 fn report_parse_errors(errors: &[ParseError], source: &str) {
@@ -112,7 +112,7 @@ fn report_parse_errors(errors: &[ParseError], source: &str) {
 
 Lexer errors occur during tokenization and can be handled separately:
 
-```rust
+```rust,ignore
 use sipha::lexer::LexerBuilder;
 use sipha::error::{LexerError, LexerErrorKind};
 
@@ -153,7 +153,7 @@ match lexer.tokenize(input) {
 
 Lexer errors can also be converted to parse errors:
 
-```rust
+```rust,ignore
 use sipha::error::{LexerError, ParseError};
 
 let lexer_error: LexerError = /* ... */;
@@ -164,7 +164,7 @@ let parse_error: ParseError = lexer_error.into();
 
 `ParseResult` includes metrics about the parsing process:
 
-```rust
+```rust,ignore
 let result = parser.parse(&tokens, entry_point);
 
 println!("Parsing metrics:");
@@ -185,7 +185,7 @@ These metrics are useful for:
 
 Incremental parsing maintains error information across edits:
 
-```rust
+```rust,ignore
 use sipha::incremental::IncrementalParser;
 
 let mut incremental = IncrementalParser::new(parser);

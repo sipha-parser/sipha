@@ -6,7 +6,7 @@ This chapter shows how to implement a new parsing backend for Sipha.
 
 All backends implement the `ParserBackend` trait:
 
-```rust
+```rust,ignore
 pub trait ParserBackend<T, N>: Sized + Send
 where
     T: Token,
@@ -29,7 +29,7 @@ where
 
 ### 1. Define Backend Type
 
-```rust
+```rust,ignore
 pub struct MyParser<T, N>
 where
     T: Token,
@@ -43,7 +43,7 @@ where
 
 ### 2. Implement ParserBackend
 
-```rust
+```rust,ignore
 impl<T, N> ParserBackend<T, N> for MyParser<T, N>
 where
     T: Token,
@@ -104,7 +104,7 @@ where
 
 Implement the core parsing algorithm:
 
-```rust
+```rust,ignore
 fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
     let mut builder = GreenNodeBuilder::new();
     let mut errors = Vec::new();
@@ -129,7 +129,7 @@ fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
 
 Support incremental parsing:
 
-```rust
+```rust,ignore
 fn parse_with_session(
     &mut self,
     input: &[T],
@@ -147,7 +147,7 @@ fn parse_with_session(
 
 Validate grammar compatibility:
 
-```rust
+```rust,ignore
 fn validate(grammar: &Grammar<T, N>) -> Vec<GrammarError<T, N>> {
     let mut errors = Vec::new();
     
@@ -164,7 +164,7 @@ fn validate(grammar: &Grammar<T, N>) -> Vec<GrammarError<T, N>> {
 
 Here's a simplified example of a PEG parser:
 
-```rust
+```rust,ignore
 pub struct PegParser<T, N> {
     grammar: Grammar<T, N>,
     config: PegConfig,

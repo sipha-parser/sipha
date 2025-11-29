@@ -8,7 +8,7 @@ This chapter shows how to use incremental parsing in your applications.
 
 Start with an initial parse:
 
-```rust
+```rust,ignore
 use sipha::incremental::IncrementalParser;
 use sipha::backend::ll::{LlParser, LlConfig};
 
@@ -32,7 +32,7 @@ let result1 = incremental_parser.parse_incremental(
 
 When text is edited, re-parse incrementally:
 
-```rust
+```rust,ignore
 use sipha::incremental::TextEdit;
 use sipha::syntax::{TextRange, TextSize};
 
@@ -60,7 +60,7 @@ let result2 = incremental_parser.parse_incremental(
 
 ### Creating Edits
 
-```rust
+```rust,ignore
 use sipha::incremental::TextEdit;
 use sipha::syntax::{TextRange, TextSize};
 
@@ -86,7 +86,7 @@ let edit3 = TextEdit::delete(
 
 Handle multiple edits at once:
 
-```rust
+```rust,ignore
 let edits = vec![
     TextEdit::replace(range1, "text1".into()),
     TextEdit::replace(range2, "text2".into()),
@@ -105,7 +105,7 @@ let result = incremental_parser.parse_incremental(
 
 Control how many nodes to consider for reuse:
 
-```rust
+```rust,ignore
 use sipha::incremental::{IncrementalSession, ReuseBudget};
 
 // Fixed budget
@@ -129,7 +129,7 @@ let budget = ReuseBudget::Heuristic {
 
 The cache is populated automatically when you provide a grammar:
 
-```rust
+```rust,ignore
 let result = incremental_parser.parse_incremental(
     &tokens,
     old_tree,
@@ -143,7 +143,7 @@ let result = incremental_parser.parse_incremental(
 
 Access the cache directly:
 
-```rust
+```rust,ignore
 let session = IncrementalSession::with_cache(
     Some(&old_tree),
     &edits,
@@ -155,7 +155,7 @@ let session = IncrementalSession::with_cache(
 
 Incremental parsing works with all backends that support it:
 
-```rust
+```rust,ignore
 // LL parser
 let parser = LlParser::new(&grammar, config)?;
 let mut incremental = IncrementalParser::new(parser);
@@ -169,7 +169,7 @@ let mut incremental = IncrementalParser::new(parser);
 
 Handle errors during incremental parsing:
 
-```rust
+```rust,ignore
 let result = incremental_parser.parse_incremental(
     &tokens,
     Some(&old_tree),
@@ -198,7 +198,7 @@ if !result.errors.is_empty() {
 
 Here's a complete example for a language server:
 
-```rust
+```rust,ignore
 use sipha::incremental::{IncrementalParser, TextEdit};
 use sipha::syntax::{TextRange, TextSize};
 

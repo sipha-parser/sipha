@@ -6,7 +6,7 @@ Sipha provides tools for analyzing and optimizing grammars.
 
 Validate grammars before use:
 
-```rust
+```rust,ignore
 use sipha::backend::ll::LlParser;
 
 let errors = LlParser::validate(&grammar);
@@ -21,7 +21,7 @@ if !errors.is_empty() {
 
 Detect left-recursive rules:
 
-```rust
+```rust,ignore
 use sipha::grammar::analysis::detect_left_recursion;
 
 let left_recursive = detect_left_recursion(&grammar);
@@ -34,7 +34,7 @@ for rule in left_recursive {
 
 Find unreachable rules:
 
-```rust
+```rust,ignore
 use sipha::grammar::analysis::find_unreachable_rules;
 
 let unreachable = find_unreachable_rules(&grammar);
@@ -47,7 +47,7 @@ for rule in unreachable {
 
 Compute FIRST and FOLLOW sets for LL parsing:
 
-```rust
+```rust,ignore
 use sipha::grammar::analysis::compute_first_sets;
 use sipha::grammar::analysis::compute_follow_sets;
 
@@ -59,7 +59,7 @@ let follow_sets = compute_follow_sets(&grammar);
 
 Detect shift/reduce and reduce/reduce conflicts:
 
-```rust
+```rust,ignore
 use sipha::backend::lr::LrParser;
 
 let conflicts = LrParser::detect_conflicts(&grammar);
@@ -74,7 +74,7 @@ for conflict in conflicts {
 
 Extract common subexpressions:
 
-```rust
+```rust,ignore
 // Before: Duplicated pattern
 .rule(MyNonTerminal::Expr, Expr::choice(vec![
     Expr::seq(vec![Expr::non_terminal(MyNonTerminal::Term), Expr::token(plus_token)]),
@@ -95,7 +95,7 @@ Extract common subexpressions:
 
 Transform left-recursive rules:
 
-```rust
+```rust,ignore
 // Before: Left-recursive
 .rule(MyNonTerminal::Expr, Expr::choice(vec![
     Expr::seq(vec![
@@ -120,7 +120,7 @@ Transform left-recursive rules:
 
 Visualize grammar structure (planned feature):
 
-```rust
+```rust,ignore
 // Future API
 let dot = grammar.to_dot();
 std::fs::write("grammar.dot", dot).unwrap();

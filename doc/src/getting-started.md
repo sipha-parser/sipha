@@ -37,7 +37,7 @@ Let's build a simple arithmetic expression parser step by step. This example wil
 
 First, define the tokens and non-terminals your parser will use. Sipha uses a unified `SyntaxKind` trait for both terminals (tokens) and non-terminals (grammar rules):
 
-```rust
+```rust,ignore
 use sipha::syntax::SyntaxKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -73,7 +73,17 @@ impl SyntaxKind for ArithSyntaxKind {
 
 Create a lexer to tokenize your input text:
 
-```rust
+```rust,ignore
+# use sipha::syntax::SyntaxKind;
+# #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+# enum ArithSyntaxKind {
+#     Number, Plus, Minus, Multiply, Divide, LParen, RParen, Whitespace, Eof,
+#     Expr, Term, Factor,
+# }
+# impl SyntaxKind for ArithSyntaxKind {
+#     fn is_terminal(self) -> bool { !matches!(self, ArithSyntaxKind::Expr | ArithSyntaxKind::Term | ArithSyntaxKind::Factor) }
+#     fn is_trivia(self) -> bool { matches!(self, ArithSyntaxKind::Whitespace) }
+# }
 use sipha::lexer::{LexerBuilder, Pattern, CharSet};
 
 let lexer = LexerBuilder::new()
@@ -100,7 +110,36 @@ let lexer = LexerBuilder::new()
 
 ### Step 3: Tokenize Input
 
-```rust
+```rust,ignore
+# use sipha::lexer::{LexerBuilder, Pattern, CharSet};
+# use sipha::syntax::SyntaxKind;
+# #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+# enum ArithSyntaxKind {
+#     Number, Plus, Minus, Multiply, Divide, LParen, RParen, Whitespace, Eof,
+#     Expr, Term, Factor,
+# }
+# impl SyntaxKind for ArithSyntaxKind {
+#     fn is_terminal(self) -> bool { !matches!(self, ArithSyntaxKind::Expr | ArithSyntaxKind::Term | ArithSyntaxKind::Factor) }
+#     fn is_trivia(self) -> bool { matches!(self, ArithSyntaxKind::Whitespace) }
+# }
+# let lexer = LexerBuilder::new()
+#     .token(ArithSyntaxKind::Number, Pattern::Repeat {
+#         pattern: Box::new(Pattern::CharClass(CharSet::digits())),
+#         min: 1, max: None,
+#     })
+#     .token(ArithSyntaxKind::Plus, Pattern::Literal("+".into()))
+#     .token(ArithSyntaxKind::Minus, Pattern::Literal("-".into()))
+#     .token(ArithSyntaxKind::Multiply, Pattern::Literal("*".into()))
+#     .token(ArithSyntaxKind::Divide, Pattern::Literal("/".into()))
+#     .token(ArithSyntaxKind::LParen, Pattern::Literal("(".into()))
+#     .token(ArithSyntaxKind::RParen, Pattern::Literal(")".into()))
+#     .token(ArithSyntaxKind::Whitespace, Pattern::Repeat {
+#         pattern: Box::new(Pattern::CharClass(CharSet::whitespace())),
+#         min: 1, max: None,
+#     })
+#     .trivia(ArithSyntaxKind::Whitespace)
+#     .build(ArithSyntaxKind::Eof, ArithSyntaxKind::Number)
+#     .expect("Failed to build lexer");
 let input = "42 + 10";
 let tokens = lexer.tokenize(input)
     .expect("Failed to tokenize input");
@@ -108,10 +147,21 @@ let tokens = lexer.tokenize(input)
 
 ### Step 4: Define Non-Terminals and Build Grammar
 
-```rust
+```rust,ignore
+# use sipha::syntax::SyntaxKind;
+# #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+# enum ArithSyntaxKind {
+#     Number, Plus, Minus, Multiply, Divide, LParen, RParen, Whitespace, Eof,
+#     Expr, Term, Factor,
+# }
+# impl SyntaxKind for ArithSyntaxKind {
+#     fn is_terminal(self) -> bool { !matches!(self, ArithSyntaxKind::Expr | ArithSyntaxKind::Term | ArithSyntaxKind::Factor) }
+#     fn is_trivia(self) -> bool { matches!(self, ArithSyntaxKind::Whitespace) }
+# }
 use sipha::grammar::{GrammarBuilder, NonTerminal, Expr};
 use sipha::lexer::Token as LexerToken;
 use sipha::syntax::{TextRange, TextSize};
+use std::convert::TryFrom;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum ArithNonTerminal {
@@ -151,7 +201,48 @@ let grammar = GrammarBuilder::new()
 
 ### Step 5: Parse!
 
-```rust
+```rust,ignore
+# use sipha::syntax::SyntaxKind;
+# #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+# enum ArithSyntaxKind {
+#     Number, Plus, Minus, Multiply, Divide, LParen, RParen, Whitespace, Eof,
+#     Expr, Term, Factor,
+# }
+# impl SyntaxKind for ArithSyntaxKind {
+#     fn is_terminal(self) -> bool { !matches!(self, ArithSyntaxKind::Expr | ArithSyntaxKind::Term | ArithSyntaxKind::Factor) }
+#     fn is_trivia(self) -> bool { matches!(self, ArithSyntaxKind::Whitespace) }
+# }
+# use sipha::grammar::{GrammarBuilder, NonTerminal, Expr};
+# use sipha::lexer::Token as LexerToken;
+# use sipha::syntax::{TextRange, TextSize};
+# use std::convert::TryFrom;
+# #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+# enum ArithNonTerminal { Expr, Term, Factor, }
+# impl NonTerminal for ArithNonTerminal {
+#     fn name(&self) -> &str { match self { ArithNonTerminal::Expr => "Expr", ArithNonTerminal::Term => "Term", ArithNonTerminal::Factor => "Factor", } }
+# }
+# fn create_token(kind: ArithSyntaxKind, text: &str, offset: u32) -> LexerToken<ArithSyntaxKind> {
+#     let len = TextSize::from(u32::try_from(text.len()).unwrap_or(0));
+#     LexerToken::new(kind, text, TextRange::at(TextSize::from(offset), len))
+# }
+# let grammar = GrammarBuilder::new()
+#     .entry_point(ArithNonTerminal::Expr)
+#     .rule(ArithNonTerminal::Expr, Expr::token(create_token(ArithSyntaxKind::Number, "42", 0)))
+#     .build().expect("Failed to build grammar");
+# use sipha::lexer::{LexerBuilder, Pattern, CharSet};
+# let lexer = LexerBuilder::new()
+#     .token(ArithSyntaxKind::Number, Pattern::Repeat { pattern: Box::new(Pattern::CharClass(CharSet::digits())), min: 1, max: None })
+#     .token(ArithSyntaxKind::Plus, Pattern::Literal("+".into()))
+#     .token(ArithSyntaxKind::Minus, Pattern::Literal("-".into()))
+#     .token(ArithSyntaxKind::Multiply, Pattern::Literal("*".into()))
+#     .token(ArithSyntaxKind::Divide, Pattern::Literal("/".into()))
+#     .token(ArithSyntaxKind::LParen, Pattern::Literal("(".into()))
+#     .token(ArithSyntaxKind::RParen, Pattern::Literal(")".into()))
+#     .token(ArithSyntaxKind::Whitespace, Pattern::Repeat { pattern: Box::new(Pattern::CharClass(CharSet::whitespace())), min: 1, max: None })
+#     .trivia(ArithSyntaxKind::Whitespace)
+#     .build(ArithSyntaxKind::Eof, ArithSyntaxKind::Number).expect("Failed to build lexer");
+# let input = "42 + 10";
+# let tokens = lexer.tokenize(input).expect("Failed to tokenize input");
 use sipha::backend::ll::{LlParser, LlConfig};
 use sipha::backend::ParserBackend;
 

@@ -8,7 +8,7 @@ This chapter shows how to build and modify syntax trees in Sipha.
 
 Use `GreenNodeBuilder` to build green trees:
 
-```rust
+```rust,ignore
 use sipha::syntax::{GreenNodeBuilder, SyntaxKind};
 
 let mut builder = GreenNodeBuilder::new();
@@ -34,7 +34,7 @@ let root = builder.finish().unwrap();
 
 Build nested structures:
 
-```rust
+```rust,ignore
 let mut builder = GreenNodeBuilder::new();
 
 builder.start_node(MySyntaxKind::Expr);
@@ -63,7 +63,7 @@ Trees are immutable, so modifications create new trees:
 
 Replace a node by rebuilding:
 
-```rust
+```rust,ignore
 fn replace_node(old_node: &SyntaxNode, new_kind: MySyntaxKind) -> GreenNode<MySyntaxKind> {
     let mut builder = GreenNodeBuilder::new();
     builder.start_node(new_kind);
@@ -91,7 +91,7 @@ fn replace_node(old_node: &SyntaxNode, new_kind: MySyntaxKind) -> GreenNode<MySy
 
 Insert nodes by rebuilding:
 
-```rust
+```rust,ignore
 fn insert_child(parent: &SyntaxNode, new_child: GreenNode<MySyntaxKind>, index: usize) -> GreenNode<MySyntaxKind> {
     let mut builder = GreenNodeBuilder::new();
     builder.start_node(parent.kind());
@@ -114,7 +114,7 @@ fn insert_child(parent: &SyntaxNode, new_child: GreenNode<MySyntaxKind>, index: 
 
 Transform trees using visitors:
 
-```rust
+```rust,ignore
 struct Transformer;
 
 impl SyntaxVisitor for Transformer {
@@ -131,7 +131,7 @@ impl SyntaxVisitor for Transformer {
 
 For incremental updates, reuse unchanged nodes:
 
-```rust
+```rust,ignore
 use sipha::incremental::IncrementalParser;
 
 // Initial parse

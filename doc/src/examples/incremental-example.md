@@ -8,10 +8,17 @@ We'll build a simple language server that uses incremental parsing to efficientl
 
 ## Setup
 
-```rust
+```rust,ignore
 use sipha::incremental::{IncrementalParser, TextEdit};
 use sipha::backend::ll::{LlParser, LlConfig};
-use sipha::syntax::{TextRange, TextSize};
+use sipha::syntax::{TextRange, TextSize, GreenNode};
+use sipha::grammar::Grammar;
+use sipha::lexer::CompiledLexer;
+
+// These types would be defined in your actual code
+// type MyToken = /* ... */;
+// type MyNonTerminal = /* ... */;
+// type MySyntaxKind = /* ... */;
 
 struct LanguageServer {
     parser: IncrementalParser<LlParser, MyToken, MyNonTerminal>,
@@ -23,7 +30,23 @@ struct LanguageServer {
 
 ## Initial Parse
 
-```rust
+```rust,ignore
+# use sipha::incremental::{IncrementalParser, TextEdit};
+# use sipha::backend::ll::{LlParser, LlConfig};
+# use sipha::syntax::{TextRange, TextSize, GreenNode};
+# use sipha::grammar::Grammar;
+# use sipha::lexer::CompiledLexer;
+# struct LanguageServer {
+#     parser: IncrementalParser<LlParser, MyToken, MyNonTerminal>,
+#     grammar: Grammar<MyToken, MyNonTerminal>,
+#     lexer: CompiledLexer<MySyntaxKind>,
+#     current_tree: Option<GreenNode<MySyntaxKind>>,
+# }
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# fn build_grammar() -> Grammar<MyToken, MyNonTerminal> { todo!() }
+# fn build_lexer() -> CompiledLexer<MySyntaxKind> { todo!() }
 impl LanguageServer {
     fn new() -> Self {
         let grammar = build_grammar();
@@ -56,7 +79,24 @@ impl LanguageServer {
 
 ## Handling Edits
 
-```rust
+```rust,ignore
+# use sipha::incremental::{IncrementalParser, TextEdit};
+# use sipha::backend::ll::{LlParser, LlConfig};
+# use sipha::syntax::{TextRange, TextSize, GreenNode};
+# use sipha::grammar::Grammar;
+# use sipha::lexer::CompiledLexer;
+# struct LanguageServer {
+#     parser: IncrementalParser<LlParser, MyToken, MyNonTerminal>,
+#     grammar: Grammar<MyToken, MyNonTerminal>,
+#     lexer: CompiledLexer<MySyntaxKind>,
+#     current_tree: Option<GreenNode<MySyntaxKind>>,
+# }
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# impl LanguageServer {
+#     fn report_errors(&self, _errors: &[()]) {}
+# }
 impl LanguageServer {
     fn on_text_changed(&mut self, edits: Vec<TextEdit>, new_text: &str) {
         // Re-tokenize (or update tokens incrementally)
@@ -84,7 +124,14 @@ impl LanguageServer {
 
 ## Creating Edits
 
-```rust
+```rust,ignore
+# use sipha::incremental::TextEdit;
+# use sipha::syntax::{TextRange, TextSize};
+# struct LanguageServer;
+# impl LanguageServer {
+#     fn on_text_changed(&mut self, _edits: Vec<TextEdit>, _new_text: &str) {}
+# }
+# let mut server = LanguageServer;
 // User changed "42" to "100" at position 0
 let edit = TextEdit::replace(
     TextRange::new(TextSize::from(0), TextSize::from(2)),

@@ -4,7 +4,7 @@ Quick reference for common Sipha patterns and APIs.
 
 ## Syntax Kinds
 
-```rust
+```rust,ignore
 use sipha::syntax::SyntaxKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,7 +28,14 @@ impl SyntaxKind for MySyntaxKind {
 
 ## Lexer Builder
 
-```rust
+```rust,ignore
+# use sipha::syntax::SyntaxKind;
+# #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+# enum MySyntaxKind { Number, Plus, Minus, Eof, Whitespace, Expr, Term, }
+# impl SyntaxKind for MySyntaxKind {
+#     fn is_terminal(self) -> bool { !matches!(self, Self::Expr | Self::Term) }
+#     fn is_trivia(self) -> bool { matches!(self, Self::Whitespace) }
+# }
 use sipha::lexer::{LexerBuilder, Pattern, CharSet};
 
 let lexer = LexerBuilder::new()
@@ -44,10 +51,24 @@ let lexer = LexerBuilder::new()
 
 ## Grammar Builder
 
-```rust
+```rust,ignore
+# use sipha::syntax::SyntaxKind;
+# #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+# enum MySyntaxKind { Number, Plus, Minus, Eof, Whitespace, Expr, Term, }
+# impl SyntaxKind for MySyntaxKind {
+#     fn is_terminal(self) -> bool { !matches!(self, Self::Expr | Self::Term) }
+#     fn is_trivia(self) -> bool { matches!(self, Self::Whitespace) }
+# }
 use sipha::grammar::{GrammarBuilder, Expr, NonTerminal};
 use sipha::lexer::Token as LexerToken;
 use sipha::syntax::{TextRange, TextSize};
+use std::convert::TryFrom;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum MyNonTerminal { Expr, }
+impl NonTerminal for MyNonTerminal {
+    fn name(&self) -> &str { match self { MyNonTerminal::Expr => "Expr", } }
+}
 
 // Helper to create tokens
 fn token(kind: MySyntaxKind, text: &str, offset: u32) -> LexerToken<MySyntaxKind> {
@@ -75,9 +96,17 @@ let grammar = GrammarBuilder::new()
 
 ## Parser Usage
 
-```rust
+```rust,ignore
+# use sipha::grammar::{GrammarBuilder, Grammar, Expr, NonTerminal};
+# use sipha::lexer::Token;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# let grammar: Grammar<MyToken, MyNonTerminal> = todo!();
+# let tokens: Vec<Token<MySyntaxKind>> = vec![];
 use sipha::backend::ll::{LlParser, LlConfig};
 use sipha::backend::ParserBackend;
+use sipha::syntax::SyntaxNode;
 
 let config = LlConfig::default();
 let mut parser = LlParser::new(&grammar, config)?;
@@ -91,7 +120,19 @@ let root = SyntaxNode::new_root(result.root.clone());
 
 ## Incremental Parsing
 
-```rust
+```rust,ignore
+# use sipha::backend::ll::LlParser;
+# use sipha::grammar::Grammar;
+# use sipha::lexer::Token;
+# use sipha::syntax::GreenNode;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# let parser: LlParser = todo!();
+# let grammar: Grammar<MyToken, MyNonTerminal> = todo!();
+# let tokens: Vec<Token<MySyntaxKind>> = vec![];
+# let old_tree: Option<&GreenNode<MySyntaxKind>> = None;
+# let entry_point: MyNonTerminal = todo!();
 use sipha::incremental::{IncrementalParser, TextEdit};
 use sipha::syntax::{TextRange, TextSize};
 
@@ -111,7 +152,15 @@ let result = incremental.parse_incremental(
 
 ## Syntax Tree Navigation
 
-```rust
+```rust,ignore
+# use sipha::syntax::{SyntaxNode, GreenNode, SyntaxKind};
+# #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+# enum MySyntaxKind { Expr, }
+# impl SyntaxKind for MySyntaxKind {
+#     fn is_terminal(self) -> bool { false }
+#     fn is_trivia(self) -> bool { false }
+# }
+# let green_node: GreenNode<MySyntaxKind> = todo!();
 use sipha::syntax::SyntaxNode;
 
 let root = SyntaxNode::new_root(green_node);
@@ -141,7 +190,21 @@ for sibling in root.next_sibling().into_iter() {
 
 ## Error Handling
 
-```rust
+```rust,ignore
+# use sipha::backend::ParserBackend;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# struct Parser;
+# impl ParserBackend<MyToken, MyNonTerminal> for Parser {
+#     type Config = ();
+#     type Error = ();
+#     type State = ();
+#     fn new(_: &(), _: ()) -> Result<Self, ()> { Ok(Parser) }
+#     fn parse(&mut self, _: &[MyToken], _: MyNonTerminal) -> sipha::backend::ParseResult<MyToken, MyNonTerminal> { todo!() }
+# }
+# let mut parser = Parser;
+# let tokens: Vec<MyToken> = vec![];
+# let result = parser.parse(&tokens, MyNonTerminal::Expr);
 // Check for errors
 if !result.errors.is_empty() {
     for error in &result.errors {
@@ -166,14 +229,14 @@ for warning in &result.warnings {
 
 ## Common Character Sets
 
-```rust
+```rust,ignore
 use sipha::lexer::CharSet;
 
-CharSet::digits()        // [0-9]
-CharSet::whitespace()    // \s
-CharSet::letters()       // [a-zA-Z]
-CharSet::alphanumeric()  // [a-zA-Z0-9]
-CharSet::hex_digits()    // [0-9a-fA-F]
+let _ = CharSet::digits();        // [0-9]
+let _ = CharSet::whitespace();    // \s
+let _ = CharSet::letters();       // [a-zA-Z]
+let _ = CharSet::alphanumeric();  // [a-zA-Z0-9]
+let _ = CharSet::hex_digits();    // [0-9a-fA-F]
 ```
 
 ## Backend Selection
@@ -205,8 +268,15 @@ sipha = { version = "0.5.0", features = [
 
 ### Optional Semicolon
 
-```rust
-.rule(MyNonTerminal::Stmt, Expr::seq(vec![
+```rust,ignore
+# use sipha::grammar::{GrammarBuilder, Expr, NonTerminal};
+# use sipha::lexer::Token;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# let semicolon_token: Token<MySyntaxKind> = todo!();
+# let mut builder = GrammarBuilder::new();
+builder.rule(MyNonTerminal::Stmt, Expr::seq(vec![
     Expr::non_terminal(MyNonTerminal::Expr),
     Expr::optional(Box::new(Expr::token(semicolon_token))),
 ]))
@@ -214,8 +284,16 @@ sipha = { version = "0.5.0", features = [
 
 ### Delimited List
 
-```rust
-.rule(MyNonTerminal::List, Expr::seq(vec![
+```rust,ignore
+# use sipha::grammar::{GrammarBuilder, Expr, NonTerminal};
+# use sipha::lexer::Token;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# let open_token: Token<MySyntaxKind> = todo!();
+# let close_token: Token<MySyntaxKind> = todo!();
+# let mut builder = GrammarBuilder::new();
+builder.rule(MyNonTerminal::List, Expr::seq(vec![
     Expr::token(open_token),
     Expr::repeat(
         Box::new(Expr::non_terminal(MyNonTerminal::Item)),
@@ -228,9 +306,17 @@ sipha = { version = "0.5.0", features = [
 
 ### Operator Precedence
 
-```rust
+```rust,ignore
+# use sipha::grammar::{GrammarBuilder, Expr, NonTerminal};
+# use sipha::lexer::Token;
+# type MyToken = ();
+# type MyNonTerminal = ();
+# type MySyntaxKind = ();
+# let multiply_token: Token<MySyntaxKind> = todo!();
+# let plus_token: Token<MySyntaxKind> = todo!();
+# let mut builder = GrammarBuilder::new();
 // Higher precedence first
-.rule(MyNonTerminal::Expr, Expr::choice(vec![
+builder.rule(MyNonTerminal::Expr, Expr::choice(vec![
     Expr::seq(vec![  // * has higher precedence
         Expr::non_terminal(MyNonTerminal::Term),
         Expr::token(multiply_token),

@@ -80,7 +80,10 @@ Parse cache is optimized:
 
 ### Measuring Performance
 
-```rust
+```rust,ignore
+use std::time::Instant;
+
+// Assuming parser, tokens, and entry are already defined
 let start = Instant::now();
 let result = parser.parse(&tokens, entry);
 let duration = start.elapsed();

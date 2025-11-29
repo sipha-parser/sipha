@@ -15,7 +15,7 @@ sipha = { version = "0.5.0", features = ["unicode"] }
 
 Use Unicode character classes in patterns:
 
-```rust
+```rust,ignore
 use sipha::lexer::{CharSet, Pattern};
 
 // Unicode letters
@@ -32,7 +32,7 @@ let unicode_ident = CharSet::unicode_ident_start();
 
 Match Unicode identifiers:
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     .token(MySyntaxKind::Ident, Pattern::CharClass(CharSet::unicode_ident_start()))
     .build(MySyntaxKind::Eof, MySyntaxKind::Ident)
@@ -50,7 +50,7 @@ Sipha handles Unicode normalization automatically:
 
 ### Japanese Identifiers
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     .token(MySyntaxKind::Ident, Pattern::CharClass(CharSet::unicode_letters()))
     .build(MySyntaxKind::Eof, MySyntaxKind::Ident)
@@ -61,7 +61,7 @@ let lexer = LexerBuilder::new()
 
 ### Emoji in Strings
 
-```rust
+```rust,ignore
 // Emoji are handled correctly in string literals
 let input = r#""Hello 👋 World 🌍""#;
 let tokens = lexer.tokenize(input).unwrap();

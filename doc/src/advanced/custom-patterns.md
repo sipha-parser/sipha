@@ -6,7 +6,7 @@ This chapter shows how to extend lexer patterns with custom matching logic.
 
 For complex tokenization logic, use custom matchers:
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     .custom_token(MySyntaxKind::String, |text, pos| {
         // Custom string matching
@@ -37,7 +37,7 @@ let lexer = LexerBuilder::new()
 
 Custom matchers have this signature:
 
-```rust
+```rust,ignore
 Fn(&str, usize) -> Option<(usize, TokenValue)>
 ```
 
@@ -51,7 +51,7 @@ Where:
 
 Token values can be:
 
-```rust
+```rust,ignore
 pub enum TokenValue {
     Integer(i64),
     Float(f64),
@@ -64,7 +64,7 @@ pub enum TokenValue {
 
 ### String Literal
 
-```rust
+```rust,ignore
 .custom_token(MySyntaxKind::String, |text, pos| {
     if !text[pos..].starts_with('"') {
         return None;
@@ -90,7 +90,7 @@ pub enum TokenValue {
 
 ### Floating Point Number
 
-```rust
+```rust,ignore
 .custom_token(MySyntaxKind::Float, |text, pos| {
     let mut end = pos;
     let mut has_dot = false;
@@ -127,7 +127,7 @@ pub enum TokenValue {
 
 ### Multiline Comment
 
-```rust
+```rust,ignore
 .custom_token(MySyntaxKind::Comment, |text, pos| {
     if !text[pos..].starts_with("/*") {
         return None;
@@ -158,7 +158,7 @@ pub enum TokenValue {
 
 Custom matchers work alongside regular patterns:
 
-```rust
+```rust,ignore
 let lexer = LexerBuilder::new()
     // Regular patterns
     .token(MySyntaxKind::Number, Pattern::CharClass(CharSet::digits()))

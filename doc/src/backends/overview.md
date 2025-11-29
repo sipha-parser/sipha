@@ -36,7 +36,7 @@ Generalized LR parsing for ambiguous grammars:
 
 All backends implement the `ParserBackend` trait:
 
-```rust
+```rust,ignore
 pub trait ParserBackend<T, N>: Sized + Send
 where
     T: Token,
@@ -60,7 +60,7 @@ where
 
 Each backend reports its capabilities:
 
-```rust
+```rust,ignore
 pub struct BackendCapabilities {
     pub name: &'static str,
     pub algorithm: Algorithm,

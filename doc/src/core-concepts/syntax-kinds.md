@@ -10,7 +10,10 @@ In traditional parser generators, terminals and non-terminals are separate types
 
 The `SyntaxKind` trait is the foundation of Sipha's type system:
 
-```rust
+```rust,ignore
+use std::hash::Hash;
+use std::fmt::Debug;
+
 pub trait SyntaxKind: Copy + Clone + PartialEq + Eq + Hash + Debug {
     fn is_terminal(self) -> bool;
     fn is_trivia(self) -> bool;
@@ -26,7 +29,7 @@ pub trait SyntaxKind: Copy + Clone + PartialEq + Eq + Hash + Debug {
 
 You define syntax kinds as an enum that implements the `SyntaxKind` trait:
 
-```rust
+```rust,ignore
 use sipha::syntax::SyntaxKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -100,7 +103,7 @@ Mark trivia kinds with `is_trivia()` returning `true`. The parser will automatic
 
 ## Example: Complete Syntax Kind Definition
 
-```rust
+```rust,ignore
 use sipha::syntax::SyntaxKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

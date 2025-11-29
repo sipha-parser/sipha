@@ -40,7 +40,7 @@ flowchart TD
 
 When text is edited, Sipha tracks the changes using `TextEdit`:
 
-```rust
+```rust,ignore
 use sipha::incremental::TextEdit;
 use sipha::syntax::{TextRange, TextSize};
 
@@ -59,7 +59,7 @@ Edits can be:
 
 Sipha computes the minimal region that needs to be re-parsed:
 
-```rust
+```rust,ignore
 let affected = AffectedRegion::from_edits(&edits, Some(total_len));
 ```
 
@@ -73,7 +73,7 @@ The expansion ensures that context-dependent parsing (like operator precedence) 
 
 Sipha identifies nodes from the previous parse that can be reused:
 
-```rust
+```rust,ignore
 let reusable = find_reusable_nodes(old_tree, affected.expanded(), budget);
 ```
 
@@ -86,7 +86,7 @@ A node is reusable if:
 
 The reuse budget limits how many nodes to consider for reuse:
 
-```rust
+```rust,ignore
 use sipha::incremental::ReuseBudget;
 
 // Fixed budget
@@ -108,7 +108,7 @@ The heuristic budget considers:
 
 An `IncrementalSession` captures everything needed for incremental parsing:
 
-```rust
+```rust,ignore
 use sipha::incremental::IncrementalSession;
 
 let session = IncrementalSession::new(old_tree, &edits);
@@ -125,7 +125,7 @@ The session provides:
 
 Sipha maintains a persistent parse cache for cross-session node reuse:
 
-```rust
+```rust,ignore
 let session = IncrementalSession::with_cache(old_tree, &edits, &cache);
 ```
 
@@ -137,7 +137,7 @@ The cache:
 
 Cache population happens automatically when using `parse_incremental` with a grammar:
 
-```rust
+```rust,ignore
 let result = parser.parse_incremental(
     &tokens,
     old_tree,
