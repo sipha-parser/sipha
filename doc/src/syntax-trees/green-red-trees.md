@@ -133,19 +133,19 @@ graph TD
     
     G1 -.->|"new_root()"| R1
     
-    style G1 fill:#c8e6c9
-    style G2 fill:#c8e6c9
-    style G3 fill:#ffccbc
-    style G4 fill:#ffccbc
-    style G5 fill:#c8e6c9
-    style G6 fill:#ffccbc
+    style G1 fill:#c8e6c9,color:#000000
+    style G2 fill:#c8e6c9,color:#000000
+    style G3 fill:#ffccbc,color:#000000
+    style G4 fill:#ffccbc,color:#000000
+    style G5 fill:#c8e6c9,color:#000000
+    style G6 fill:#ffccbc,color:#000000
     
-    style R1 fill:#e1f5ff
-    style R2 fill:#e1f5ff
-    style R3 fill:#fff9c4
-    style R4 fill:#fff9c4
-    style R5 fill:#e1f5ff
-    style R6 fill:#fff9c4
+    style R1 fill:#e1f5ff,color:#000000
+    style R2 fill:#e1f5ff,color:#000000
+    style R3 fill:#fff9c4,color:#000000
+    style R4 fill:#fff9c4,color:#000000
+    style R5 fill:#e1f5ff,color:#000000
+    style R6 fill:#fff9c4,color:#000000
 ```
 
 ## Memory Efficiency

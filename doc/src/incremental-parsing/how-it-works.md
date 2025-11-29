@@ -29,11 +29,11 @@ flowchart TD
     Update --> Reconstruct[Reconstruct Tree]
     Reconstruct --> End[New Syntax Tree]
     
-    style Start fill:#e1f5ff
-    style Reuse fill:#c8e6c9
-    style ParseGaps fill:#fff9c4
-    style Combine fill:#ffccbc
-    style End fill:#c8e6c9
+    style Start fill:#e1f5ff,color:#000000
+    style Reuse fill:#c8e6c9,color:#000000
+    style ParseGaps fill:#fff9c4,color:#000000
+    style Combine fill:#ffccbc,color:#000000
+    style End fill:#c8e6c9,color:#000000
 ```
 
 ## Edit Tracking

@@ -31,10 +31,10 @@ graph TB
     
     Parser -.-> Backends
     
-    style Input fill:#e1f5ff
-    style Tree fill:#c8e6c9
-    style Output fill:#c8e6c9
-    style Cache fill:#fff9c4
+    style Input fill:#e1f5ff,color:#000000
+    style Tree fill:#c8e6c9,color:#000000
+    style Output fill:#c8e6c9,color:#000000
+    style Cache fill:#fff9c4,color:#000000
 ```
 
 ## Project Status

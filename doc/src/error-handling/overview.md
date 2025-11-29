@@ -28,11 +28,11 @@ flowchart TD
     Fail --> Result
     Fail2 --> Result
     
-    style Success fill:#c8e6c9
-    style Success2 fill:#c8e6c9
-    style Fail fill:#ffccbc
-    style Fail2 fill:#ffccbc
-    style Result fill:#e1f5ff
+    style Success fill:#c8e6c9,color:#000000
+    style Success2 fill:#c8e6c9,color:#000000
+    style Fail fill:#ffccbc,color:#000000
+    style Fail2 fill:#ffccbc,color:#000000
+    style Result fill:#e1f5ff,color:#000000
 ```
 
 ## Key Concepts

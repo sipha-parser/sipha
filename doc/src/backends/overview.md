@@ -88,10 +88,10 @@ flowchart TD
     LR --> End
     LL --> End
     
-    style GLR fill:#ffccbc
-    style LR fill:#fff9c4
-    style LL fill:#c8e6c9
-    style End fill:#e1f5ff
+    style GLR fill:#ffccbc,color:#000000
+    style LR fill:#fff9c4,color:#000000
+    style LL fill:#c8e6c9,color:#000000
+    style End fill:#e1f5ff,color:#000000
 ```
 
 See [Choosing a Backend](choosing.md) for detailed guidance on selecting the right backend for your use case.
