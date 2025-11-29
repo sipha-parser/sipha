@@ -58,32 +58,81 @@ pub enum Expr<T, N> {
     },
 }
 
+/// Controls whether a trailing separator is allowed in separated lists.
+///
+/// This enum is used with [`Expr::Separated`] to specify whether the last
+/// item in a separated list can have a trailing separator.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use sipha::grammar::expr::TrailingSeparator;
+///
+/// // Forbid trailing separator: `[a, b, c]` ✓, `[a, b, c,]` ✗
+/// let forbid = TrailingSeparator::Forbid;
+///
+/// // Allow trailing separator: `[a, b, c]` ✓, `[a, b, c,]` ✓
+/// let allow = TrailingSeparator::Allow;
+///
+/// // Require trailing separator: `[a, b, c]` ✗, `[a, b, c,]` ✓
+/// let require = TrailingSeparator::Require;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrailingSeparator {
+    /// Trailing separator is not allowed (e.g., `[a, b, c]` is valid, `[a, b, c,]` is invalid)
     Forbid,
+    /// Trailing separator is optional (e.g., both `[a, b, c]` and `[a, b, c,]` are valid)
     Allow,
+    /// Trailing separator is required (e.g., `[a, b, c,]` is valid, `[a, b, c]` is invalid)
     Require,
 }
 
 // Builder methods
 impl<T, N> Expr<T, N> {
     // Primitives
+    /// Create a token expression that matches a specific token.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // Assuming T and N are defined
+    /// # // let token_expr = Expr::token(my_token);
+    /// ```
     #[must_use]
     pub const fn token(t: T) -> Self {
         Self::Token(t)
     }
+    /// Create a rule expression that references a non-terminal.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // Assuming T and N are defined
+    /// # // let rule_expr = Expr::rule(my_non_terminal);
+    /// ```
     #[must_use]
     pub const fn rule(n: N) -> Self {
         Self::Rule(n)
     }
+    /// Create an expression that matches any single token.
+    ///
+    /// This is useful for error recovery or wildcard matching.
     #[must_use]
     pub const fn any() -> Self {
         Self::Any
     }
+    /// Create an expression that matches the end of file.
+    ///
+    /// This is typically used to ensure the entire input has been consumed.
     #[must_use]
     pub const fn eof() -> Self {
         Self::Eof
     }
+    /// Create an expression that matches the empty string.
+    ///
+    /// This is useful for optional elements or as a base case in recursive rules.
     #[must_use]
     pub const fn empty() -> Self {
         Self::Empty
@@ -126,11 +175,31 @@ impl<T, N> Expr<T, N> {
         }
     }
 
+    /// Create an optional expression (matches zero or one occurrence).
+    ///
+    /// Equivalent to `expr?` in regex notation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // let optional = Expr::opt(some_expr);
+    /// ```
     #[must_use]
     pub fn opt(expr: Self) -> Self {
         Self::Opt(Box::new(expr))
     }
 
+    /// Create a Kleene star expression (matches zero or more occurrences).
+    ///
+    /// Equivalent to `expr*` in regex notation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // let zero_or_more = Expr::star(some_expr);
+    /// ```
     #[must_use]
     pub fn star(expr: Self) -> Self {
         Self::Repeat {
@@ -140,6 +209,16 @@ impl<T, N> Expr<T, N> {
         }
     }
 
+    /// Create a Kleene plus expression (matches one or more occurrences).
+    ///
+    /// Equivalent to `expr+` in regex notation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // let one_or_more = Expr::plus(some_expr);
+    /// ```
     #[must_use]
     pub fn plus(expr: Self) -> Self {
         Self::Repeat {
@@ -150,6 +229,17 @@ impl<T, N> Expr<T, N> {
     }
 
     // Advanced
+    /// Create a separated list expression (e.g., `item, item, item`).
+    ///
+    /// Matches zero or more occurrences of `item` separated by `sep`.
+    /// Trailing separators are allowed by default.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // let list = Expr::separated(item_expr, comma_expr);
+    /// ```
     #[must_use]
     pub fn separated(item: Self, sep: Self) -> Self {
         Self::Separated {
@@ -160,6 +250,17 @@ impl<T, N> Expr<T, N> {
         }
     }
 
+    /// Create a delimited expression (e.g., `(content)` or `{content}`).
+    ///
+    /// Matches `open`, followed by `content`, followed by `close`.
+    /// Error recovery is enabled by default to handle mismatched delimiters.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // let parens = Expr::delimited(lparen, content, rparen);
+    /// ```
     #[must_use]
     pub fn delimited(open: Self, content: Self, close: Self) -> Self {
         Self::Delimited {
@@ -171,11 +272,19 @@ impl<T, N> Expr<T, N> {
     }
 
     // Predicates
+    /// Create a positive lookahead expression.
+    ///
+    /// Matches if `expr` would match at the current position, but doesn't consume
+    /// any input. Useful for disambiguation without committing to a parse.
     #[must_use]
     pub fn lookahead(expr: Self) -> Self {
         Self::Lookahead(Box::new(expr))
     }
 
+    /// Create a negative lookahead expression.
+    ///
+    /// Matches if `expr` would not match at the current position, but doesn't consume
+    /// any input. Useful for ensuring certain patterns don't appear.
     #[must_use]
     pub fn not_lookahead(expr: Self) -> Self {
         Self::NotLookahead(Box::new(expr))

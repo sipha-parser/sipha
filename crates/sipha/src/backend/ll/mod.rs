@@ -10,7 +10,23 @@ use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
 use crate::grammar::{Grammar, Token};
 
-/// LL(k) parser backend
+/// LL(k) parser backend for top-down predictive parsing.
+///
+/// LL parsers are efficient for many grammar types and support configurable
+/// lookahead depth (k). They work well for languages with clear hierarchical
+/// structure and are particularly suited for incremental parsing.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sipha::backend::ll::{LlParser, LlConfig};
+/// use sipha::backend::ParserBackend;
+///
+/// // Setup grammar and tokens...
+/// let config = LlConfig::default();
+/// let parser = LlParser::new(&grammar, config)?;
+/// let result = parser.parse(&tokens, entry_point);
+/// ```
 pub struct LlParser<T, N>
 where
     T: crate::grammar::Token,

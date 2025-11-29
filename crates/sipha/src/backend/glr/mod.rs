@@ -36,7 +36,24 @@ use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
 use crate::grammar::{Grammar, Token};
 
-/// GLR parser backend
+/// GLR (Generalized LR) parser backend for handling ambiguous grammars.
+///
+/// The GLR parser extends LR parsing to handle non-deterministic and ambiguous
+/// grammars by maintaining multiple parser stacks and forking on conflicts.
+/// This makes it ideal for parsing complex languages like C++ that have
+/// inherent ambiguities.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sipha::backend::glr::{GlrParser, GlrConfig};
+/// use sipha::backend::ParserBackend;
+///
+/// // Setup grammar and tokens...
+/// let config = GlrConfig::default();
+/// let parser = GlrParser::new(&grammar, config)?;
+/// let result = parser.parse(&tokens, entry_point);
+/// ```
 pub struct GlrParser<T, N>
 where
     T: crate::grammar::Token,

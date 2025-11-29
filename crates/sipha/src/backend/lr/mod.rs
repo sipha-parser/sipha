@@ -11,7 +11,24 @@ use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
 use crate::grammar::{Grammar, Token};
 
-/// LR(1) parser backend
+/// LR(1) / LALR(1) parser backend for bottom-up shift-reduce parsing.
+///
+/// LR parsers are powerful and can handle left-recursive grammars. They use
+/// a parsing table to efficiently process input. The backend supports both
+/// canonical LR(1) and LALR(1) table construction (LALR is the default as it's
+/// more practical for most grammars).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sipha::backend::lr::{LrParser, LrConfig};
+/// use sipha::backend::ParserBackend;
+///
+/// // Setup grammar and tokens...
+/// let config = LrConfig::default();
+/// let parser = LrParser::new(&grammar, config)?;
+/// let result = parser.parse(&tokens, entry_point);
+/// ```
 pub struct LrParser<T, N>
 where
     T: crate::grammar::Token,

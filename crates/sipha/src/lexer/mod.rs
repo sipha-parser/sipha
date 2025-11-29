@@ -54,7 +54,7 @@
 //!
 //! ## Error Handling
 //!
-//! The lexer returns [`LexerError`] for invalid input. Errors include:
+//! The lexer returns [`crate::error::LexerError`] for invalid input. Errors include:
 //!
 //! - Unexpected characters
 //! - Unterminated strings

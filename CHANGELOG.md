@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Improved
+
+- **Documentation Coverage**: Significantly improved documentation coverage across the codebase
+  - Added comprehensive documentation to `TrailingSeparator` enum with usage examples
+  - Documented all `TextSize` and `TextRange` methods with examples
+  - Enhanced documentation for parser backends (`LlParser`, `LrParser`, `GlrParser`) with usage examples
+  - Added complete documentation for `Token` struct and `TokenValue` enum
+  - Documented all `Expr` builder methods (`token`, `rule`, `any`, `eof`, `empty`, `opt`, `star`, `plus`, `separated`, `delimited`, `lookahead`, `not_lookahead`)
+  - Improved configuration struct documentation (`LlConfig`, `LrConfig`) with examples
+  - Fixed broken intra-doc link in lexer module
+
 ## [0.5.0] - 2025-11-29
 
 ### Added

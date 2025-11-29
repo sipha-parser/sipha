@@ -16,16 +16,47 @@ pub struct TextRange {
 }
 
 impl TextSize {
+    /// Create a new `TextSize` from a byte offset.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::TextSize;
+    ///
+    /// let size = TextSize::from(42);
+    /// assert_eq!(size.into(), 42);
+    /// ```
     #[must_use]
     pub const fn from(offset: u32) -> Self {
         Self(offset)
     }
 
+    /// Convert this `TextSize` back to a `u32` byte offset.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::TextSize;
+    ///
+    /// let size = TextSize::from(100);
+    /// let offset: u32 = size.into();
+    /// assert_eq!(offset, 100);
+    /// ```
     #[must_use]
     pub const fn into(self) -> u32 {
         self.0
     }
 
+    /// Create a zero-sized `TextSize`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::TextSize;
+    ///
+    /// let zero = TextSize::zero();
+    /// assert_eq!(zero.into(), 0);
+    /// ```
     #[must_use]
     pub const fn zero() -> Self {
         Self(0)
@@ -47,41 +78,142 @@ impl std::ops::AddAssign<Self> for TextSize {
 }
 
 impl TextRange {
+    /// Create a new `TextRange` from start and end positions.
+    ///
+    /// The range is half-open: `[start, end)`, meaning it includes `start` but excludes `end`.
+    ///
+    /// # Panics
+    ///
+    /// This function does not validate that `start <= end`. Invalid ranges may cause
+    /// panics in other methods.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let range = TextRange::new(TextSize::from(10), TextSize::from(20));
+    /// assert_eq!(range.start(), TextSize::from(10));
+    /// assert_eq!(range.end(), TextSize::from(20));
+    /// ```
     #[must_use]
     pub const fn new(start: TextSize, end: TextSize) -> Self {
         Self { start, end }
     }
 
+    /// Create a new `TextRange` from a start position and length.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let range = TextRange::at(TextSize::from(10), TextSize::from(5));
+    /// assert_eq!(range.start(), TextSize::from(10));
+    /// assert_eq!(range.end(), TextSize::from(15));
+    /// ```
     #[must_use]
     pub const fn at(start: TextSize, len: TextSize) -> Self {
         Self::new(start, TextSize(start.0 + len.0))
     }
 
+    /// Get the start position of this range.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let range = TextRange::new(TextSize::from(10), TextSize::from(20));
+    /// assert_eq!(range.start(), TextSize::from(10));
+    /// ```
     #[must_use]
     pub const fn start(self) -> TextSize {
         self.start
     }
 
+    /// Get the end position of this range (exclusive).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let range = TextRange::new(TextSize::from(10), TextSize::from(20));
+    /// assert_eq!(range.end(), TextSize::from(20));
+    /// ```
     #[must_use]
     pub const fn end(self) -> TextSize {
         self.end
     }
 
+    /// Get the length of this range in bytes.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let range = TextRange::new(TextSize::from(10), TextSize::from(25));
+    /// assert_eq!(range.len(), TextSize::from(15));
+    /// ```
     #[must_use]
     pub const fn len(self) -> TextSize {
         TextSize(self.end.0 - self.start.0)
     }
 
+    /// Check if this range contains the given offset.
+    ///
+    /// The range is half-open, so the end position is not included.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let range = TextRange::new(TextSize::from(10), TextSize::from(20));
+    /// assert!(range.contains(TextSize::from(15)));  // Inside range
+    /// assert!(!range.contains(TextSize::from(20)));  // At end (exclusive)
+    /// assert!(!range.contains(TextSize::from(25))); // Outside range
+    /// ```
     #[must_use]
     pub const fn contains(self, offset: TextSize) -> bool {
         offset.0 >= self.start.0 && offset.0 < self.end.0
     }
 
+    /// Check if this range completely contains another range.
+    ///
+    /// Returns `true` if `other` is entirely within this range.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let outer = TextRange::new(TextSize::from(10), TextSize::from(30));
+    /// let inner = TextRange::new(TextSize::from(15), TextSize::from(25));
+    /// assert!(outer.contains_range(inner));
+    /// ```
     #[must_use]
     pub const fn contains_range(self, other: Self) -> bool {
         other.start.0 >= self.start.0 && other.end.0 <= self.end.0
     }
 
+    /// Compute the intersection of two ranges.
+    ///
+    /// Returns `Some(intersection)` if the ranges overlap, or `None` if they don't.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::{TextRange, TextSize};
+    ///
+    /// let range1 = TextRange::new(TextSize::from(10), TextSize::from(20));
+    /// let range2 = TextRange::new(TextSize::from(15), TextSize::from(25));
+    /// let intersection = range1.intersect(range2).unwrap();
+    /// assert_eq!(intersection.start(), TextSize::from(15));
+    /// assert_eq!(intersection.end(), TextSize::from(20));
+    /// ```
     #[must_use]
     pub fn intersect(self, other: Self) -> Option<Self> {
         let start = self.start.0.max(other.start.0);

@@ -1,4 +1,24 @@
-/// Configuration for LR parser
+/// Configuration options for the LR(1) / LALR(1) parser backend.
+///
+/// This struct allows you to customize the behavior of the LR parser,
+/// including table construction method, error recovery, and token insertion.
+///
+/// # Example
+///
+/// ```rust
+/// use sipha::backend::lr::LrConfig;
+///
+/// // Use default configuration (LALR(1) with error recovery)
+/// let config = LrConfig::default();
+///
+/// // Or customize it
+/// let config = LrConfig {
+///     error_recovery: true,
+///     max_errors: 50,
+///     use_lalr: false,  // Use canonical LR(1) instead
+///     enable_token_insertion: true,
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct LrConfig {
     /// Enable error recovery

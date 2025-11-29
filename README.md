@@ -1,8 +1,13 @@
 # Sipha
 
+**A flexible, incremental parsing library for Rust**
+
 [![Crates.io](https://img.shields.io/crates/v/sipha.svg)](https://crates.io/crates/sipha)
 [![docs.rs](https://docs.rs/sipha/badge.svg)](https://docs.rs/sipha)
+[![CI](https://github.com/sipha-parser/sipha/actions/workflows/ci.yml/badge.svg)](https://github.com/sipha-parser/sipha/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![MSRV](https://img.shields.io/badge/rustc-1.70+-orange.svg)
+[![rustdoc coverage](https://img.shields.io/badge/docs-85%25-brightgreen)](https://github.com/sipha-parser/sipha/actions)
 
 A flexible, incremental parsing library for Rust with support for multiple parsing algorithms. Sipha is designed from the ground up to support **incremental parsing**—the ability to efficiently re-parse only the changed portions of your code, making it ideal for interactive applications like IDEs, editors, and language servers.
 

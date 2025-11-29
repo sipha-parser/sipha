@@ -1,4 +1,25 @@
-/// Configuration for LL parser
+/// Configuration options for the LL(k) parser backend.
+///
+/// This struct allows you to customize the behavior of the LL parser,
+/// including lookahead depth, error recovery, and caching settings.
+///
+/// # Example
+///
+/// ```rust
+/// use sipha::backend::ll::LlConfig;
+///
+/// // Use default configuration
+/// let config = LlConfig::default();
+///
+/// // Or customize it
+/// let config = LlConfig {
+///     lookahead: 2,  // Use LL(2) instead of LL(1)
+///     error_recovery: true,
+///     max_errors: 50,
+///     max_cache_size: 5000,
+///     cache_history: 3,
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct LlConfig {
     /// Lookahead depth (k in LL(k))
