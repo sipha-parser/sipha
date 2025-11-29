@@ -78,15 +78,25 @@
 //! - **Primitives**: `Token`, `Rule`, `Any`, `Eof`, `Empty`
 //! - **Combinators**: `Seq`, `Choice`, `Opt`, `Repeat`
 //! - **Advanced**: `Separated`, `Delimited`, `Node`, `Label`
-//! - **Predicates**: `Lookahead`, `NotLookahead`
+//! - **Predicates**: `Lookahead`, `NotLookahead`, `SemanticPredicate`
+//! - **Advanced**: `Cut`, `TokenClass`, `Conditional`, `Backreference`
 //! - **Error Recovery**: `RecoveryPoint`
 //!
 //! See [`Expr`] for the full list of expression types.
+//!
+//! ## Additional Modules
+//!
+//! - **Token Classes**: [`token_class`] - Match tokens by class (digit, letter, etc.)
+//! - **Captures**: [`capture`] - Capture groups for backreferences
+//! - **Semantic Predicates**: [`predicate`] - Context-sensitive parsing predicates
 
 pub mod analysis;
 pub mod builder;
+pub mod capture;
 pub mod expr;
 pub mod hint;
+pub mod predicate;
+pub mod token_class;
 pub mod validate;
 
 #[cfg(feature = "grammar-docs")]
@@ -94,8 +104,11 @@ pub mod docs;
 
 pub use analysis::*;
 pub use builder::*;
+pub use capture::*;
 pub use expr::*;
 pub use hint::*;
+pub use predicate::*;
+pub use token_class::*;
 pub use validate::*;
 
 #[cfg(feature = "grammar-docs")]

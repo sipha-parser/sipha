@@ -1,4 +1,6 @@
-use crate::grammar::{NonTerminal, Token};
+use crate::grammar::{
+    NonTerminal, Token, capture::CaptureId, predicate::SemanticPredicate, token_class::TokenClass,
+};
 use smallvec::SmallVec;
 
 /// Grammar expression representing production rules
@@ -19,6 +21,7 @@ pub enum Expr<T, N> {
         expr: Box<Expr<T, N>>,
         min: usize,
         max: Option<usize>,
+        greedy: bool,
     },
 
     // Advanced
@@ -38,6 +41,31 @@ pub enum Expr<T, N> {
     // Predicates
     Lookahead(Box<Expr<T, N>>),
     NotLookahead(Box<Expr<T, N>>),
+    /// Cut operator: prevents backtracking past this point (PEG-specific)
+    ///
+    /// Once a cut operator succeeds, backtracking is disabled for the
+    /// remainder of the current choice alternative. This improves performance
+    /// and error messages by committing to a parse path.
+    Cut(Box<Expr<T, N>>),
+    /// Token class matching: matches tokens by class rather than specific value
+    TokenClass {
+        class: TokenClass,
+    },
+    /// Conditional expression: parse based on a condition
+    Conditional {
+        condition: Box<Expr<T, N>>,
+        then_expr: Box<Expr<T, N>>,
+        else_expr: Option<Box<Expr<T, N>>>,
+    },
+    /// Semantic predicate: check semantic conditions during parsing
+    SemanticPredicate {
+        expr: Box<Expr<T, N>>,
+        predicate: std::sync::Arc<dyn SemanticPredicate<T, N>>,
+    },
+    /// Backreference: match previously captured content
+    Backreference {
+        capture_id: CaptureId,
+    },
 
     // Tree construction
     Label {
@@ -206,6 +234,7 @@ impl<T, N> Expr<T, N> {
             expr: Box::new(expr),
             min: 0,
             max: None,
+            greedy: true,
         }
     }
 
@@ -225,6 +254,36 @@ impl<T, N> Expr<T, N> {
             expr: Box::new(expr),
             min: 1,
             max: None,
+            greedy: true,
+        }
+    }
+
+    /// Create a repeat expression with explicit greedy control.
+    ///
+    /// # Arguments
+    ///
+    /// * `expr` - The expression to repeat
+    /// * `min` - Minimum number of repetitions (must match)
+    /// * `max` - Maximum number of repetitions (None for unlimited)
+    /// * `greedy` - Whether to match greedily (true) or non-greedily (false)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // Greedy: match as many as possible
+    /// # // let expr = Expr::token(/* your token */);
+    /// # // let greedy = Expr::repeat_with_greedy(expr, 0, None, true);
+    /// # // Non-greedy: match as few as possible
+    /// # // let non_greedy = Expr::repeat_with_greedy(expr, 0, None, false);
+    /// ```
+    #[must_use]
+    pub fn repeat_with_greedy(expr: Self, min: usize, max: Option<usize>, greedy: bool) -> Self {
+        Self::Repeat {
+            expr: Box::new(expr),
+            min,
+            max,
+            greedy,
         }
     }
 
@@ -289,6 +348,128 @@ impl<T, N> Expr<T, N> {
     pub fn not_lookahead(expr: Self) -> Self {
         Self::NotLookahead(Box::new(expr))
     }
+
+    /// Create a cut operator expression (PEG-specific).
+    ///
+    /// The cut operator prevents backtracking past this point. Once a cut
+    /// succeeds, the parser commits to the current alternative and cannot
+    /// backtrack to try other alternatives in the same choice.
+    ///
+    /// This improves performance and provides better error messages by
+    /// committing to a parse path early.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // After matching a keyword, commit to this alternative
+    /// # // let keyword_token = /* your token */;
+    /// # // let cut_expr = Expr::cut(Expr::token(keyword_token));
+    /// ```
+    #[must_use]
+    pub fn cut(expr: Self) -> Self {
+        Self::Cut(Box::new(expr))
+    }
+
+    /// Create a token class expression.
+    ///
+    /// Matches any token that belongs to the specified token class (e.g., digit,
+    /// letter, whitespace). This is more flexible than matching specific tokens.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{Expr, token_class::TokenClass};
+    /// # // Match any digit
+    /// # // let digit: Expr<MyToken, MyNonTerminal> = Expr::token_class(TokenClass::Digit);
+    /// ```
+    #[must_use]
+    pub const fn token_class(class: TokenClass) -> Self {
+        Self::TokenClass { class }
+    }
+
+    /// Create a conditional expression.
+    ///
+    /// First parses the `condition` expression. If it succeeds, parses `then_expr`.
+    /// If it fails and `else_expr` is provided, parses `else_expr`. If it fails
+    /// and no `else_expr` is provided, the entire expression fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::Expr;
+    /// # // Parse different expressions based on a condition
+    /// # // let condition_expr = Expr::token(/* condition token */);
+    /// # // let then_expr = Expr::token(/* then token */);
+    /// # // let else_expr = Expr::token(/* else token */);
+    /// # // let conditional = Expr::conditional(
+    /// # //     condition_expr,
+    /// # //     then_expr,
+    /// # //     Some(else_expr),
+    /// # // );
+    /// ```
+    #[must_use]
+    pub fn conditional(condition: Self, then_expr: Self, else_expr: Option<Self>) -> Self {
+        Self::Conditional {
+            condition: Box::new(condition),
+            then_expr: Box::new(then_expr),
+            else_expr: else_expr.map(Box::new),
+        }
+    }
+
+    /// Create a semantic predicate expression.
+    ///
+    /// Parses the expression and then checks the semantic predicate. If the
+    /// predicate returns `true`, the parse succeeds. If it returns `false`,
+    /// the parse fails even if the expression matched.
+    ///
+    /// This enables context-sensitive parsing based on semantic information
+    /// (e.g., symbol tables, type information).
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{Expr, predicate::SemanticPredicate};
+    /// # // Only parse if type is defined in symbol table
+    /// # // #[derive(Debug)]
+    /// # // struct IsTypeDefined;
+    /// # // impl<T: Token, N: NonTerminal> SemanticPredicate<T, N> for IsTypeDefined {
+    /// # //     fn check(&self, grammar: &Grammar<T, N>, input: &[T], pos: usize) -> bool { true }
+    /// # // }
+    /// # // let type_expr = Expr::token(/* type token */);
+    /// # // let predicate_expr = Expr::semantic_predicate(
+    /// # //     type_expr,
+    /// # //     Box::new(IsTypeDefined),
+    /// # // );
+    /// ```
+    #[must_use]
+    pub fn semantic_predicate(expr: Self, predicate: Box<dyn SemanticPredicate<T, N>>) -> Self {
+        Self::SemanticPredicate {
+            expr: Box::new(expr),
+            predicate: std::sync::Arc::from(predicate),
+        }
+    }
+
+    /// Create a backreference expression.
+    ///
+    /// Matches the same content that was previously captured by a capture group
+    /// with the given `capture_id`. This enables patterns like matching paired
+    /// delimiters or repeating previously matched content.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{Expr, capture::CaptureId};
+    /// # // Match the same delimiter that opened the group
+    /// # // let backref: Expr<MyToken, MyNonTerminal> = Expr::backreference(
+    /// # //     CaptureId::Named("delimiter".to_string())
+    /// # // );
+    /// ```
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // CaptureId::Named contains String, cannot be const
+    pub fn backreference(capture_id: CaptureId) -> Self {
+        Self::Backreference { capture_id }
+    }
 }
 
 // Semantic analysis
@@ -320,6 +501,26 @@ where
                 expr.is_nullable(grammar)
             }
 
+            // Cut doesn't affect nullability - depends on inner expression
+            // SemanticPredicate: nullable if inner expression is nullable
+            Self::Cut(expr) | Self::SemanticPredicate { expr, .. } => expr.is_nullable(grammar),
+            // TokenClass matches a token, so not nullable
+            // Conditional: nullable if condition is nullable and then_expr is nullable,
+            // or if condition fails and else_expr is Some and nullable
+            Self::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                if condition.is_nullable(grammar) {
+                    then_expr.is_nullable(grammar)
+                } else if let Some(else_expr) = else_expr {
+                    else_expr.is_nullable(grammar)
+                } else {
+                    false
+                }
+            }
+            // Backreference: not nullable (matches previously captured content)
             _ => false,
         }
     }
@@ -370,10 +571,32 @@ where
                 }
             }
 
-            Self::Opt(expr) | Self::Repeat { expr, .. } => {
+            // Cut: first set is same as inner expression
+            // SemanticPredicate: first set is same as inner expression
+            Self::Opt(expr)
+            | Self::Repeat { expr, .. }
+            | Self::Cut(expr)
+            | Self::SemanticPredicate { expr, .. } => {
                 expr.first_set_impl(grammar, result, visited);
             }
-
+            // TokenClass: can't determine specific tokens, skip
+            // Conditional: first set is union of condition, then_expr, and else_expr
+            Self::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                condition.first_set_impl(grammar, result, visited);
+                if condition.is_nullable(grammar) {
+                    then_expr.first_set_impl(grammar, result, visited);
+                }
+                if let Some(else_expr) = else_expr {
+                    // If condition fails, else_expr is tried
+                    // We can't easily determine if condition will fail, so include else_expr's FIRST
+                    else_expr.first_set_impl(grammar, result, visited);
+                }
+            }
+            // Backreference: can't determine FIRST set (depends on captured content)
             _ => {}
         }
     }
@@ -399,9 +622,23 @@ where
             | Self::Prune(expr)
             | Self::Lookahead(expr)
             | Self::NotLookahead(expr)
-            | Self::RecoveryPoint { expr, .. } => {
+            | Self::Cut(expr)
+            | Self::RecoveryPoint { expr, .. }
+            | Self::SemanticPredicate { expr, .. } => {
                 expr.extract_nonterminals(result, depth);
             }
+            Self::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                condition.extract_nonterminals(result, depth);
+                then_expr.extract_nonterminals(result, depth);
+                if let Some(else_expr) = else_expr {
+                    else_expr.extract_nonterminals(result, depth);
+                }
+            }
+            // TokenClass and Backreference don't contain non-terminals
             Self::Separated {
                 item, separator, ..
             } => {

@@ -1202,7 +1202,12 @@ where
             Ok(())
         }
 
-        Expr::Repeat { expr, min, max } => {
+        Expr::Repeat {
+            expr,
+            min,
+            max,
+            greedy: _,
+        } => {
             let mut count = 0;
             loop {
                 let saved_pos = pos.pos;
@@ -1347,6 +1352,108 @@ where
             close,
             recover,
         } => parse_delimited(ctx, pos, open, content, close, *recover, output, session),
+
+        Expr::Cut(expr) => {
+            // Cut operator: LL parsers don't backtrack, so this is a no-op
+            // but we still parse the expression
+            parse_expr_inner(ctx, pos, expr, output, session)
+        }
+
+        Expr::TokenClass { class } => {
+            // Match any token that belongs to the specified class
+            if let Some(token) = ctx.input.get(pos.pos) {
+                if crate::grammar::token_class::token_matches_class(token, class) {
+                    let token_text = token.text();
+                    let token_len = token.text_len();
+                    output
+                        .builder
+                        .token(token.kind(), token_text)
+                        .expect("Internal error: token() called without parent node");
+                    pos.pos += 1;
+                    pos.text_pos += token_len;
+                    Ok(())
+                } else {
+                    Err(ParseError::UnexpectedToken {
+                        span: crate::syntax::TextRange::at(pos.text_pos, DEFAULT_ERROR_SPAN_LEN),
+                        expected: vec![format!("token class: {}", class.as_str())],
+                    })
+                }
+            } else {
+                Err(ParseError::UnexpectedEof {
+                    span: crate::syntax::TextRange::at(pos.text_pos, TextSize::from(1)),
+                    expected: vec![format!("token class: {}", class.as_str())],
+                })
+            }
+        }
+
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            // Parse condition first
+            let saved_pos = pos.pos;
+            let saved_text_pos = pos.text_pos;
+            if parse_expr_inner(ctx, pos, condition, output, session).is_ok() {
+                // Condition succeeded - parse then_expr
+                parse_expr_inner(ctx, pos, then_expr, output, session)
+            } else {
+                // Condition failed - restore position and try else_expr if provided
+                pos.pos = saved_pos;
+                pos.text_pos = saved_text_pos;
+                if let Some(else_expr) = else_expr {
+                    parse_expr_inner(ctx, pos, else_expr, output, session)
+                } else {
+                    Err(ParseError::InvalidSyntax {
+                        span: crate::syntax::TextRange::at(pos.text_pos, DEFAULT_ERROR_SPAN_LEN),
+                        message:
+                            "Conditional expression condition failed and no else branch provided"
+                                .to_string(),
+                    })
+                }
+            }
+        }
+
+        Expr::SemanticPredicate { expr, predicate } => {
+            // Parse the expression first
+            let saved_pos = pos.pos;
+            let saved_text_pos = pos.text_pos;
+            match parse_expr_inner(ctx, pos, expr, output, session) {
+                Ok(()) => {
+                    // Expression matched - check semantic predicate
+                    if predicate.check(ctx.grammar, ctx.input, saved_pos) {
+                        // Predicate passed - success
+                        Ok(())
+                    } else {
+                        // Predicate failed - restore and fail
+                        pos.pos = saved_pos;
+                        pos.text_pos = saved_text_pos;
+                        Err(ParseError::InvalidSyntax {
+                            span: crate::syntax::TextRange::at(
+                                pos.text_pos,
+                                DEFAULT_ERROR_SPAN_LEN,
+                            ),
+                            message: "Semantic predicate failed".to_string(),
+                        })
+                    }
+                }
+                Err(e) => {
+                    // Expression didn't match - return error
+                    Err(e)
+                }
+            }
+        }
+
+        Expr::Backreference { capture_id } => {
+            // Backreferences are not well-supported in LL parsers
+            // Return an error indicating this is not supported
+            Err(ParseError::InvalidSyntax {
+                span: crate::syntax::TextRange::at(pos.text_pos, DEFAULT_ERROR_SPAN_LEN),
+                message: format!(
+                    "Backreference {capture_id:?} is not supported in LL parser backend"
+                ),
+            })
+        }
 
         Expr::RecoveryPoint { expr, sync_tokens } => {
             let result = parse_expr_inner(ctx, pos, expr, output, session);

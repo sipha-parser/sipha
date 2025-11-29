@@ -442,6 +442,7 @@ fn test_peg_repeat_parsing() {
                 expr: Box::new(Expr::token(create_token(TestSyntaxKind::Number, "1"))),
                 min: 1,
                 max: Some(3),
+                greedy: true,
             },
         )
         .build()

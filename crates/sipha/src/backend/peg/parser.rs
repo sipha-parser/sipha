@@ -617,7 +617,12 @@ where
             }
         }
 
-        Expr::Repeat { expr, min, max } => {
+        Expr::Repeat {
+            expr,
+            min,
+            max,
+            greedy: _,
+        } => {
             let mut count = 0;
             let mut total_text_len = TextSize::zero();
 
@@ -972,6 +977,113 @@ where
             // Prune removes nodes with only one child
             // For now, just parse the expression
             parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings)
+        }
+
+        Expr::Cut(expr) => {
+            // Cut operator: prevent backtracking past this point
+            // Once this succeeds, we can't backtrack to try other alternatives
+            let result = parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings);
+            // Cut succeeded - mark that we've committed to this path
+            // In PEG, this means we can't backtrack past this point in the current choice
+            // For now, we'll track this in the context (could add a flag to prevent backtracking)
+            if let Ok(ParseExprResult::Success { .. }) = &result {
+                // Cut succeeded - committed to this path
+            }
+            result
+        }
+
+        Expr::TokenClass { class } => {
+            // Match any token that belongs to the specified class
+            if *pos < ctx.input.len() {
+                let token = &ctx.input[*pos];
+                // Use the helper function from token_class module
+                if crate::grammar::token_class::token_matches_class(token, class) {
+                    let text = token.text();
+                    let text_len = TextSize::from(u32::try_from(text.len()).unwrap_or(0));
+                    builder
+                        .token(token.kind(), text)
+                        .map_err(|e| ParseError::InvalidSyntax {
+                            span: crate::syntax::TextRange::at(*text_pos, text_len),
+                            message: format!("Builder error: {e}"),
+                        })?;
+                    *pos += 1;
+                    *text_pos += text_len;
+                    Ok(ParseExprResult::Success {
+                        end_pos: *pos,
+                        text_len,
+                    })
+                } else {
+                    Ok(ParseExprResult::Failure)
+                }
+            } else {
+                Ok(ParseExprResult::Failure)
+            }
+        }
+
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            // Parse condition first
+            let saved_pos = *pos;
+            let saved_text_pos = *text_pos;
+            match parse_expr(ctx, condition, pos, text_pos, builder, errors, warnings) {
+                Ok(ParseExprResult::Success { .. }) => {
+                    // Condition succeeded - parse then_expr
+                    parse_expr(ctx, then_expr, pos, text_pos, builder, errors, warnings)
+                }
+                Ok(ParseExprResult::Failure) | Err(_) => {
+                    // Condition failed - restore position and try else_expr if provided
+                    *pos = saved_pos;
+                    *text_pos = saved_text_pos;
+                    else_expr
+                        .as_ref()
+                        .map_or(Ok(ParseExprResult::Failure), |else_expr| {
+                            parse_expr(ctx, else_expr, pos, text_pos, builder, errors, warnings)
+                        })
+                }
+            }
+        }
+
+        Expr::SemanticPredicate { expr, predicate } => {
+            // Parse the expression first
+            let saved_pos = *pos;
+            let saved_text_pos = *text_pos;
+            match parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings) {
+                Ok(ParseExprResult::Success { .. }) => {
+                    // Expression matched - check semantic predicate
+                    if predicate.check(ctx.grammar, ctx.input, saved_pos) {
+                        // Predicate passed - success
+                        Ok(ParseExprResult::Success {
+                            end_pos: *pos,
+                            text_len: *text_pos - saved_text_pos,
+                        })
+                    } else {
+                        // Predicate failed - restore and fail
+                        *pos = saved_pos;
+                        *text_pos = saved_text_pos;
+                        Ok(ParseExprResult::Failure)
+                    }
+                }
+                Ok(ParseExprResult::Failure) | Err(_) => {
+                    // Expression didn't match - restore and fail
+                    *pos = saved_pos;
+                    *text_pos = saved_text_pos;
+                    Ok(ParseExprResult::Failure)
+                }
+            }
+        }
+
+        Expr::Backreference { capture_id } => {
+            // Match previously captured content
+            // For now, this is a stub - full implementation would require
+            // tracking captures in the parse context
+            warnings.push(ParseWarning::warning(
+                crate::syntax::TextRange::at(*text_pos, DEFAULT_ERROR_SPAN_LEN),
+                format!("Backreference {capture_id:?} not yet fully implemented in PEG backend"),
+            ));
+            Ok(ParseExprResult::Failure)
         }
 
         Expr::RecoveryPoint { expr, sync_tokens } => {

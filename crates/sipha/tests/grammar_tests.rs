@@ -139,6 +139,7 @@ fn test_grammar_builder_repeat() {
                 expr: Box::new(Expr::token(create_token(TestSyntaxKind::Number))),
                 min: 0,
                 max: None,
+                greedy: true,
             },
         )
         .build();

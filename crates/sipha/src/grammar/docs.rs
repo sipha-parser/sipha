@@ -61,7 +61,12 @@ where
                 format!("{inner}?")
             }
         }
-        Expr::Repeat { expr: e, min, max } => {
+        Expr::Repeat {
+            expr: e,
+            min,
+            max,
+            greedy: _,
+        } => {
             let inner = format_expr_ebnf(e, grammar, token_name);
             let wrapped = if needs_parentheses(e.as_ref()) {
                 format!("({inner})")
@@ -138,6 +143,45 @@ where
         Expr::RecoveryPoint { expr, .. } => {
             // Recovery info is not shown in EBNF
             format_expr_ebnf(expr, grammar, token_name)
+        }
+        Expr::Cut(e) => {
+            let inner = format_expr_ebnf(e, grammar, token_name);
+            let wrapped = if needs_parentheses(e.as_ref()) {
+                format!("({inner})")
+            } else {
+                inner
+            };
+            format!("{wrapped}~") // ~ is common notation for cut operator
+        }
+        Expr::TokenClass { class } => {
+            format!("<{}>", class.as_str())
+        }
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            let cond_str = format_expr_ebnf(condition, grammar, token_name);
+            let then_str = format_expr_ebnf(then_expr, grammar, token_name);
+            else_expr.as_ref().map_or_else(
+                || format!("({cond_str}) ? {then_str}"),
+                |else_expr| {
+                    let else_str = format_expr_ebnf(else_expr, grammar, token_name);
+                    format!("({cond_str}) ? {then_str} : {else_str}")
+                },
+            )
+        }
+        Expr::SemanticPredicate { expr, .. } => {
+            let inner = format_expr_ebnf(expr, grammar, token_name);
+            let wrapped = if needs_parentheses(expr.as_ref()) {
+                format!("({inner})")
+            } else {
+                inner
+            };
+            format!("{wrapped}?") // ? for semantic predicate
+        }
+        Expr::Backreference { capture_id } => {
+            format!("\\{}", capture_id.as_str())
         }
     }
 }
@@ -1598,6 +1642,7 @@ mod tests {
             expr: Box::new(Expr::token(TestToken::Number)),
             min: 0,
             max: None,
+            greedy: true,
         };
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'Number'*");
@@ -1615,6 +1660,7 @@ mod tests {
             expr: Box::new(Expr::token(TestToken::Number)),
             min: 1,
             max: None,
+            greedy: true,
         };
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'Number'+");
@@ -1632,6 +1678,7 @@ mod tests {
             expr: Box::new(Expr::token(TestToken::Number)),
             min: 2,
             max: Some(5),
+            greedy: true,
         };
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'Number'{2,5}");

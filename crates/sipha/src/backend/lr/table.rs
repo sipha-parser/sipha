@@ -280,7 +280,12 @@ where
                 let prod_id = productions.len();
                 productions.push(Production::empty(lhs.clone(), prod_id));
             }
-            Expr::Repeat { expr, min, max } => {
+            Expr::Repeat {
+                expr,
+                min,
+                max,
+                greedy: _,
+            } => {
                 // For bounded repeats with small max, expand to multiple productions
                 if let Some(max_val) = max {
                     if *max_val <= 10 {
@@ -425,6 +430,52 @@ where
                 // Recovery points are error handling - process the inner expression
                 Self::expr_to_production_items(inner, productions, lhs)?;
             }
+            Expr::Cut(inner) => {
+                // Cut operator: LR parsers don't backtrack, so this is a no-op
+                // Process the inner expression
+                Self::expr_to_production_items(inner, productions, lhs)?;
+            }
+            Expr::TokenClass { .. } => {
+                // Token classes need to be expanded to specific tokens
+                // For now, return an error suggesting to use specific tokens
+                return Err(
+                    "TokenClass expressions are not directly supported in LR parser. \
+                     Consider using specific Token expressions or expanding the token class \
+                     into a Choice of tokens."
+                        .to_string(),
+                );
+            }
+            Expr::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                // Conditional: expand to productions for both branches
+                // First, create a production for the condition + then_expr
+                let mut then_items = Vec::new();
+                Self::flatten_expr_to_items(condition, &mut then_items)?;
+                Self::flatten_expr_to_items(then_expr, &mut then_items)?;
+                let prod_id = productions.len();
+                productions.push(Production::new(lhs.clone(), then_items, prod_id));
+                // If else_expr is provided, create a production for it
+                if let Some(else_expr) = else_expr {
+                    let mut else_items = Vec::new();
+                    Self::flatten_expr_to_items(else_expr, &mut else_items)?;
+                    let prod_id = productions.len();
+                    productions.push(Production::new(lhs.clone(), else_items, prod_id));
+                }
+            }
+            Expr::SemanticPredicate { expr: inner, .. } => {
+                // Semantic predicates are checked during reduce actions
+                // For table construction, process the inner expression
+                Self::expr_to_production_items(inner, productions, lhs)?;
+            }
+            Expr::Backreference { .. } => {
+                // Backreferences are not well-supported in LR parsers
+                return Err("Backreference expressions are not supported in LR parser. \
+                     Consider rewriting the grammar to avoid backreferences."
+                    .to_string());
+            }
             Expr::Any | Expr::Eof => {
                 // These need special handling
                 return Err(format!(
@@ -437,6 +488,7 @@ where
     }
 
     /// Flatten an expression into production items
+    #[allow(clippy::too_many_lines)]
     fn flatten_expr_to_items(
         expr: &Expr<T, N>,
         items: &mut Vec<ProductionItem<T, N>>,
@@ -461,7 +513,11 @@ where
                 // The optionality is handled at the production level
                 Self::flatten_expr_to_items(inner, items)?;
             }
-            Expr::Repeat { expr: inner, .. } => {
+            Expr::Repeat {
+                expr: inner,
+                greedy: _,
+                ..
+            } => {
                 // For flattening, Repeat is treated as the inner expression
                 // The repetition is handled at the production level
                 Self::flatten_expr_to_items(inner, items)?;
@@ -521,6 +577,32 @@ where
             Expr::RecoveryPoint { expr: inner, .. } => {
                 // Recovery points are error handling metadata - flatten the inner expression
                 Self::flatten_expr_to_items(inner, items)?;
+            }
+            Expr::Cut(inner) => {
+                // Cut operator: LR parsers don't backtrack, so flatten the inner expression
+                Self::flatten_expr_to_items(inner, items)?;
+            }
+            Expr::TokenClass { .. } => {
+                // Token classes need specific tokens - can't flatten directly
+                return Err("TokenClass expressions cannot be flattened in LR parser. \
+                     Use specific Token expressions instead."
+                    .to_string());
+            }
+            Expr::Conditional { .. } => {
+                // Conditionals need to be expanded at the production level
+                return Err(
+                    "Conditional expressions must be expanded at the production level \
+                     for LR parsing."
+                        .to_string(),
+                );
+            }
+            Expr::SemanticPredicate { expr: inner, .. } => {
+                // Semantic predicates are checked during reduce - flatten the inner expression
+                Self::flatten_expr_to_items(inner, items)?;
+            }
+            Expr::Backreference { .. } => {
+                // Backreferences are not supported
+                return Err("Backreference expressions are not supported in LR parser.".to_string());
             }
             Expr::Any | Expr::Eof => {
                 // These are special cases that need special handling
@@ -908,14 +990,33 @@ where
                 exprs.iter().any(|e| Self::expr_contains_token(e, token))
             }
             Expr::Opt(inner)
-            | Expr::Repeat { expr: inner, .. }
+            | Expr::Repeat {
+                expr: inner,
+                greedy: _,
+                ..
+            }
             | Expr::Label { expr: inner, .. }
             | Expr::Node { expr: inner, .. }
             | Expr::Flatten(inner)
             | Expr::Prune(inner)
             | Expr::Lookahead(inner)
             | Expr::NotLookahead(inner)
-            | Expr::RecoveryPoint { expr: inner, .. } => Self::expr_contains_token(inner, token),
+            | Expr::Cut(inner)
+            | Expr::RecoveryPoint { expr: inner, .. }
+            | Expr::SemanticPredicate { expr: inner, .. } => {
+                Self::expr_contains_token(inner, token)
+            }
+            Expr::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                Self::expr_contains_token(condition, token)
+                    || Self::expr_contains_token(then_expr, token)
+                    || else_expr
+                        .as_ref()
+                        .is_some_and(|e| Self::expr_contains_token(e, token))
+            }
             Expr::Separated {
                 item, separator, ..
             } => {
