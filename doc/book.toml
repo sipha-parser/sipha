@@ -35,7 +35,7 @@ mathjax-support = false
 # Note: CSS files in theme/ are automatically included via head.hbs
 # For additional CSS, use paths relative to src/ directory
 additional-css = []
-additional-js = []
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
 
 # Section folding
 fold = { enable = true, level = 1 }
@@ -56,4 +56,9 @@ heading-split-level = 3
 
 [output.html.print]
 enable = true
+
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
 
