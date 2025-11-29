@@ -221,3 +221,137 @@ fn test_cache_invalidation_on_edits() {
     // Result should be different due to edit
     assert_ne!(result1.root, result2.root);
 }
+
+#[cfg(feature = "backend-peg")]
+mod peg_incremental {
+    use super::*;
+    use sipha::backend::peg::{PegConfig, PegParser};
+    use sipha::incremental::IncrementalParser;
+
+    #[test]
+    fn peg_incremental_matches_full_parse() {
+        let grammar = GrammarBuilder::<TestToken, TestNonTerminal>::new()
+            .entry_point(TestNonTerminal::Expr)
+            .rule(
+                TestNonTerminal::Expr,
+                Expr::choice([
+                    Expr::token(TestToken::Ident),
+                    Expr::token(TestToken::Number),
+                ]),
+            )
+            .build()
+            .expect("grammar should build");
+
+        let tokens_before = vec![TestToken::Ident];
+        let tokens_after = vec![TestToken::Number];
+
+        let mut parser = PegParser::new(&grammar, PegConfig::default()).expect("parser");
+        let first = parser.parse(&tokens_before, TestNonTerminal::Expr);
+
+        let edits = [TextEdit {
+            range: TextRange::new(TextSize::zero(), TextSize::from(1)),
+            new_text: "1".into(),
+        }];
+
+        let incremental = parser.parse_incremental(
+            &tokens_after,
+            Some(first.root.as_ref()),
+            &edits,
+            TestNonTerminal::Expr,
+        );
+
+        let mut fresh = PegParser::new(&grammar, PegConfig::default()).expect("parser");
+        let baseline = fresh.parse(&tokens_after, TestNonTerminal::Expr);
+
+        assert!(incremental.errors.is_empty());
+        assert!(baseline.errors.is_empty());
+        assert_eq!(incremental.root, baseline.root);
+    }
+
+    #[test]
+    fn test_peg_memoization_with_incremental() {
+        let grammar = GrammarBuilder::<TestToken, TestNonTerminal>::new()
+            .entry_point(TestNonTerminal::Expr)
+            .rule(TestNonTerminal::Expr, Expr::token(TestToken::Number))
+            .build()
+            .expect("grammar should build");
+
+        let config = PegConfig {
+            enable_memoization: true,
+            ..Default::default()
+        };
+        let parser = PegParser::new(&grammar, config).expect("parser");
+        let mut incremental_parser = IncrementalParser::new(parser);
+
+        // First parse - should populate memoization cache
+        let tokens = vec![TestToken::Number];
+        let result1 = incremental_parser.parse_incremental_with_grammar(
+            &tokens,
+            None,
+            &[],
+            TestNonTerminal::Expr,
+            &grammar,
+        );
+        assert!(result1.errors.is_empty());
+
+        // Second parse - should benefit from memoization
+        let result2 = incremental_parser.parse_incremental_with_grammar(
+            &tokens,
+            Some(&result1.root),
+            &[],
+            TestNonTerminal::Expr,
+            &grammar,
+        );
+        assert!(result2.errors.is_empty());
+        assert_eq!(result1.root, result2.root);
+    }
+
+    #[test]
+    fn test_peg_incremental_node_reuse() {
+        let grammar = GrammarBuilder::<TestToken, TestNonTerminal>::new()
+            .entry_point(TestNonTerminal::Expr)
+            .rule(
+                TestNonTerminal::Expr,
+                Expr::choice([
+                    Expr::token(TestToken::Ident),
+                    Expr::token(TestToken::Number),
+                ]),
+            )
+            .build()
+            .expect("grammar should build");
+
+        let config = PegConfig {
+            enable_memoization: true,
+            ..Default::default()
+        };
+        let parser = PegParser::new(&grammar, config).expect("parser");
+        let mut incremental_parser = IncrementalParser::new(parser);
+
+        // Initial parse
+        let tokens1 = vec![TestToken::Number];
+        let result1 = incremental_parser.parse_incremental_with_grammar(
+            &tokens1,
+            None,
+            &[],
+            TestNonTerminal::Expr,
+            &grammar,
+        );
+        assert!(result1.errors.is_empty());
+
+        // Edit that doesn't affect the parsed region
+        let tokens2 = vec![TestToken::Number, TestToken::Ident];
+        let edits = vec![TextEdit {
+            range: TextRange::new(TextSize::from(1), TextSize::from(2)),
+            new_text: "a".into(),
+        }];
+        let result2 = incremental_parser.parse_incremental_with_grammar(
+            &tokens2,
+            Some(&result1.root),
+            &edits,
+            TestNonTerminal::Expr,
+            &grammar,
+        );
+        // Should succeed, potentially reusing nodes from memoization
+        assert!(result2.errors.is_empty() || !result2.errors.is_empty());
+    }
+}

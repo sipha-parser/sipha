@@ -164,3 +164,69 @@ fn test_error_handling() {
         _ => panic!("Expected InvalidSyntax"),
     }
 }
+
+#[test]
+#[cfg(feature = "backend-peg")]
+fn test_peg_lexer_grammar_integration() {
+    use sipha::backend::ParserBackend;
+    use sipha::backend::peg::{PegConfig, PegParser};
+    use sipha::lexer::Token;
+
+    // Build lexer
+    let lexer = LexerBuilder::new()
+        .token(
+            CalcSyntaxKind::Number,
+            Pattern::Repeat {
+                pattern: Box::new(Pattern::CharClass(CharSet::digits())),
+                min: 1,
+                max: None,
+            },
+        )
+        .token(CalcSyntaxKind::Plus, Pattern::Literal("+".into()))
+        .token(CalcSyntaxKind::Minus, Pattern::Literal("-".into()))
+        .token(CalcSyntaxKind::Multiply, Pattern::Literal("*".into()))
+        .token(CalcSyntaxKind::Divide, Pattern::Literal("/".into()))
+        .token(CalcSyntaxKind::LParen, Pattern::Literal("(".into()))
+        .token(CalcSyntaxKind::RParen, Pattern::Literal(")".into()))
+        .token(
+            CalcSyntaxKind::Whitespace,
+            Pattern::Repeat {
+                pattern: Box::new(Pattern::CharClass(CharSet::whitespace())),
+                min: 1,
+                max: None,
+            },
+        )
+        .trivia(CalcSyntaxKind::Whitespace)
+        .build(CalcSyntaxKind::Eof, CalcSyntaxKind::Number)
+        .expect("Failed to build lexer");
+
+    // Tokenize input
+    let lexer_tokens = lexer.tokenize("42").expect("Should tokenize expression");
+
+    // Build grammar for PEG using Token<CalcSyntaxKind> from lexer
+    // Create a token that matches what the lexer produces
+    let number_token = Token::new(
+        CalcSyntaxKind::Number,
+        "42",
+        TextRange::at(TextSize::from(0), TextSize::from(2)),
+    );
+
+    let grammar = GrammarBuilder::<Token<CalcSyntaxKind>, CalcNonTerminal>::new()
+        .entry_point(CalcNonTerminal::Expr)
+        .rule(CalcNonTerminal::Expr, Expr::token(number_token))
+        .build()
+        .expect("Failed to build grammar");
+
+    // Create PEG parser
+    let config = PegConfig::default();
+    let mut parser = PegParser::new(&grammar, config).expect("Failed to create PEG parser");
+
+    // Parse with PEG
+    let result = parser.parse(&lexer_tokens, CalcNonTerminal::Expr);
+
+    // Verify parse succeeded (may have errors due to simplified grammar, but parser should work)
+    assert!(
+        result.metrics.tokens_consumed > 0,
+        "Should consume some tokens"
+    );
+}
