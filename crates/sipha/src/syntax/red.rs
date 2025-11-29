@@ -595,11 +595,12 @@ pub struct SyntaxToken<K: SyntaxKind> {
     parent: Option<Weak<RefCell<SyntaxData<K>>>>,
     /// Index of this token within its parent's children.
     ///
-    /// # Implementation Status
+    /// # Future Enhancement
     ///
-    /// **Reserved for future use**: This field is intended for token sibling navigation
-    /// (similar to `SyntaxNode.index`), but the navigation methods are not yet implemented.
-    #[allow(dead_code)] // Reserved for future token navigation
+    /// This field is reserved for future token sibling navigation APIs, similar to
+    /// `SyntaxNode.index`. When implemented, this will enable efficient token traversal
+    /// operations like `next_sibling()` and `prev_sibling()` for tokens.
+    #[allow(dead_code)] // Reserved for future token navigation APIs
     index: u32,
     offset: TextSize,
 }

@@ -94,7 +94,12 @@ type Transition<T, N> = (Symbol<T, N>, HashSet<LrItem<T, N>>);
 pub struct Production<T, N> {
     pub lhs: N,
     pub rhs: Vec<ProductionItem<T, N>>,
-    /// Production ID for internal tracking
+    /// Production ID for internal tracking and debugging
+    ///
+    /// This field is reserved for future use in:
+    /// - Production statistics and profiling
+    /// - Debug output and error messages
+    /// - Performance analysis tools
     #[allow(dead_code)] // Reserved for future use in debugging/statistics
     pub production_id: usize,
 }

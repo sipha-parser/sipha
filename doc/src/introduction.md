@@ -39,8 +39,8 @@ graph TB
 
 ## Project Status
 
-> [!WARNING]
-> Sipha is currently in **alpha** and under active development. The API is subject to change, and some features may be incomplete. We welcome feedback and contributions!
+> [!NOTE]
+> Sipha 0.5.0 provides a stable foundation for incremental parsing. The core API is stable, and we continue to add features and improvements based on user feedback. We welcome contributions!
 
 ## Key Features
 

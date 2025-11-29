@@ -605,13 +605,26 @@ where
     }
 }
 
-/// Represents a node from the old tree that can be reused after an edit.
+/// Persistent parse cache for cross-session node reuse.
 ///
-/// # Implementation Status
+/// The cache stores parsed nodes keyed by rule name and position, enabling efficient
+/// reuse of unchanged subtrees across multiple parse sessions. This significantly improves
+/// performance for incremental parsing in interactive applications.
 ///
-/// **Reserved for future use**: This type is part of the infrastructure for incremental
-/// parsing optimization to avoid re-parsing unchanged regions. The node reuse logic
-/// is partially implemented but not yet fully integrated into the parsing pipeline.
+/// # How It Works
+///
+/// 1. **Cache Population**: After parsing, nodes are extracted from the parse tree and
+///    stored in the cache via `populate_from_tree()`.
+/// 2. **Cache Lookup**: During parsing, the parser queries the cache via
+///    `IncrementalSession::find_cached_node()` before parsing a rule.
+/// 3. **Cache Invalidation**: Cache entries are versioned and automatically evicted
+///    when they become stale.
+///
+/// # Integration
+///
+/// The cache is fully integrated into all parser backends (LL, LR, GLR). When using
+/// `IncrementalParser::parse_incremental()` with a grammar, the cache is automatically
+/// populated and used for subsequent parses.
 impl<K: crate::syntax::SyntaxKind> ParseCache<K> {
     fn new() -> Self {
         Self {

@@ -133,3 +133,91 @@ fn test_cache_population() {
     );
     assert!(result2.errors.is_empty());
 }
+
+#[test]
+fn test_cache_hit_behavior() {
+    use sipha::incremental::IncrementalParser;
+
+    let grammar = GrammarBuilder::<TestToken, TestNonTerminal>::new()
+        .entry_point(TestNonTerminal::Expr)
+        .rule(TestNonTerminal::Expr, Expr::token(TestToken::Number))
+        .build()
+        .expect("grammar should build");
+
+    let parser = LlParser::new(&grammar, LlConfig::default()).expect("parser");
+    let mut incremental_parser = IncrementalParser::new(parser);
+
+    // First parse - populate cache
+    let tokens1 = vec![TestToken::Number];
+    let result1 = incremental_parser.parse_incremental_with_grammar(
+        &tokens1,
+        None,
+        &[],
+        TestNonTerminal::Expr,
+        &grammar,
+    );
+    assert!(result1.errors.is_empty());
+
+    // Second parse with no edits - should potentially use cache
+    // Note: Cache lookup happens during parsing, so we can't directly verify cache hits
+    // but we can verify the parse succeeds and produces the same result
+    let result2 = incremental_parser.parse_incremental_with_grammar(
+        &tokens1,
+        Some(&result1.root),
+        &[],
+        TestNonTerminal::Expr,
+        &grammar,
+    );
+    assert!(result2.errors.is_empty());
+    assert_eq!(result1.root, result2.root);
+}
+
+#[test]
+fn test_cache_invalidation_on_edits() {
+    use sipha::incremental::{IncrementalParser, TextEdit};
+    use sipha::syntax::{TextRange, TextSize};
+
+    // Use a grammar that accepts both Ident and Number
+    let grammar = GrammarBuilder::<TestToken, TestNonTerminal>::new()
+        .entry_point(TestNonTerminal::Expr)
+        .rule(
+            TestNonTerminal::Expr,
+            Expr::choice([
+                Expr::token(TestToken::Ident),
+                Expr::token(TestToken::Number),
+            ]),
+        )
+        .build()
+        .expect("grammar should build");
+
+    let parser = LlParser::new(&grammar, LlConfig::default()).expect("parser");
+    let mut incremental_parser = IncrementalParser::new(parser);
+
+    // First parse - populate cache
+    let tokens1 = vec![TestToken::Number];
+    let result1 = incremental_parser.parse_incremental_with_grammar(
+        &tokens1,
+        None,
+        &[],
+        TestNonTerminal::Expr,
+        &grammar,
+    );
+    assert!(result1.errors.is_empty());
+
+    // Second parse with edit - cache should be invalidated for affected region
+    let tokens2 = vec![TestToken::Ident];
+    let edits = vec![TextEdit {
+        range: TextRange::new(TextSize::zero(), TextSize::from(1)),
+        new_text: "a".into(),
+    }];
+    let result2 = incremental_parser.parse_incremental_with_grammar(
+        &tokens2,
+        Some(&result1.root),
+        &edits,
+        TestNonTerminal::Expr,
+        &grammar,
+    );
+    assert!(result2.errors.is_empty());
+    // Result should be different due to edit
+    assert_ne!(result1.root, result2.root);
+}
