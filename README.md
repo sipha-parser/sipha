@@ -32,7 +32,7 @@ This makes Sipha perfect for building language servers, IDEs, and other tools th
 
 ### Additional Features
 
-- **Multiple parsing backends**: Choose from LL(k), LR, and more (via feature flags)
+- **Multiple parsing backends**: Choose from LL(k), LR, GLR, and PEG (via feature flags)
 - **Immutable syntax trees**: Green/red tree representation for efficient manipulation
 - **Error recovery**: Configurable error recovery strategies for robust parsing
 - **Flexible grammar definition**: Builder API for defining your grammar
@@ -53,7 +53,7 @@ Or with specific features:
 
 ```toml
 [dependencies]
-sipha = { version = "0.5.0", features = ["diagnostics", "unicode", "backend-ll"] }
+sipha = { version = "0.5.0", features = ["diagnostics", "unicode", "backend-ll", "backend-peg"] }
 ```
 
 ## Quick Start
@@ -167,6 +167,7 @@ let grammar = GrammarBuilder::new()
 
 ```rust
 use sipha::backend::ll::{LlParser, LlConfig};
+// Or use PEG parser: use sipha::backend::peg::{PegParser, PegConfig};
 use sipha::backend::ParserBackend;
 
 let config = LlConfig::default();
@@ -235,6 +236,43 @@ Incremental parsing is fully implemented in version 0.5.0 with complete node reu
 
 The parser automatically integrates reusable nodes from previous parses and queries the persistent cache during parsing, providing significant performance improvements for interactive editing scenarios.
 
+## PEG Parsing
+
+Sipha includes a PEG (Parsing Expression Grammar) parser backend with packrat memoization. PEG parsers use ordered choice semantics (first match wins) and backtracking, making them intuitive to use and well-suited for many parsing tasks.
+
+### When to Use PEG
+
+Use the PEG backend when:
+- You want intuitive grammar definitions with ordered choice
+- You need linear-time parsing with memoization
+- You prefer backtracking over table-driven parsing
+- You're parsing languages with complex precedence rules
+
+### Basic Usage
+
+```rust
+use sipha::backend::peg::{PegParser, PegConfig};
+use sipha::backend::ParserBackend;
+
+// Create PEG parser
+let config = PegConfig::default();
+let mut parser = PegParser::new(&grammar, config)
+    .expect("Failed to create PEG parser");
+
+// Parse with PEG
+let result = parser.parse(&tokens, entry_point);
+```
+
+### Key Features
+
+- **Ordered choice**: First matching alternative wins (no ambiguity)
+- **Packrat memoization**: Linear-time parsing with configurable cache
+- **Backtracking**: Automatic backtracking with depth limits
+- **Incremental parsing**: Full support for incremental parsing with node reuse
+- **Error recovery**: Configurable recovery for `RecoveryPoint` and `Delimited` expressions
+
+For more details, see the [`backend::peg`](crates/sipha/src/backend/peg/mod.rs) module documentation and the [PEG Parser Guide](https://sipha-parser.github.io/sipha/backends/peg-parser.html).
+
 ## GLR Parsing
 
 Sipha includes a GLR (Generalized LR) parser backend for handling ambiguous grammars. GLR parsing extends LR parsing to handle non-deterministic grammars by maintaining multiple parser stacks and forking on conflicts.
@@ -302,7 +340,13 @@ Sipha supports multiple parsing algorithms via feature flags:
   - Incremental parsing support
   - Ideal for complex languages like C++ with inherent ambiguities
 
-- **Planned**: PEG, Packrat, Earley parsers
+- **PEG Parser** (`backend-peg`): Parsing Expression Grammar with packrat memoization
+  - Ordered choice semantics (first match wins)
+  - Linear-time parsing with memoization
+  - Backtracking with configurable depth limits
+  - Incremental parsing support
+  - Error recovery for `RecoveryPoint` and `Delimited` expressions
+  - Ideal for intuitive grammar definitions and complex precedence rules
 
 ### Syntax Trees
 
@@ -327,12 +371,14 @@ The repository includes several examples to help you get started:
 
 - **[Basic Arithmetic](crates/sipha/examples/basic_arithmetic.rs)**: A step-by-step arithmetic expression parser
 - **[Simple Calculator](crates/sipha/examples/simple_calculator.rs)**: A more complete calculator with error handling
+- **[PEG Parsing](crates/sipha/examples/peg_parsing.rs)**: Demonstrates PEG parser features including memoization and incremental parsing
 
 Run examples with:
 
 ```bash
 cargo run --example basic_arithmetic
 cargo run --example simple_calculator
+cargo run --example peg_parsing --features backend-peg
 ```
 
 ## API Overview
@@ -402,7 +448,7 @@ Sipha continues to evolve. Planned features for future releases include:
 - **Performance optimizations**: Further speed improvements for large files
 
 ### Medium Term
-- **Additional backends**: PEG, Packrat, and Earley parsers
+- **Additional backends**: Packrat and Earley parsers
 - **Grammar visualization**: Interactive tools for visualizing and debugging grammars
 - **Incremental lexing**: Extend incremental capabilities to the lexer for even better performance
 
