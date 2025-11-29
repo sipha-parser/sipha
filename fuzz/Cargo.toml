@@ -20,12 +20,15 @@ compact_str = "0.9"
 [[bin]]
 name = "parser_fuzz"
 path = "fuzz_targets/parser_fuzz.rs"
+test = false
 
 [[bin]]
 name = "incremental_fuzz"
 path = "fuzz_targets/incremental_fuzz.rs"
+test = false
 
 [[bin]]
 name = "glr_parser_fuzz"
 path = "fuzz_targets/glr_parser_fuzz.rs"
+test = false
 

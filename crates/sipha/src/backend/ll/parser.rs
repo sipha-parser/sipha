@@ -272,9 +272,11 @@ impl ParsePosition {
         Self { pos, text_pos }
     }
 
-    /// Create a parse position at the start
+    /// Create a parse position at the start of input
+    ///
+    /// Reserved for future use in parser state management and debugging.
     #[must_use]
-    #[allow(dead_code)] // Reserved for future use
+    #[allow(dead_code)] // Reserved for future parser state APIs
     const fn start() -> Self {
         Self::new(0, TextSize::zero())
     }
@@ -346,7 +348,10 @@ where
     }
 
     /// Cache a parse result for future reuse
-    #[allow(dead_code)] // Reserved for future use when node extraction is available
+    ///
+    /// Reserved for future use when per-rule caching is implemented.
+    /// Currently, caching is handled at the [`IncrementalParser`] level.
+    #[allow(dead_code)] // Reserved for future per-rule caching
     fn cache_result(
         &mut self,
         rule: &N,

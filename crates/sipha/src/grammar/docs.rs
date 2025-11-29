@@ -1162,25 +1162,47 @@ fn find_path_to_rule<N>(
 where
     N: NonTerminal + Clone,
 {
+    // Check for cycle in path before processing - this prevents infinite loops
+    if path.contains(current) {
+        return None; // Cycle detected, but not back to target
+    }
+
+    // If we've reached the target and we have a path, we found a cycle
     if current == target && !path.is_empty() {
         path.push(current.clone());
         return Some(path.clone());
     }
 
-    if path.contains(current) {
-        return None; // Cycle detected, but not back to target
+    // If current == target and path is empty, we're starting at the target
+    // This means we're looking for a direct self-reference (A -> A)
+    // Check if this rule references itself directly
+    if current == target && path.is_empty() {
+        if let Some(refs) = dependencies.get(current)
+            && refs.contains(current)
+        {
+            // Direct self-reference: A -> A
+            return Some(vec![current.clone(), current.clone()]);
+        }
+        // No direct self-reference and we're already at target with empty path
+        // This means we haven't found a cycle yet, return None
+        return None;
     }
 
+    // Add current to path before exploring
     path.push(current.clone());
 
+    // Explore all referenced rules
     if let Some(refs) = dependencies.get(current) {
         for ref_rule in refs {
             if let Some(result) = find_path_to_rule(dependencies, ref_rule, target, path) {
+                // Found a path, return it
                 return Some(result);
             }
+            // No path found through this ref_rule, continue to next
         }
     }
 
+    // No path found, backtrack
     path.pop();
     None
 }
