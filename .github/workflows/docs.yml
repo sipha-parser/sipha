@@ -107,7 +107,7 @@ jobs:
       - name: Install mdbook-mermaid
         run: cargo install mdbook-mermaid --force
       - name: Download API docs artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: api-docs
           path: target/doc/
