@@ -6,9 +6,11 @@
 
 A flexible, incremental parsing library for Rust with support for multiple parsing algorithms. Sipha is designed from the ground up to support **incremental parsing**—the ability to efficiently re-parse only the changed portions of your code, making it ideal for interactive applications like IDEs, editors, and language servers.
 
-## Status: Early Development
+📚 **[Read the Book](https://sipha-parser.github.io/sipha/)** - Comprehensive guide and documentation
 
-Sipha is currently in **alpha** and under active development. The API is subject to change, and some features may be incomplete. We welcome feedback and contributions!
+## Status: 0.5.0 Release
+
+Sipha 0.5.0 provides a stable foundation for incremental parsing with multiple backends. The core API is stable, though some advanced features may continue to evolve. We welcome feedback and contributions!
 
 ## Key Features
 
@@ -218,14 +220,15 @@ The parser automatically:
 
 ### Current Status
 
-Incremental parsing is fully implemented with complete node reuse and cache management:
+Incremental parsing is fully implemented in version 0.5.0 with complete node reuse and cache management:
 
-- [X] **Node reuse**: Unchanged subtrees are automatically identified and reused
-- [X] **Cache population**: Parse results are cached for future reuse
+- [X] **Node reuse**: Unchanged subtrees are automatically identified and reused from previous parses
+- [X] **Cache population**: Parse results are cached and can be reused for future parses
 - [X] **Affected range computation**: Only affected regions are re-parsed
-- [X] **Smart invalidation**: Cache entries are invalidated based on edit locations
+- [X] **Smart cache invalidation**: Cache entries are invalidated based on edit locations
+- [X] **Cross-session caching**: Persistent parse cache enables node reuse across multiple parse sessions
 
-The parser automatically integrates reusable nodes from previous parses, providing significant performance improvements for interactive editing scenarios.
+The parser automatically integrates reusable nodes from previous parses and queries the persistent cache during parsing, providing significant performance improvements for interactive editing scenarios.
 
 ## GLR Parsing
 
@@ -386,27 +389,26 @@ For batch parsing (non-interactive), Sipha is competitive with other Rust parsin
 
 ## Future Features
 
-Sipha is under active development. Planned features include:
+Sipha continues to evolve. Planned features for future releases include:
 
-### Short Term
-- **Full incremental parsing**: Complete node reuse and optimal affected range computation
+### Short Term (Post-0.5.0)
 - **Enhanced error recovery**: More sophisticated recovery strategies
 - **Better diagnostics**: Improved error messages and suggestions
+- **Performance optimizations**: Further speed improvements for large files
 
 ### Medium Term
 - **Additional backends**: PEG, Packrat, and Earley parsers
-- **Grammar analysis**: Tools for analyzing and optimizing grammars
-- **Performance optimizations**: Further speed improvements
+- **Grammar visualization**: Interactive tools for visualizing and debugging grammars
+- **Incremental lexing**: Extend incremental capabilities to the lexer for even better performance
 
 ### Long Term
 - **Language server framework**: Higher-level abstractions for building language servers
-- **Grammar visualization**: Tools for visualizing and debugging grammars
-- **Incremental lexing**: Extend incremental capabilities to the lexer
 - **Parallel parsing**: Parse multiple files in parallel
+- **Advanced grammar analysis**: Real-time grammar optimization suggestions
 
 ## Contributing
 
-Contributions are welcome! Sipha is in early development, so there are many opportunities to help:
+Contributions are welcome! Sipha 0.5.0 provides a solid foundation, and there are many opportunities to help:
 
 - **Bug reports**: Found a bug? Please open an issue!
 - **Feature requests**: Have an idea? We'd love to hear it!
@@ -437,6 +439,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Documentation
 
+- **[The Sipha Book](https://sipha-parser.github.io/sipha/)**: Comprehensive guide and documentation
 - **[API Documentation](https://docs.rs/sipha)**: Full API reference on docs.rs
 - **[Examples](crates/sipha/examples/)**: Working examples in the repository
 - **[Source Code](https://github.com/yourusername/sipha)**: Browse the source on GitHub
@@ -450,5 +453,5 @@ Sipha is inspired by:
 
 ---
 
-**Note**: Sipha is in early development. The API may change, and some features are incomplete. We appreciate your patience and feedback as we work toward a stable release!
+**Note**: Sipha 0.5.0 provides a complete incremental parsing solution. The core API is stable, and we continue to add features and improvements based on user feedback.
 
