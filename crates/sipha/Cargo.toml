@@ -9,7 +9,7 @@ readme = "README.md"
 repository = "https://github.com/nyaleph/sipha"
 homepage = "https://github.com/nyaleph/sipha"
 documentation = "https://docs.rs/sipha"
-keywords = ["parser", "parsing", "incremental", "syntax-tree", "lexer", "grammar"]
+keywords = ["parser", "parsing", "incremental", "syntax-tree", "lexer"]
 categories = ["parsing", "development-tools"]
 
 [lints.clippy]
