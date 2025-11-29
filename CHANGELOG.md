@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **PEG Parser Backend** (`backend-peg` feature): Parsing Expression Grammar parser with packrat memoization
+  - Ordered choice semantics (first match wins)
+  - Backtracking with configurable depth limits
+  - Memoization cache for linear-time parsing
+  - Incremental parsing support with node reuse
+  - Left recursion detection and warnings
+  - Error recovery for `RecoveryPoint` and `Delimited` expressions
+  - Configurable memoization cache size limits
+  - Comprehensive test coverage
+
 ### Improved
 
 - **Documentation Coverage**: Significantly improved documentation coverage across the codebase

@@ -50,9 +50,23 @@ pub fn check_undefined_references<T, N>(
         | Expr::Prune(expr)
         | Expr::Lookahead(expr)
         | Expr::NotLookahead(expr)
-        | Expr::RecoveryPoint { expr, .. } => {
+        | Expr::Cut(expr)
+        | Expr::RecoveryPoint { expr, .. }
+        | Expr::SemanticPredicate { expr, .. } => {
             check_undefined_references(grammar, expr, errors);
         }
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            check_undefined_references(grammar, condition, errors);
+            check_undefined_references(grammar, then_expr, errors);
+            if let Some(else_expr) = else_expr {
+                check_undefined_references(grammar, else_expr, errors);
+            }
+        }
+        // TokenClass and Backreference don't contain rule references
         _ => {}
     }
 }

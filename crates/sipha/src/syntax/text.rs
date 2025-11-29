@@ -77,6 +77,14 @@ impl std::ops::AddAssign<Self> for TextSize {
     }
 }
 
+impl std::ops::Sub<Self> for TextSize {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+}
+
 impl TextRange {
     /// Create a new `TextRange` from start and end positions.
     ///

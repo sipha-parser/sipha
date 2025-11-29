@@ -204,13 +204,19 @@ where
             }
         }
         Expr::Opt(inner)
-        | Expr::Repeat { expr: inner, .. }
+        | Expr::Repeat {
+            expr: inner,
+            greedy: _,
+            ..
+        }
         | Expr::Lookahead(inner)
         | Expr::NotLookahead(inner)
+        | Expr::Cut(inner)
         | Expr::Label { expr: inner, .. }
         | Expr::Node { expr: inner, .. }
         | Expr::Flatten(inner)
-        | Expr::Prune(inner) => {
+        | Expr::Prune(inner)
+        | Expr::SemanticPredicate { expr: inner, .. } => {
             collect_token_kinds(inner, kinds);
         }
         Expr::Separated {
@@ -235,6 +241,18 @@ where
                 kinds.push(token.kind());
             }
         }
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_token_kinds(condition, kinds);
+            collect_token_kinds(then_expr, kinds);
+            if let Some(else_expr) = else_expr {
+                collect_token_kinds(else_expr, kinds);
+            }
+        }
+        // TokenClass and Backreference don't have specific token kinds
         _ => {}
     }
 }
@@ -437,14 +455,29 @@ where
             exprs.iter().any(|e| expr_contains_token(e, token))
         }
         crate::grammar::Expr::Opt(e)
-        | crate::grammar::Expr::Repeat { expr: e, .. }
+        | crate::grammar::Expr::Repeat {
+            expr: e, greedy: _, ..
+        }
         | crate::grammar::Expr::Lookahead(e)
         | crate::grammar::Expr::NotLookahead(e)
+        | crate::grammar::Expr::Cut(e)
         | crate::grammar::Expr::Label { expr: e, .. }
         | crate::grammar::Expr::Node { expr: e, .. }
         | crate::grammar::Expr::Flatten(e)
         | crate::grammar::Expr::Prune(e)
-        | crate::grammar::Expr::RecoveryPoint { expr: e, .. } => expr_contains_token(e, token),
+        | crate::grammar::Expr::RecoveryPoint { expr: e, .. }
+        | crate::grammar::Expr::SemanticPredicate { expr: e, .. } => expr_contains_token(e, token),
+        crate::grammar::Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            expr_contains_token(condition, token)
+                || expr_contains_token(then_expr, token)
+                || else_expr
+                    .as_ref()
+                    .is_some_and(|e| expr_contains_token(e, token))
+        }
         crate::grammar::Expr::Separated {
             item, separator, ..
         } => expr_contains_token(item, token) || expr_contains_token(separator, token),

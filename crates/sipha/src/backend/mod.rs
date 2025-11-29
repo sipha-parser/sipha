@@ -9,6 +9,22 @@
 //!   - Configurable error recovery
 //!   - Incremental parsing support
 //!
+//! - **LR**: Bottom-up shift-reduce parsing
+//!   - Efficient for many grammar types
+//!   - Good error recovery
+//!   - Supports LALR and canonical LR
+//!
+//! - **GLR**: Generalized LR parsing for ambiguous grammars
+//!   - Handles non-deterministic and ambiguous grammars
+//!   - Parse forest representation
+//!   - Configurable disambiguation strategies
+//!
+//! - **PEG**: Parsing Expression Grammar with ordered choice and memoization
+//!   - Ordered choice semantics (first match wins)
+//!   - Packrat parsing with memoization for O(n) performance
+//!   - Backtracking with configurable depth limits
+//!   - Incremental parsing support
+//!
 //! ## Usage
 //!
 //! Backends implement the [`ParserBackend`] trait, which provides a unified interface
@@ -16,6 +32,8 @@
 //!
 //! ```rust,no_run
 //! use sipha::backend::ll::LlParser;
+//! #[cfg(feature = "backend-peg")]
+//! use sipha::backend::peg::PegParser;
 //! use sipha::backend::ParserBackend;
 //!
 //! // Example usage (types would need to be properly defined with Token and NonTerminal traits)
@@ -25,7 +43,12 @@
 //! #     Ok(())
 //! # }
 //!
+//! // LL parser example:
 //! // let mut parser = LlParser::new(&grammar, config)?;
+//! // let result = parser.parse(&tokens, entry_point);
+//!
+//! // PEG parser example:
+//! // let mut parser = PegParser::new(&grammar, config)?;
 //! // let result = parser.parse(&tokens, entry_point);
 //! ```
 //!
@@ -51,6 +74,9 @@ pub mod lr;
 
 #[cfg(feature = "backend-glr")]
 pub mod glr;
+
+#[cfg(feature = "backend-peg")]
+pub mod peg;
 
 pub mod common;
 

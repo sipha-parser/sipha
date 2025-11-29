@@ -32,6 +32,16 @@ Generalized LR parsing for ambiguous grammars:
 - Incremental parsing support
 - Ideal for complex languages like C++
 
+### PEG Parser (`backend-peg`)
+
+Parsing Expression Grammar with ordered choice and memoization:
+
+- Ordered choice semantics (first match wins)
+- Packrat parsing with memoization for O(n) performance
+- Backtracking with configurable depth limits
+- Incremental parsing support
+- Ideal for precedence-based languages and interactive tools
+
 ## ParserBackend Trait
 
 All backends implement the `ParserBackend` trait:
@@ -78,19 +88,32 @@ pub struct BackendCapabilities {
 flowchart TD
     Start[Choose Backend] --> Ambiguous{Grammar<br/>Ambiguous?}
     Ambiguous -->|Yes| GLR[Use GLR Parser]
-    Ambiguous -->|No| LeftRec{Has Left<br/>Recursion?}
-    LeftRec -->|Yes| LR[Use LR Parser]
-    LeftRec -->|No| Simple{Simple<br/>Grammar?}
-    Simple -->|Yes| LL[Use LL Parser]
-    Simple -->|No| LR
+    Ambiguous -->|No| UseCase{Primary<br/>Use Case?}
+    
+    UseCase -->|Expression Parser<br/>Precedence-based| PEG1[Use PEG Parser]
+    UseCase -->|Interactive Tools<br/>IDEs/Editors| Interactive{Need<br/>Memoization?}
+    UseCase -->|Batch Processing| LR[Use LR Parser]
+    UseCase -->|Complex Language| GLR2[Use GLR Parser]
+    UseCase -->|Simple Grammar| LL[Use LL Parser]
+    
+    Interactive -->|Yes| PEG2[Use PEG Parser]
+    Interactive -->|No| LL2[Use LL Parser]
     
     GLR --> End[Selected Backend]
+    GLR2 --> End
     LR --> End
     LL --> End
+    LL2 --> End
+    PEG1 --> End
+    PEG2 --> End
     
     style GLR fill:#ffccbc,color:#000000
+    style GLR2 fill:#ffccbc,color:#000000
     style LR fill:#fff9c4,color:#000000
     style LL fill:#c8e6c9,color:#000000
+    style LL2 fill:#c8e6c9,color:#000000
+    style PEG1 fill:#e1bee7,color:#000000
+    style PEG2 fill:#e1bee7,color:#000000
     style End fill:#e1f5ff,color:#000000
 ```
 
@@ -101,6 +124,7 @@ See [Choosing a Backend](choosing.md) for detailed guidance on selecting the rig
 - Learn about [LL Parser](ll-parser.md)
 - Explore [LR Parser](lr-parser.md)
 - Check out [GLR Parser](glr-parser.md)
+- Discover [PEG Parser](peg-parser.md)
 
 ## See Also
 

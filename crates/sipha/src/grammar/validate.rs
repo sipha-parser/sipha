@@ -80,7 +80,23 @@ fn is_directly_left_recursive<T, N: PartialEq>(expr: &Expr<T, N>, lhs: &N) -> bo
             .first()
             .is_some_and(|e| is_directly_left_recursive(e, lhs)),
         Expr::Choice(exprs) => exprs.iter().any(|e| is_directly_left_recursive(e, lhs)),
-        Expr::Opt(e) | Expr::Repeat { expr: e, .. } => is_directly_left_recursive(e, lhs),
+        Expr::Opt(e)
+        | Expr::Repeat {
+            expr: e, greedy: _, ..
+        }
+        | Expr::Cut(e)
+        | Expr::SemanticPredicate { expr: e, .. } => is_directly_left_recursive(e, lhs),
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            is_directly_left_recursive(condition, lhs)
+                || is_directly_left_recursive(then_expr, lhs)
+                || else_expr
+                    .as_ref()
+                    .is_some_and(|e| is_directly_left_recursive(e, lhs))
+        }
         _ => false,
     }
 }
@@ -103,9 +119,26 @@ where
                 check_undefined_rules(e, defined)?;
             }
         }
-        Expr::Opt(e) | Expr::Repeat { expr: e, .. } => {
+        Expr::Opt(e)
+        | Expr::Repeat {
+            expr: e, greedy: _, ..
+        }
+        | Expr::Cut(e)
+        | Expr::SemanticPredicate { expr: e, .. } => {
             check_undefined_rules(e, defined)?;
         }
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            check_undefined_rules(condition, defined)?;
+            check_undefined_rules(then_expr, defined)?;
+            if let Some(else_expr) = else_expr {
+                check_undefined_rules(else_expr, defined)?;
+            }
+        }
+        // TokenClass and Backreference don't contain rule references
         Expr::Separated {
             item, separator, ..
         } => {

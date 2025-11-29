@@ -24,6 +24,7 @@
 - [LL Parser](backends/ll-parser.md)
 - [LR Parser](backends/lr-parser.md)
 - [GLR Parser](backends/glr-parser.md)
+- [PEG Parser](backends/peg-parser.md)
 - [Choosing a Backend](backends/choosing.md)
 
 # Syntax Trees
@@ -67,6 +68,7 @@
 - [Basic Arithmetic](examples/basic-arithmetic.md)
 - [Incremental Parsing](examples/incremental-example.md)
 - [GLR Parsing](examples/glr-example.md)
+- [PEG Parsing](examples/peg-example.md)
 - [Real-World Patterns](examples/real-world.md)
 
 # Reference
