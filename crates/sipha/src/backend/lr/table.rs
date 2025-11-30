@@ -1,9 +1,14 @@
-use crate::grammar::{Expr, Grammar, NonTerminal, Token};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use hashbrown::{HashMap, HashSet};
 use std::hash::Hash;
 
 /// LR(1) parsing table with action and goto tables
-pub struct LrParsingTable<T, N> {
+#[derive(Clone)]
+pub struct LrParsingTable<T, N>
+where
+    T: Clone,
+    N: Clone,
+{
     /// Action table: (state, token) -> Action
     action_table: ActionTable<T>,
 
@@ -157,8 +162,8 @@ impl<T, N> ProductionItem<T, N> {
 
 impl<T, N> LrParsingTable<T, N>
 where
-    T: Token,
-    N: NonTerminal,
+    T: Token + Clone,
+    N: NonTerminal + Clone,
 {
     /// Create a new LR parsing table from a grammar.
     ///
@@ -222,9 +227,13 @@ where
         productions: &mut Vec<Production<T, N>>,
     ) -> Result<(), String> {
         match expr {
-            Expr::Choice(alternatives) => {
+            ExtendedExpr::Core(CoreExpr::Choice(alternatives)) => {
                 for alt in alternatives {
-                    Self::expr_to_production_items(alt, productions, lhs)?;
+                    Self::expr_to_production_items(
+                        &ExtendedExpr::Core(alt.clone()),
+                        productions,
+                        lhs,
+                    )?;
                 }
             }
             _ => {
@@ -242,25 +251,29 @@ where
         lhs: &N,
     ) -> Result<(), String> {
         match expr {
-            Expr::Choice(alternatives) => {
+            ExtendedExpr::Core(CoreExpr::Choice(alternatives)) => {
                 // Expand choice into separate productions for each alternative
                 for alt in alternatives {
-                    Self::expr_to_production_items(alt, productions, lhs)?;
+                    Self::expr_to_production_items(
+                        &ExtendedExpr::Core(alt.clone()),
+                        productions,
+                        lhs,
+                    )?;
                 }
             }
-            Expr::Seq(exprs) => {
+            ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
                 let mut items = Vec::new();
                 for e in exprs {
-                    Self::flatten_expr_to_items(e, &mut items)?;
+                    Self::flatten_expr_to_items(&ExtendedExpr::Core(e.clone()), &mut items)?;
                 }
                 let prod_id = productions.len();
                 productions.push(Production::new(lhs.clone(), items, prod_id));
             }
-            Expr::Token(t) => {
+            ExtendedExpr::Core(CoreExpr::Token(t)) => {
                 let prod_id = productions.len();
                 productions.push(Production::with_token(lhs.clone(), t.clone(), prod_id));
             }
-            Expr::Rule(n) => {
+            ExtendedExpr::Core(CoreExpr::Rule(n)) => {
                 let prod_id = productions.len();
                 productions.push(Production::with_non_terminal(
                     lhs.clone(),
@@ -268,24 +281,23 @@ where
                     prod_id,
                 ));
             }
-            Expr::Empty => {
+            ExtendedExpr::Core(CoreExpr::Empty) => {
                 let prod_id = productions.len();
                 productions.push(Production::empty(lhs.clone(), prod_id));
             }
-            Expr::Opt(inner) => {
+            ExtendedExpr::Core(CoreExpr::Opt(inner)) => {
                 // Expand Opt(expr) to two productions: one with expr, one empty
                 // Production 1: lhs -> expr
-                Self::expr_to_production_items(inner, productions, lhs)?;
+                Self::expr_to_production_items(
+                    &ExtendedExpr::Core((**inner).clone()),
+                    productions,
+                    lhs,
+                )?;
                 // Production 2: lhs -> ε (empty)
                 let prod_id = productions.len();
                 productions.push(Production::empty(lhs.clone(), prod_id));
             }
-            Expr::Repeat {
-                expr,
-                min,
-                max,
-                greedy: _,
-            } => {
+            ExtendedExpr::Core(CoreExpr::Repeat { expr, min, max }) => {
                 // For bounded repeats with small max, expand to multiple productions
                 if let Some(max_val) = max {
                     if *max_val <= 10 {
@@ -293,7 +305,10 @@ where
                         for count in *min..=*max_val {
                             let mut items = Vec::new();
                             for _ in 0..count {
-                                Self::flatten_expr_to_items(expr, &mut items)?;
+                                Self::flatten_expr_to_items(
+                                    &ExtendedExpr::Core((**expr).clone()),
+                                    &mut items,
+                                )?;
                             }
                             let prod_id = productions.len();
                             productions.push(Production::new(lhs.clone(), items, prod_id));
@@ -304,7 +319,10 @@ where
                         if *min > 0 {
                             let mut items = Vec::new();
                             for _ in 0..*min {
-                                Self::flatten_expr_to_items(expr, &mut items)?;
+                                Self::flatten_expr_to_items(
+                                    &ExtendedExpr::Core((**expr).clone()),
+                                    &mut items,
+                                )?;
                             }
                             let prod_id = productions.len();
                             productions.push(Production::new(lhs.clone(), items, prod_id));
@@ -313,7 +331,10 @@ where
                         // Then create recursive productions for additional items
                         // Pattern: lhs -> expr lhs (for 1 more item)
                         let mut recursive_items = Vec::new();
-                        Self::flatten_expr_to_items(expr, &mut recursive_items)?;
+                        Self::flatten_expr_to_items(
+                            &ExtendedExpr::Core((**expr).clone()),
+                            &mut recursive_items,
+                        )?;
                         recursive_items.push(ProductionItem::NonTerminal(lhs.clone()));
                         let prod_id = productions.len();
                         productions.push(Production::new(lhs.clone(), recursive_items, prod_id));
@@ -337,7 +358,10 @@ where
 
                         // Recursive production: lhs -> expr lhs
                         let mut recursive_items = Vec::new();
-                        Self::flatten_expr_to_items(expr, &mut recursive_items)?;
+                        Self::flatten_expr_to_items(
+                            &ExtendedExpr::Core((**expr).clone()),
+                            &mut recursive_items,
+                        )?;
                         recursive_items.push(ProductionItem::NonTerminal(lhs.clone()));
                         let prod_id = productions.len();
                         productions.push(Production::new(lhs.clone(), recursive_items, prod_id));
@@ -345,15 +369,17 @@ where
                         // Pattern: lhs -> expr | expr lhs
                         // Single item production
                         let mut items = Vec::new();
-                        Self::flatten_expr_to_items(expr, &mut items)?;
+                        let expr_wrapped = ExtendedExpr::Core((**expr).clone());
+                        Self::flatten_expr_to_items(&expr_wrapped, &mut items)?;
                         let prod_id = productions.len();
                         productions.push(Production::new(lhs.clone(), items, prod_id));
                     } else {
                         // min > 1: create productions for min count, then recursive
                         // Productions for exact min count
                         let mut items = Vec::new();
+                        let expr_wrapped = ExtendedExpr::Core((**expr).clone());
                         for _ in 0..*min {
-                            Self::flatten_expr_to_items(expr, &mut items)?;
+                            Self::flatten_expr_to_items(&expr_wrapped, &mut items)?;
                         }
                         let prod_id = productions.len();
                         productions.push(Production::new(lhs.clone(), items, prod_id));
@@ -361,41 +387,48 @@ where
                     // Recursive production: lhs -> expr lhs (for additional items)
                     // This is common to both min == 1 and min > 1 cases
                     let mut recursive_items = Vec::new();
-                    Self::flatten_expr_to_items(expr, &mut recursive_items)?;
+                    let expr_wrapped = ExtendedExpr::Core((**expr).clone());
+                    Self::flatten_expr_to_items(&expr_wrapped, &mut recursive_items)?;
                     recursive_items.push(ProductionItem::NonTerminal(lhs.clone()));
                     let prod_id = productions.len();
                     productions.push(Production::new(lhs.clone(), recursive_items, prod_id));
                 }
             }
-            Expr::Delimited {
+            ExtendedExpr::Core(CoreExpr::Delimited {
                 open,
                 content,
                 close,
                 ..
-            } => {
+            }) => {
                 // Flatten delimited expression: open content close
                 let mut items = Vec::new();
-                Self::flatten_expr_to_items(open, &mut items)?;
-                Self::flatten_expr_to_items(content, &mut items)?;
-                Self::flatten_expr_to_items(close, &mut items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**open).clone()), &mut items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**content).clone()), &mut items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**close).clone()), &mut items)?;
                 let prod_id = productions.len();
                 productions.push(Production::new(lhs.clone(), items, prod_id));
             }
-            Expr::Separated {
+            ExtendedExpr::Core(CoreExpr::Separated {
                 item,
                 separator,
                 min,
                 ..
-            } => {
+            }) => {
                 // For separated lists, we create productions for the minimum count
                 // Additional items are handled by repetition
                 if *min > 0 {
                     let mut items = Vec::new();
-                    Self::flatten_expr_to_items(item, &mut items)?;
+                    Self::flatten_expr_to_items(&ExtendedExpr::Core((**item).clone()), &mut items)?;
                     // Add separator-item pairs for min > 1
                     for _ in 1..*min {
-                        Self::flatten_expr_to_items(separator, &mut items)?;
-                        Self::flatten_expr_to_items(item, &mut items)?;
+                        Self::flatten_expr_to_items(
+                            &ExtendedExpr::Core((**separator).clone()),
+                            &mut items,
+                        )?;
+                        Self::flatten_expr_to_items(
+                            &ExtendedExpr::Core((**item).clone()),
+                            &mut items,
+                        )?;
                     }
                     let prod_id = productions.len();
                     productions.push(Production::new(lhs.clone(), items, prod_id));
@@ -406,36 +439,53 @@ where
                     productions.push(Production::empty(lhs.clone(), prod_id));
                 }
             }
-            Expr::Label { expr: inner, .. } => {
+            ExtendedExpr::Core(CoreExpr::Label { expr: inner, .. }) => {
                 // Labels are metadata - process the inner expression
-                Self::expr_to_production_items(inner, productions, lhs)?;
+                Self::expr_to_production_items(
+                    &ExtendedExpr::Core((**inner).clone()),
+                    productions,
+                    lhs,
+                )?;
             }
-            Expr::Node { expr: inner, .. } => {
+            ExtendedExpr::Core(CoreExpr::Node { expr: inner, .. }) => {
                 // Node kind is metadata - process the inner expression
-                Self::expr_to_production_items(inner, productions, lhs)?;
+                Self::expr_to_production_items(
+                    &ExtendedExpr::Core((**inner).clone()),
+                    productions,
+                    lhs,
+                )?;
             }
-            Expr::Flatten(inner) => {
+            ExtendedExpr::Core(CoreExpr::Flatten(inner)) => {
                 // Flatten removes nesting - process the inner expression
-                Self::expr_to_production_items(inner, productions, lhs)?;
+                Self::expr_to_production_items(
+                    &ExtendedExpr::Core((**inner).clone()),
+                    productions,
+                    lhs,
+                )?;
             }
-            Expr::Prune(inner) => {
+            ExtendedExpr::Core(CoreExpr::Prune(inner)) => {
                 // Prune removes nodes - process the inner expression
-                Self::expr_to_production_items(inner, productions, lhs)?;
+                Self::expr_to_production_items(
+                    &ExtendedExpr::Core((**inner).clone()),
+                    productions,
+                    lhs,
+                )?;
             }
-            Expr::Lookahead(inner) | Expr::NotLookahead(inner) => {
+            ExtendedExpr::Lookahead(inner) | ExtendedExpr::NotLookahead(inner) => {
                 // Lookahead predicates don't consume input - process the inner expression
                 Self::expr_to_production_items(inner, productions, lhs)?;
             }
-            Expr::RecoveryPoint { expr: inner, .. } => {
+            ExtendedExpr::RecoveryPoint { expr: inner, .. } => {
                 // Recovery points are error handling - process the inner expression
                 Self::expr_to_production_items(inner, productions, lhs)?;
             }
-            Expr::Cut(inner) => {
+            #[cfg(feature = "backend-peg")]
+            ExtendedExpr::Cut(inner) => {
                 // Cut operator: LR parsers don't backtrack, so this is a no-op
                 // Process the inner expression
                 Self::expr_to_production_items(inner, productions, lhs)?;
             }
-            Expr::TokenClass { .. } => {
+            ExtendedExpr::TokenClass { .. } => {
                 // Token classes need to be expanded to specific tokens
                 // For now, return an error suggesting to use specific tokens
                 return Err(
@@ -445,7 +495,7 @@ where
                         .to_string(),
                 );
             }
-            Expr::Conditional {
+            ExtendedExpr::Conditional {
                 condition,
                 then_expr,
                 else_expr,
@@ -465,23 +515,29 @@ where
                     productions.push(Production::new(lhs.clone(), else_items, prod_id));
                 }
             }
-            Expr::SemanticPredicate { expr: inner, .. } => {
+            ExtendedExpr::SemanticPredicate { expr: inner, .. } => {
                 // Semantic predicates are checked during reduce actions
                 // For table construction, process the inner expression
                 Self::expr_to_production_items(inner, productions, lhs)?;
             }
-            Expr::Backreference { .. } => {
+            ExtendedExpr::Backreference { .. } => {
                 // Backreferences are not well-supported in LR parsers
                 return Err("Backreference expressions are not supported in LR parser. \
                      Consider rewriting the grammar to avoid backreferences."
                     .to_string());
             }
-            Expr::Any | Expr::Eof => {
+            ExtendedExpr::Core(CoreExpr::Any | CoreExpr::Eof) => {
                 // These need special handling
                 return Err(format!(
                     "Expression type {expr:?} is not directly supported in LR parser. \
                      Consider rewriting using Token, Rule, Seq, Choice, Opt, or Repeat."
                 ));
+            }
+            #[cfg(feature = "backend-pratt")]
+            ExtendedExpr::PrattOperator { .. } => {
+                return Err(
+                    "PrattOperator expressions are not supported in LR parser backend. Use the Pratt parser backend instead.".to_string()
+                );
             }
         }
         Ok(())
@@ -492,103 +548,107 @@ where
     fn flatten_expr_to_items(
         expr: &Expr<T, N>,
         items: &mut Vec<ProductionItem<T, N>>,
-    ) -> Result<(), String> {
+    ) -> Result<(), String>
+    where
+        T: Clone,
+        N: Clone,
+    {
         match expr {
-            Expr::Token(t) => {
+            ExtendedExpr::Core(CoreExpr::Token(t)) => {
                 items.push(ProductionItem::token(t.clone()));
             }
-            Expr::Rule(n) => {
+            ExtendedExpr::Core(CoreExpr::Rule(n)) => {
                 items.push(ProductionItem::non_terminal(n.clone()));
             }
-            Expr::Seq(exprs) => {
+            ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
                 for e in exprs {
-                    Self::flatten_expr_to_items(e, items)?;
+                    Self::flatten_expr_to_items(&ExtendedExpr::Core(e.clone()), items)?;
                 }
             }
-            Expr::Empty => {
+            ExtendedExpr::Core(CoreExpr::Empty) => {
                 // Empty production - no items
             }
-            Expr::Opt(inner) => {
+            ExtendedExpr::Core(CoreExpr::Opt(inner)) => {
                 // For flattening, Opt is treated as the inner expression
                 // The optionality is handled at the production level
-                Self::flatten_expr_to_items(inner, items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**inner).clone()), items)?;
             }
-            Expr::Repeat {
-                expr: inner,
-                greedy: _,
-                ..
-            } => {
+            ExtendedExpr::Core(CoreExpr::Repeat { expr: inner, .. }) => {
                 // For flattening, Repeat is treated as the inner expression
                 // The repetition is handled at the production level
-                Self::flatten_expr_to_items(inner, items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**inner).clone()), items)?;
             }
-            Expr::Delimited {
+            ExtendedExpr::Core(CoreExpr::Delimited {
                 open,
                 content,
                 close,
                 ..
-            } => {
+            }) => {
                 // Flatten delimited expression: open content close
-                Self::flatten_expr_to_items(open, items)?;
-                Self::flatten_expr_to_items(content, items)?;
-                Self::flatten_expr_to_items(close, items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**open).clone()), items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**content).clone()), items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**close).clone()), items)?;
             }
-            Expr::Separated {
+            ExtendedExpr::Core(CoreExpr::Separated {
                 item,
                 separator,
                 min,
                 ..
-            } => {
+            }) => {
                 // For LR parsing, we flatten separated lists into a sequence
                 // The minimum count determines how many item-separator pairs we need
                 // For simplicity, we flatten as: item (separator item)*
                 // Note: This is a simplified representation - actual parsing handles repetition
                 if *min > 0 {
-                    Self::flatten_expr_to_items(item, items)?;
+                    Self::flatten_expr_to_items(&ExtendedExpr::Core((**item).clone()), items)?;
                     // For min > 1, we need additional item-separator pairs
                     for _ in 1..*min {
-                        Self::flatten_expr_to_items(separator, items)?;
-                        Self::flatten_expr_to_items(item, items)?;
+                        Self::flatten_expr_to_items(
+                            &ExtendedExpr::Core((**separator).clone()),
+                            items,
+                        )?;
+                        Self::flatten_expr_to_items(&ExtendedExpr::Core((**item).clone()), items)?;
                     }
                 }
                 // Additional repetitions are handled by the parser's repeat logic
             }
-            Expr::Label { expr: inner, .. } => {
+            ExtendedExpr::Core(CoreExpr::Label { expr: inner, .. }) => {
                 // Labels are metadata - flatten the inner expression
-                Self::flatten_expr_to_items(inner, items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**inner).clone()), items)?;
             }
-            Expr::Node { expr: inner, .. } => {
+            ExtendedExpr::Core(CoreExpr::Node { expr: inner, .. }) => {
                 // Node kind is metadata - flatten the inner expression
-                Self::flatten_expr_to_items(inner, items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**inner).clone()), items)?;
             }
-            Expr::Flatten(inner) => {
+            ExtendedExpr::Core(CoreExpr::Flatten(inner)) => {
                 // Flatten removes one level of nesting - flatten the inner expression
-                Self::flatten_expr_to_items(inner, items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**inner).clone()), items)?;
             }
-            Expr::Prune(inner) => {
+            ExtendedExpr::Core(CoreExpr::Prune(inner)) => {
                 // Prune removes nodes from tree - flatten the inner expression
-                Self::flatten_expr_to_items(inner, items)?;
+                Self::flatten_expr_to_items(&ExtendedExpr::Core((**inner).clone()), items)?;
             }
-            Expr::Lookahead(inner) | Expr::NotLookahead(inner) => {
+            ExtendedExpr::Lookahead(inner) | ExtendedExpr::NotLookahead(inner) => {
                 // Lookahead predicates don't consume input - flatten the inner expression
                 // Note: LR parsers handle lookahead differently, but we can still flatten
                 Self::flatten_expr_to_items(inner, items)?;
             }
-            Expr::RecoveryPoint { expr: inner, .. } => {
+            ExtendedExpr::RecoveryPoint { expr: inner, .. } => {
                 // Recovery points are error handling metadata - flatten the inner expression
                 Self::flatten_expr_to_items(inner, items)?;
             }
-            Expr::Cut(inner) => {
+            #[cfg(feature = "backend-peg")]
+            ExtendedExpr::Cut(inner) => {
                 // Cut operator: LR parsers don't backtrack, so flatten the inner expression
                 Self::flatten_expr_to_items(inner, items)?;
             }
-            Expr::TokenClass { .. } => {
+            ExtendedExpr::TokenClass { .. } => {
                 // Token classes need specific tokens - can't flatten directly
                 return Err("TokenClass expressions cannot be flattened in LR parser. \
                      Use specific Token expressions instead."
                     .to_string());
             }
-            Expr::Conditional { .. } => {
+            ExtendedExpr::Conditional { .. } => {
                 // Conditionals need to be expanded at the production level
                 return Err(
                     "Conditional expressions must be expanded at the production level \
@@ -596,15 +656,15 @@ where
                         .to_string(),
                 );
             }
-            Expr::SemanticPredicate { expr: inner, .. } => {
+            ExtendedExpr::SemanticPredicate { expr: inner, .. } => {
                 // Semantic predicates are checked during reduce - flatten the inner expression
                 Self::flatten_expr_to_items(inner, items)?;
             }
-            Expr::Backreference { .. } => {
+            ExtendedExpr::Backreference { .. } => {
                 // Backreferences are not supported
                 return Err("Backreference expressions are not supported in LR parser.".to_string());
             }
-            Expr::Any | Expr::Eof => {
+            ExtendedExpr::Core(CoreExpr::Any | CoreExpr::Eof) => {
                 // These are special cases that need special handling
                 // For now, we'll return an error with guidance
                 return Err(format!(
@@ -612,12 +672,18 @@ where
                      Consider rewriting using Token, Rule, Seq, Choice, Opt, or Repeat."
                 ));
             }
-            Expr::Choice(_) => {
+            ExtendedExpr::Core(CoreExpr::Choice(_)) => {
                 // Choices need to be expanded into separate productions
                 // This is handled at a higher level when building productions
                 return Err(
                     "Choice expressions must be expanded into separate productions for LR parsing. \
                      The grammar builder should handle this automatically.".to_string()
+                );
+            }
+            #[cfg(feature = "backend-pratt")]
+            ExtendedExpr::PrattOperator { .. } => {
+                return Err(
+                    "PrattOperator expressions are not supported in LR parser backend. Use the Pratt parser backend instead.".to_string()
                 );
             }
         }
@@ -982,31 +1048,31 @@ where
     /// Check if an expression contains a specific token.
     fn expr_contains_token(expr: &Expr<T, N>, token: &T) -> bool
     where
-        T: PartialEq,
+        T: PartialEq + Clone,
+        N: Clone,
     {
         match expr {
-            Expr::Token(t) => t == token,
-            Expr::Seq(exprs) | Expr::Choice(exprs) => {
-                exprs.iter().any(|e| Self::expr_contains_token(e, token))
-            }
-            Expr::Opt(inner)
-            | Expr::Repeat {
-                expr: inner,
-                greedy: _,
-                ..
-            }
-            | Expr::Label { expr: inner, .. }
-            | Expr::Node { expr: inner, .. }
-            | Expr::Flatten(inner)
-            | Expr::Prune(inner)
-            | Expr::Lookahead(inner)
-            | Expr::NotLookahead(inner)
-            | Expr::Cut(inner)
-            | Expr::RecoveryPoint { expr: inner, .. }
-            | Expr::SemanticPredicate { expr: inner, .. } => {
+            ExtendedExpr::Core(CoreExpr::Token(t)) => t == token,
+            ExtendedExpr::Core(CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs)) => exprs
+                .iter()
+                .any(|e| Self::expr_contains_token(&ExtendedExpr::Core(e.clone()), token)),
+            ExtendedExpr::Core(
+                CoreExpr::Opt(inner)
+                | CoreExpr::Repeat { expr: inner, .. }
+                | CoreExpr::Label { expr: inner, .. }
+                | CoreExpr::Node { expr: inner, .. }
+                | CoreExpr::Flatten(inner)
+                | CoreExpr::Prune(inner),
+            ) => Self::expr_contains_token(&ExtendedExpr::Core((**inner).clone()), token),
+            ExtendedExpr::Lookahead(inner)
+            | ExtendedExpr::NotLookahead(inner)
+            | ExtendedExpr::RecoveryPoint { expr: inner, .. }
+            | ExtendedExpr::SemanticPredicate { expr: inner, .. } => {
                 Self::expr_contains_token(inner, token)
             }
-            Expr::Conditional {
+            #[cfg(feature = "backend-peg")]
+            ExtendedExpr::Cut(inner) => Self::expr_contains_token(inner, token),
+            ExtendedExpr::Conditional {
                 condition,
                 then_expr,
                 else_expr,
@@ -1017,21 +1083,21 @@ where
                         .as_ref()
                         .is_some_and(|e| Self::expr_contains_token(e, token))
             }
-            Expr::Separated {
+            ExtendedExpr::Core(CoreExpr::Separated {
                 item, separator, ..
-            } => {
-                Self::expr_contains_token(item, token)
-                    || Self::expr_contains_token(separator, token)
+            }) => {
+                Self::expr_contains_token(&ExtendedExpr::Core((**item).clone()), token)
+                    || Self::expr_contains_token(&ExtendedExpr::Core((**separator).clone()), token)
             }
-            Expr::Delimited {
+            ExtendedExpr::Core(CoreExpr::Delimited {
                 open,
                 content,
                 close,
                 ..
-            } => {
-                Self::expr_contains_token(open, token)
-                    || Self::expr_contains_token(content, token)
-                    || Self::expr_contains_token(close, token)
+            }) => {
+                Self::expr_contains_token(&ExtendedExpr::Core((**open).clone()), token)
+                    || Self::expr_contains_token(&ExtendedExpr::Core((**content).clone()), token)
+                    || Self::expr_contains_token(&ExtendedExpr::Core((**close).clone()), token)
             }
             _ => false,
         }

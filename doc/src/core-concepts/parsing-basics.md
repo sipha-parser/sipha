@@ -21,9 +21,31 @@ let mut parser = LlParser::new(&grammar, config)
 
 Different backends have different configuration options:
 
-- **LL parser**: `LlConfig` with lookahead settings
-- **LR parser**: `LrConfig` with LALR vs canonical LR options
-- **GLR parser**: `GlrConfig` with ambiguity handling options
+- **LL parser**: `LlConfig` with lookahead settings and optimization options
+- **LR parser**: `LrConfig` with LALR vs canonical LR options and optimization
+- **GLR parser**: `GlrConfig` with ambiguity handling options and optimization
+- **PEG parser**: `PegConfig` with memoization and optimization options
+- **Pratt parser**: `PrattConfig` with error recovery and optimization options
+
+All backends now support grammar optimization:
+
+```rust,ignore
+use sipha::grammar::hint::OptimizationLevel;
+
+let config = LlConfig {
+    optimize: true,  // Enable optimization
+    optimization_level: OptimizationLevel::Basic,  // Choose optimization level
+    ..Default::default()
+};
+```
+
+The grammar is automatically transformed and optimized during parser creation through Sipha's **grammar transformation pipeline**:
+
+1. **Validation**: The grammar is validated for compatibility with the chosen backend
+2. **Transformation**: The grammar is converted from the generic `Grammar<T, N>` format into a backend-specific representation (e.g., `LlGrammar`, `LrGrammar`, `PegGrammar`, `PrattGrammar`)
+3. **Optimization** (optional): If enabled, the transformed grammar is optimized for better parsing performance
+
+This transformation happens transparently - you write your grammar once using the unified grammar API, and Sipha handles the backend-specific details automatically.
 
 ## Parsing Input
 
@@ -185,6 +207,8 @@ Choose a backend based on your needs:
 - **LL(k)**: Good for most grammars, supports left-recursion elimination
 - **LR**: Efficient for many grammar types, good error recovery
 - **GLR**: Handles ambiguous grammars, ideal for complex languages
+- **PEG**: Natural precedence handling, memoization for fast parsing
+- **Pratt**: Ideal for expression parsing with operator precedence
 
 See [Choosing a Backend](backends/choosing.md) for guidance.
 
@@ -219,8 +243,13 @@ println!("Created {} nodes in {:?}",
     result.metrics.parse_time);
 ```
 
+## Grammar Transformation
+
+Sipha automatically transforms your grammar for each backend. See [Grammar Transformation](grammar-transformation.md) for details on how this works.
+
 ## Next Steps
 
+- Learn about [Grammar Transformation](grammar-transformation.md) to understand how grammars are transformed
 - Learn about [Incremental Parsing](../incremental-parsing/overview.md) for interactive applications
 - Explore [Parsing Backends](../backends/overview.md) to understand different algorithms
 - Check out [Syntax Trees](../syntax-trees/working-with-trees.md) for tree manipulation

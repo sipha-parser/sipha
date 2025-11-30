@@ -67,7 +67,7 @@ fuzz_target!(|data: &[u8]| {
     // Build grammar
     let Ok(grammar) = GrammarBuilder::new()
         .entry_point(FuzzNonTerminal::Root)
-        .rule(FuzzNonTerminal::Root, Expr::Empty)
+        .rule(FuzzNonTerminal::Root, Expr::empty())
         .build()
     else {
         return;

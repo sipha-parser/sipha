@@ -27,6 +27,8 @@ graph TB
         LL[LL Parser]
         LR[LR Parser]
         GLR[GLR Parser]
+        PEG[PEG Parser]
+        Pratt[Pratt Parser]
     end
     
     Parser -.-> Backends

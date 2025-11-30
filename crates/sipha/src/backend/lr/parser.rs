@@ -1,6 +1,6 @@
-use crate::backend::lr::{config::LrConfig, state::LrParserState, table::LrParsingTable};
+use crate::backend::lr::{config::LrConfig, grammar::LrGrammar, state::LrParserState};
 use crate::error::{ParseError, ParseMetrics, ParseResult, ParseWarning};
-use crate::grammar::{Grammar, NonTerminal, Token};
+use crate::grammar::{NonTerminal, Token};
 use crate::syntax::{GreenNode, TextSize};
 
 /// Default error span length when position is unknown
@@ -15,8 +15,7 @@ where
     T: Token,
     N: NonTerminal,
 {
-    grammar: &'a Grammar<T, N>,
-    table: &'a LrParsingTable<T, N>,
+    backend_grammar: &'a LrGrammar<T, N>,
     input: &'a [T],
     entry: &'a N,
     config: &'a LrConfig,
@@ -30,16 +29,14 @@ where
 {
     #[allow(clippy::missing_const_for_fn)]
     fn new(
-        grammar: &'a Grammar<T, N>,
-        table: &'a LrParsingTable<T, N>,
+        backend_grammar: &'a LrGrammar<T, N>,
         input: &'a [T],
         entry: &'a N,
         config: &'a LrConfig,
         state: &'a mut LrParserState<T, N>,
     ) -> Self {
         Self {
-            grammar,
-            table,
+            backend_grammar,
             input,
             entry,
             config,
@@ -72,7 +69,7 @@ fn count_nodes<K: crate::syntax::SyntaxKind>(node: &std::sync::Arc<GreenNode<K>>
 /// 3. From the non-terminal's `default_syntax_kind()` method
 ///
 /// Returns `None` if none of these methods provide a kind.
-fn determine_syntax_kind<T, N>(entry: &N, input: &[T], _grammar: &Grammar<T, N>) -> Option<T::Kind>
+fn determine_syntax_kind<T, N>(entry: &N, input: &[T]) -> Option<T::Kind>
 where
     T: Token,
     N: NonTerminal,
@@ -86,9 +83,8 @@ where
 /// Determine syntax kind for error cases, with comprehensive fallback logic.
 ///
 /// This is used when the normal determination fails and we need to create
-/// an error result node. It tries all possible fallback methods including
-/// grammar-level fallbacks.
-fn determine_error_syntax_kind<T, N>(entry: &N, input: &[T], grammar: &Grammar<T, N>) -> T::Kind
+/// an error result node. It tries all possible fallback methods.
+fn determine_error_syntax_kind<T, N>(entry: &N, input: &[T]) -> T::Kind
 where
     T: Token,
     N: NonTerminal,
@@ -97,7 +93,6 @@ where
         .first()
         .map(crate::grammar::Token::kind)
         .or_else(|| entry.default_syntax_kind())
-        .or_else(|| grammar.try_get_fallback_kind())
         .unwrap_or_else(|| {
             // Last resort: this should never happen if users implement the trait correctly
             entry.default_syntax_kind().expect(
@@ -109,7 +104,7 @@ where
 }
 
 /// Create an error result when syntax kind cannot be determined
-fn create_error_result<T, N>(entry: &N, input: &[T], grammar: &Grammar<T, N>) -> ParseResult<T, N>
+fn create_error_result<T, N>(entry: &N, input: &[T]) -> ParseResult<T, N>
 where
     T: Token,
     N: NonTerminal,
@@ -122,7 +117,7 @@ where
             entry.name()
         ),
     });
-    let error_kind = determine_error_syntax_kind(entry, input, grammar);
+    let error_kind = determine_error_syntax_kind(entry, input);
     errors.push(ParseError::InvalidSyntax {
         span: crate::syntax::TextRange::at(TextSize::zero(), DEFAULT_ERROR_SPAN_LEN),
         message: format!(
@@ -182,7 +177,7 @@ where
 
 /// Try to insert a token during error recovery
 fn try_insert_token<T, N>(
-    table: &LrParsingTable<T, N>,
+    backend_grammar: &LrGrammar<T, N>,
     current_state: usize,
     candidate_token: &T,
     stack: &mut LrStack<T::Kind>,
@@ -193,7 +188,7 @@ where
     T: Token,
     N: NonTerminal,
 {
-    let candidate_action = table.get_action(current_state, Some(candidate_token));
+    let candidate_action = backend_grammar.get_action(current_state, Some(candidate_token));
     match candidate_action {
         crate::backend::lr::table::Action::Shift(next_state) => {
             let token_node = create_token_node(candidate_token);
@@ -225,8 +220,7 @@ where
 
 /// Parse input using LR parser
 pub fn parse<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &LrParsingTable<T, N>,
+    backend_grammar: &LrGrammar<T, N>,
     input: &[T],
     entry: &N,
     config: &LrConfig,
@@ -236,7 +230,7 @@ where
     T: Token,
     N: NonTerminal,
 {
-    let mut ctx = LrParseContext::new(grammar, table, input, entry, config, state);
+    let mut ctx = LrParseContext::new(backend_grammar, input, entry, config, state);
     parse_impl(&mut ctx)
 }
 
@@ -277,8 +271,8 @@ where
     }
 
     // Start parsing from entry point
-    let Some(root_kind) = determine_syntax_kind(ctx.entry, ctx.input, ctx.grammar) else {
-        return create_error_result(ctx.entry, ctx.input, ctx.grammar);
+    let Some(root_kind) = determine_syntax_kind(ctx.entry, ctx.input) else {
+        return create_error_result(ctx.entry, ctx.input);
     };
     // LR parsing using shift-reduce algorithm
     let mut stack: LrStack<T::Kind> = Vec::new();
@@ -292,7 +286,7 @@ where
         let current_state = stack.last().map_or(0, |(s, _)| *s);
         let current_token = ctx.input.get(pos);
 
-        let action = ctx.table.get_action(current_state, current_token);
+        let action = ctx.backend_grammar.get_action(current_state, current_token);
 
         match action {
             crate::backend::lr::table::Action::Shift(next_state) => {
@@ -311,7 +305,7 @@ where
             }
 
             crate::backend::lr::table::Action::Reduce(prod_idx) => {
-                if let Some(production) = ctx.table.get_production(prod_idx) {
+                if let Some(production) = ctx.backend_grammar.get_production(prod_idx) {
                     // Pop RHS items from stack
                     let rhs_len = production.rhs.len();
                     let mut children = Vec::new();
@@ -326,7 +320,10 @@ where
                     let state_after_pop = stack.last().map_or(0, |(s, _)| *s);
 
                     // Get goto state
-                    if let Some(goto_state) = ctx.table.get_goto(state_after_pop, &production.lhs) {
+                    if let Some(goto_state) = ctx
+                        .backend_grammar
+                        .get_goto(state_after_pop, &production.lhs)
+                    {
                         let node = build_reduce_node(production, &children, root_kind);
                         stack.push((goto_state, vec![node]));
                     } else {
@@ -364,7 +361,7 @@ where
             crate::backend::lr::table::Action::Error => {
                 // Error - no action available
                 // Get expected tokens for better error messages and token insertion
-                let expected_tokens = ctx.table.get_expected_tokens(current_state);
+                let expected_tokens = ctx.backend_grammar.get_expected_tokens(current_state);
                 let expected: Vec<String> = if expected_tokens.is_empty() {
                     vec!["<valid token>".to_string()]
                 } else {
@@ -391,7 +388,7 @@ where
                         // Prioritize shift actions as they're most common for missing tokens (e.g., semicolons)
                         for candidate_token in &expected_tokens {
                             if try_insert_token(
-                                ctx.table,
+                                ctx.backend_grammar,
                                 current_state,
                                 candidate_token,
                                 &mut stack,
@@ -483,8 +480,7 @@ where
 
 /// Parse with incremental support
 pub fn parse_with_session<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &LrParsingTable<T, N>,
+    backend_grammar: &LrGrammar<T, N>,
     input: &[T],
     session: &crate::incremental::IncrementalSession<'_, T::Kind>,
     entry: &N,
@@ -497,7 +493,7 @@ where
 {
     // If no edits, use cached result if available
     if session.edits().is_empty() {
-        return parse(grammar, table, input, entry, config, state);
+        return parse(backend_grammar, input, entry, config, state);
     }
 
     // Check persistent parse cache for the entry point before parsing
@@ -528,5 +524,5 @@ where
     // Invalidate cache for affected region
     state.invalidate_cache();
 
-    parse(grammar, table, input, entry, config, state)
+    parse(backend_grammar, input, entry, config, state)
 }

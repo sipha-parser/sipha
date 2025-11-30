@@ -1,9 +1,14 @@
-use crate::grammar::{Expr, Grammar, NonTerminal, Token};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 /// Predictive parsing table for LL(k) parsing
-pub struct ParsingTable<T, N> {
+#[derive(Clone)]
+pub struct ParsingTable<T, N>
+where
+    T: Clone,
+    N: Clone,
+{
     /// Table mapping (non-terminal, lookahead) -> production index
     /// For LL(1), lookahead is a single token
     /// For LL(k), lookahead is a sequence of k tokens (represented as a key)
@@ -41,8 +46,8 @@ type FollowKCache<T, N> =
 
 impl<T, N> ParsingTable<T, N>
 where
-    T: Token,
-    N: NonTerminal,
+    T: Token + Clone,
+    N: NonTerminal + Clone,
 {
     pub fn new(grammar: &Grammar<T, N>, k: usize) -> Result<Self, String> {
         if k == 0 {
@@ -104,10 +109,11 @@ where
         follow_sets: &HashMap<N, HashSet<T, ahash::RandomState>, ahash::RandomState>,
         table: &mut HashMap<(N, LookaheadKey<T>), usize, ahash::RandomState>,
     ) -> Result<(), String> {
-        if let Expr::Choice(alternatives) = expr {
+        if let ExtendedExpr::Core(CoreExpr::Choice(alternatives)) = expr {
             for (alt_idx, alt) in alternatives.iter().enumerate() {
-                let first = alt.first_set(grammar);
-                let nullable = alt.is_nullable(grammar);
+                let alt_wrapped = ExtendedExpr::Core(alt.clone());
+                let first = alt_wrapped.first_set(grammar);
+                let nullable = alt_wrapped.is_nullable(grammar);
 
                 // For each token in FIRST(alt), add entry
                 for token in &first {
@@ -163,12 +169,13 @@ where
         // For LL(k) with k > 1, we need to compute FIRST_k sets
         // This is more complex - we need sequences of k tokens
 
-        if let Expr::Choice(alternatives) = expr {
+        if let ExtendedExpr::Core(CoreExpr::Choice(alternatives)) = expr {
             for (alt_idx, alt) in alternatives.iter().enumerate() {
                 // Compute FIRST_k for this alternative
+                let alt_expr = ExtendedExpr::Core(alt.clone());
                 let first_k =
-                    Self::compute_first_k_cached(grammar, alt, first_sets, k, first_k_cache);
-                let nullable = alt.is_nullable(grammar);
+                    Self::compute_first_k_cached(grammar, &alt_expr, first_sets, k, first_k_cache);
+                let nullable = alt_expr.is_nullable(grammar);
 
                 // For each sequence in FIRST_k, add entry
                 for seq in first_k {
@@ -265,33 +272,36 @@ where
         }
 
         match expr {
-            Expr::Token(t) => {
+            ExtendedExpr::Core(CoreExpr::Token(t)) => {
                 let mut seq = current.clone();
                 seq.push(t.clone());
                 result.insert(seq);
             }
-            Expr::Rule(n) => {
+            ExtendedExpr::Core(CoreExpr::Rule(n)) => {
                 if visited.insert(n.clone())
                     && let Some(rule) = grammar.get_rule(n)
                 {
                     Self::compute_first_k_impl(grammar, &rule.rhs, k, result, visited, current);
                 }
             }
-            Expr::Seq(exprs) => {
+            ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
                 for e in exprs {
-                    Self::compute_first_k_impl(grammar, e, k, result, visited, current);
-                    if !e.is_nullable(grammar) {
+                    let e_expr = ExtendedExpr::Core(e.clone());
+                    Self::compute_first_k_impl(grammar, &e_expr, k, result, visited, current);
+                    if !e_expr.is_nullable(grammar) {
                         break;
                     }
                 }
             }
-            Expr::Choice(exprs) => {
+            ExtendedExpr::Core(CoreExpr::Choice(exprs)) => {
                 for e in exprs {
-                    Self::compute_first_k_impl(grammar, e, k, result, visited, current);
+                    let e_expr = ExtendedExpr::Core(e.clone());
+                    Self::compute_first_k_impl(grammar, &e_expr, k, result, visited, current);
                 }
             }
-            Expr::Opt(e) | Expr::Repeat { expr: e, .. } => {
-                Self::compute_first_k_impl(grammar, e, k, result, visited, current);
+            ExtendedExpr::Core(CoreExpr::Opt(e) | CoreExpr::Repeat { expr: e, .. }) => {
+                let e_expr = ExtendedExpr::Core((**e).clone());
+                Self::compute_first_k_impl(grammar, &e_expr, k, result, visited, current);
             }
             _ => {}
         }
@@ -332,7 +342,7 @@ where
         k: usize,
         cache: &mut FirstKCache<T, N>,
     ) -> HashSet<SmallVec<[T; 4]>, ahash::RandomState> {
-        if let Expr::Rule(nt) = expr {
+        if let ExtendedExpr::Core(CoreExpr::Rule(nt)) = expr {
             let key = (nt.clone(), k);
             if let Some(cached) = cache.get(&key) {
                 return cached.clone();

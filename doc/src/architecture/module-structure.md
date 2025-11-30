@@ -42,6 +42,11 @@ Parser backends:
 - `ll/`: LL(k) parser implementation
 - `lr/`: LR parser implementation
 - `glr/`: GLR parser implementation
+- `peg/`: PEG parser implementation
+- `pratt/`: Pratt parser implementation
+- `pipeline.rs`: Grammar transformation pipeline
+- `traits.rs`: Backend traits and interfaces
+- `optimizer.rs`: Universal grammar optimizer
 - `common.rs`: Common backend utilities
 
 ### `incremental`

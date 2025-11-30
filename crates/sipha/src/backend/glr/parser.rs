@@ -1,14 +1,12 @@
 //! GLR parser implementation using Tomita's algorithm
 
 use crate::backend::glr::{
-    DisambiguationStrategy, GlrConfig, StackPruningStrategy,
+    DisambiguationStrategy, GlrConfig, GlrGrammar, StackPruningStrategy,
     disambiguation::{disambiguate_by_associativity, disambiguate_by_precedence},
     forest::{ForestNode, ParseForest},
     stack::GlrStack,
     state::GlrParserState,
 };
-#[cfg(feature = "backend-lr")]
-use crate::backend::lr::LrParsingTable;
 use crate::error::{ParseError, ParseMetrics, ParseResult, ParseWarning};
 use crate::grammar::{Grammar, NonTerminal, Token};
 use crate::syntax::{GreenElement, GreenNode, TextRange, TextSize};
@@ -28,8 +26,7 @@ where
     T: Token,
     N: NonTerminal,
 {
-    grammar: &'a Grammar<T, N>,
-    table: &'a LrParsingTable<T, N>,
+    backend_grammar: &'a GlrGrammar<T, N>,
     entry: &'a N,
     entry_id: usize,
 }
@@ -99,8 +96,7 @@ const DEFAULT_ERROR_SPAN_LEN: TextSize = TextSize::from(1);
 /// Parse input using GLR parser
 #[cfg(feature = "backend-lr")]
 pub fn parse<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &LrParsingTable<T, N>,
+    backend_grammar: &GlrGrammar<T, N>,
     input: &[T],
     entry: &N,
     config: &GlrConfig,
@@ -112,8 +108,7 @@ where
 {
     let entry_id = compute_entry_id(entry);
     let ctx = ParsingContext {
-        grammar,
-        table,
+        backend_grammar,
         entry,
         entry_id,
     };
@@ -123,8 +118,7 @@ where
 /// Parse with incremental support using session
 #[cfg(feature = "backend-lr")]
 pub fn parse_with_session<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &LrParsingTable<T, N>,
+    backend_grammar: &GlrGrammar<T, N>,
     input: &[T],
     session: &crate::incremental::IncrementalSession<'_, T::Kind>,
     entry: &N,
@@ -139,7 +133,7 @@ where
 
     // If no edits, use cached result if available
     if session.edits().is_empty() {
-        return parse(grammar, table, input, entry, config, state);
+        return parse(backend_grammar, input, entry, config, state);
     }
 
     // Check persistent parse cache for the entry point before parsing
@@ -202,8 +196,7 @@ where
     });
 
     let ctx = ParsingContext {
-        grammar,
-        table,
+        backend_grammar,
         entry,
         entry_id,
     };
@@ -507,8 +500,9 @@ where
     (root_kind, stacks, pos, text_pos, resumed)
 }
 
+#[cfg(feature = "backend-lr")]
 fn process_parsing_step<T, N>(
-    table: &LrParsingTable<T, N>,
+    table: &crate::backend::lr::LrParsingTable<T, N>,
     input: &[T],
     stacks: &mut Vec<ActiveStack<T::Kind>>,
     pos: &mut usize,
@@ -677,7 +671,7 @@ where
         }
 
         let new_stacks = process_parsing_step(
-            ctx.table,
+            &ctx.backend_grammar.lr_table,
             input,
             &mut stacks,
             &mut pos,
@@ -718,7 +712,7 @@ where
 
     let builder = ParseResultBuilder {
         ctx,
-        grammar: ctx.grammar,
+        grammar: &ctx.backend_grammar.original_grammar,
         config,
         state,
     };

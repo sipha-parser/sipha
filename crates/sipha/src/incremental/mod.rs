@@ -878,6 +878,7 @@ mod tests {
         type Config = ();
         type Error = MockError;
         type State = ();
+        type BackendGrammar = (); // Mock parser doesn't need a real grammar type
 
         fn new(
             _grammar: &crate::grammar::Grammar<MockToken, MockNonTerminal>,

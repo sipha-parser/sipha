@@ -108,20 +108,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .entry_point(AmbiguousNonTerminal::Expr)
         .rule(
             AmbiguousNonTerminal::Expr,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 // Expr -> Number
                 Expr::token(create_token(AmbiguousSyntaxKind::Number, "1")),
                 // Expr -> Expr + Expr (ambiguous!)
-                Expr::Seq(vec![
-                    Expr::Rule(AmbiguousNonTerminal::Expr),
+                Expr::seq(vec![
+                    Expr::rule(AmbiguousNonTerminal::Expr),
                     Expr::token(create_token(AmbiguousSyntaxKind::Plus, "+")),
-                    Expr::Rule(AmbiguousNonTerminal::Expr),
+                    Expr::rule(AmbiguousNonTerminal::Expr),
                 ]),
                 // Expr -> Expr - Expr (ambiguous!)
-                Expr::Seq(vec![
-                    Expr::Rule(AmbiguousNonTerminal::Expr),
+                Expr::seq(vec![
+                    Expr::rule(AmbiguousNonTerminal::Expr),
                     Expr::token(create_token(AmbiguousSyntaxKind::Minus, "-")),
-                    Expr::Rule(AmbiguousNonTerminal::Expr),
+                    Expr::rule(AmbiguousNonTerminal::Expr),
                 ]),
             ]),
         )

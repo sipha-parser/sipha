@@ -20,17 +20,25 @@
 
 mod disambiguation;
 mod forest;
+mod grammar;
+mod optimizer;
 mod parser;
+mod recovery;
 mod stack;
 mod state;
+mod transformer;
 
 pub use disambiguation::{
     DisambiguationStrategy, Disambiguator, disambiguate_by_associativity,
     disambiguate_by_precedence, disambiguate_with_custom,
 };
 pub use forest::{ForestNode, ParseForest};
+pub use grammar::GlrGrammar;
+pub use optimizer::GlrOptimizer;
+pub use recovery::GlrRecoveryStrategy;
 pub use stack::GlrStack;
 pub use state::GlrParserState;
+pub use transformer::GlrTransformer;
 
 use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
@@ -59,10 +67,7 @@ where
     T: crate::grammar::Token,
     N: crate::grammar::NonTerminal,
 {
-    grammar: Grammar<T, N>,
-    // Reuse LR table for state machine
-    #[cfg(feature = "backend-lr")]
-    lr_table: crate::backend::lr::LrParsingTable<T, N>,
+    backend_grammar: GlrGrammar<T, N>,
     config: GlrConfig,
     state: GlrParserState<T, N>,
 }
@@ -86,6 +91,12 @@ pub struct GlrConfig {
     ///
     /// Parallel merges are only attempted when the `parallel` feature is enabled.
     pub parallel_threshold: usize,
+
+    /// Enable optimizations during transformation
+    pub optimize: bool,
+
+    /// Optimization level for grammar transformation
+    pub optimization_level: crate::grammar::hint::OptimizationLevel,
 }
 
 impl Default for GlrConfig {
@@ -98,6 +109,8 @@ impl Default for GlrConfig {
             pruning_strategy: StackPruningStrategy::QualityWeighted,
             pruning_beam_width: 512,
             parallel_threshold: 64,
+            optimize: false,
+            optimization_level: crate::grammar::hint::OptimizationLevel::None,
         }
     }
 }
@@ -132,23 +145,38 @@ where
     type Config = GlrConfig;
     type Error = GlrError;
     type State = GlrParserState<T, N>;
+    type BackendGrammar = GlrGrammar<T, N>;
 
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error> {
-        // Build LR table (reuse LR table construction)
-        #[cfg(feature = "backend-lr")]
-        let lr_table = {
-            let lr_config = crate::backend::lr::LrConfig::default();
-            crate::backend::lr::LrParsingTable::new(grammar, lr_config.use_lalr)
-                .map_err(GlrError::TableConstructionFailed)?
+        use crate::backend::pipeline::GrammarTransformPipeline;
+        use crate::backend::traits::TransformConfig;
+
+        // Transform grammar using the transformation pipeline
+        let transform_config = TransformConfig {
+            optimize: config.optimize,
+            optimization_level: config.optimization_level,
+            cache: true,
+            backend_options: {
+                let mut opts = std::collections::HashMap::new();
+                opts.insert("use_lalr".to_string(), "true".to_string());
+                opts
+            },
         };
-        #[cfg(not(feature = "backend-lr"))]
-        return Err(GlrError::TableConstructionFailed(
-            "GLR backend requires backend-lr feature".to_string(),
-        ));
+
+        let backend_grammar = if config.optimize {
+            GrammarTransformPipeline::transform_with_optimizer::<T, N, GlrTransformer, GlrOptimizer>(
+                grammar,
+                &transform_config,
+                GlrOptimizer,
+            )
+            .map_err(|e| GlrError::TableConstructionFailed(e.to_string()))?
+        } else {
+            GrammarTransformPipeline::transform::<T, N, GlrTransformer>(grammar, &transform_config)
+                .map_err(|e| GlrError::TableConstructionFailed(e.to_string()))?
+        };
 
         Ok(Self {
-            grammar: grammar.clone(),
-            lr_table,
+            backend_grammar,
             config,
             state: GlrParserState::new(),
         })
@@ -158,8 +186,7 @@ where
         #[cfg(feature = "backend-lr")]
         {
             parser::parse(
-                &self.grammar,
-                &self.lr_table,
+                &self.backend_grammar,
                 input,
                 &entry,
                 &self.config,
@@ -188,8 +215,7 @@ where
             }
 
             parser::parse_with_session(
-                &self.grammar,
-                &self.lr_table,
+                &self.backend_grammar,
                 input,
                 session,
                 &entry,

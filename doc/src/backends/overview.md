@@ -42,6 +42,16 @@ Parsing Expression Grammar with ordered choice and memoization:
 - Incremental parsing support
 - Ideal for precedence-based languages and interactive tools
 
+### Pratt Parser (`backend-pratt`)
+
+Recursive descent parser with operator precedence parsing:
+
+- Operator precedence parsing for expressions
+- Natural handling of operator associativity
+- Recursive descent algorithm
+- Incremental parsing support
+- Ideal for expression-heavy languages and operator precedence parsing
+
 ## ParserBackend Trait
 
 All backends implement the `ParserBackend` trait:
@@ -55,6 +65,7 @@ where
     type Config: Default + Clone;
     type Error: std::error::Error + Send + Sync + 'static;
     type State: Send + Sync;
+    type BackendGrammar: Send + Sync;  // Backend-specific grammar type
 
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error>;
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N>;
@@ -65,6 +76,36 @@ where
     fn state(&self) -> &Self::State;
 }
 ```
+
+## Grammar Transformation
+
+All backends now use a **grammar transformation pipeline** that automatically converts your grammar into a backend-specific format optimized for that parser:
+
+1. **Validation**: The grammar is validated for compatibility
+2. **Transformation**: The grammar is transformed into a backend-specific representation (e.g., `LrGrammar`, `LlGrammar`)
+3. **Optimization** (optional): The transformed grammar can be optimized for better performance
+
+This transformation happens automatically when you create a parser - no changes to your code are required!
+
+### Enabling Optimization
+
+You can enable grammar optimization via parser configuration:
+
+```rust,ignore
+use sipha::backend::traits::OptimizationLevel;
+
+let config = LlConfig {
+    optimize: true,
+    optimization_level: OptimizationLevel::Basic,
+    ..Default::default()
+};
+let mut parser = LlParser::new(&grammar, config)?;
+```
+
+Optimization levels:
+- `None`: No optimization (default)
+- `Basic`: Basic optimizations (table compression, etc.)
+- `Aggressive`: Aggressive optimizations (may take longer but provide better performance)
 
 ## Backend Capabilities
 
@@ -125,6 +166,7 @@ See [Choosing a Backend](choosing.md) for detailed guidance on selecting the rig
 - Explore [LR Parser](lr-parser.md)
 - Check out [GLR Parser](glr-parser.md)
 - Discover [PEG Parser](peg-parser.md)
+- Try [Pratt Parser](pratt-parser.md) (coming soon)
 
 ## See Also
 

@@ -162,7 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Value: can be any JSON value type
         .rule_with_description(
             JsonNonTerminal::Value,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 Expr::rule(JsonNonTerminal::Object),
                 Expr::rule(JsonNonTerminal::Array),
                 Expr::token(create_token(JsonSyntaxKind::String, "\"string\"")),
@@ -176,39 +176,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Object: { "key": value, ... }
         .rule_with_description(
             JsonNonTerminal::Object,
-            Expr::Delimited {
-                open: Box::new(Expr::token(create_token(JsonSyntaxKind::LBrace, "{"))),
-                content: Box::new(Expr::Opt(Box::new(Expr::Separated {
-                    item: Box::new(Expr::rule(JsonNonTerminal::Pair)),
-                    separator: Box::new(Expr::token(create_token(JsonSyntaxKind::Comma, ","))),
-                    min: 0,
-                    trailing: TrailingSeparator::Forbid,
-                }))),
-                close: Box::new(Expr::token(create_token(JsonSyntaxKind::RBrace, "}"))),
-                recover: true,
-            },
+            Expr::delimited_with_recovery(
+                Expr::token(create_token(JsonSyntaxKind::LBrace, "{")),
+                Expr::opt(Expr::separated_with_config(
+                    Expr::rule(JsonNonTerminal::Pair),
+                    Expr::token(create_token(JsonSyntaxKind::Comma, ",")),
+                    0,
+                    TrailingSeparator::Forbid,
+                )),
+                Expr::token(create_token(JsonSyntaxKind::RBrace, "}")),
+                true,
+            ),
             "A JSON object is a collection of key-value pairs enclosed in curly braces.".to_string(),
         )
         // Array: [ value, ... ]
         .rule_with_description(
             JsonNonTerminal::Array,
-            Expr::Delimited {
-                open: Box::new(Expr::token(create_token(JsonSyntaxKind::LBracket, "["))),
-                content: Box::new(Expr::Opt(Box::new(Expr::Separated {
-                    item: Box::new(Expr::rule(JsonNonTerminal::Value)),
-                    separator: Box::new(Expr::token(create_token(JsonSyntaxKind::Comma, ","))),
-                    min: 0,
-                    trailing: TrailingSeparator::Forbid,
-                }))),
-                close: Box::new(Expr::token(create_token(JsonSyntaxKind::RBracket, "]"))),
-                recover: true,
-            },
+            Expr::delimited_with_recovery(
+                Expr::token(create_token(JsonSyntaxKind::LBracket, "[")),
+                Expr::opt(Expr::separated_with_config(
+                    Expr::rule(JsonNonTerminal::Value),
+                    Expr::token(create_token(JsonSyntaxKind::Comma, ",")),
+                    0,
+                    TrailingSeparator::Forbid,
+                )),
+                Expr::token(create_token(JsonSyntaxKind::RBracket, "]")),
+                true,
+            ),
             "A JSON array is an ordered list of values enclosed in square brackets.".to_string(),
         )
         // Pair: "key": value
         .rule_with_description(
             JsonNonTerminal::Pair,
-            Expr::Seq(vec![
+            Expr::seq(vec![
                 Expr::token(create_token(JsonSyntaxKind::String, "\"key\"")),
                 Expr::token(create_token(JsonSyntaxKind::Colon, ":")),
                 Expr::rule(JsonNonTerminal::Value),

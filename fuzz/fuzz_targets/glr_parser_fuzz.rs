@@ -72,29 +72,29 @@ fuzz_target!(|data: &[u8]| {
         .entry_point(GlrNonTerminal::Expr)
         .rule(
             GlrNonTerminal::Expr,
-            Expr::Seq(vec![
-                Expr::Token(GlrFuzzToken {
+            Expr::seq(vec![
+                Expr::token(GlrFuzzToken {
                     kind: GlrFuzzKind::Number,
                     text: "0".into(),
                 }),
-                Expr::Rule(GlrNonTerminal::Tail),
+                Expr::rule(GlrNonTerminal::Tail),
             ]),
         )
         .rule(
             GlrNonTerminal::Tail,
-            Expr::Choice(vec![
-                Expr::Seq(vec![
-                    Expr::Token(GlrFuzzToken {
+            Expr::choice(vec![
+                Expr::seq(vec![
+                    Expr::token(GlrFuzzToken {
                         kind: GlrFuzzKind::Plus,
                         text: "+".into(),
                     }),
-                    Expr::Token(GlrFuzzToken {
+                    Expr::token(GlrFuzzToken {
                         kind: GlrFuzzKind::Number,
                         text: "0".into(),
                     }),
-                    Expr::Rule(GlrNonTerminal::Tail),
+                    Expr::rule(GlrNonTerminal::Tail),
                 ]),
-                Expr::Empty,
+                Expr::empty(),
             ]),
         )
         .build()

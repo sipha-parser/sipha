@@ -1,9 +1,17 @@
 mod config;
+mod grammar;
+mod optimizer;
 mod parser;
+mod recovery;
 mod state;
+mod transformer;
 
 pub use config::PegConfig;
+pub use grammar::PegGrammar;
+pub use optimizer::PegOptimizer;
+pub use recovery::PegRecoveryStrategy;
 pub use state::PegParserState;
+pub use transformer::PegTransformer;
 
 use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
@@ -35,7 +43,7 @@ where
     T: crate::grammar::Token,
     N: crate::grammar::NonTerminal,
 {
-    grammar: Grammar<T, N>,
+    backend_grammar: PegGrammar<T, N>,
     state: PegParserState<T, N>,
     config: PegConfig,
 }
@@ -57,29 +65,47 @@ where
     type Config = PegConfig;
     type Error = PegError;
     type State = PegParserState<T, N>;
+    type BackendGrammar = PegGrammar<T, N>;
 
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error> {
-        // Validate grammar for PEG compatibility
-        let errors = Self::validate(grammar);
-        if !errors.is_empty() {
-            return Err(PegError::NotPegGrammar(
-                errors
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ));
-        }
+        use crate::backend::pipeline::GrammarTransformPipeline;
+        use crate::backend::traits::TransformConfig;
+
+        // Transform grammar using the transformation pipeline
+        let transform_config = TransformConfig {
+            optimize: config.optimize,
+            optimization_level: config.optimization_level,
+            cache: true,
+            backend_options: std::collections::HashMap::new(),
+        };
+
+        let backend_grammar = if config.optimize {
+            GrammarTransformPipeline::transform_with_optimizer::<T, N, PegTransformer, PegOptimizer>(
+                grammar,
+                &transform_config,
+                PegOptimizer,
+            )
+            .map_err(|e| PegError::InitializationFailed(e.to_string()))?
+        } else {
+            GrammarTransformPipeline::transform::<T, N, PegTransformer>(grammar, &transform_config)
+                .map_err(|e| PegError::InitializationFailed(e.to_string()))?
+        };
 
         Ok(Self {
-            grammar: grammar.clone(),
+            backend_grammar,
             state: PegParserState::new(),
             config,
         })
     }
 
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
-        parser::parse(&self.grammar, input, &entry, &self.config, &mut self.state)
+        parser::parse(
+            &self.backend_grammar,
+            input,
+            &entry,
+            &self.config,
+            &mut self.state,
+        )
     }
 
     fn parse_with_session(
@@ -102,7 +128,7 @@ where
 
         // Use incremental parsing with session support
         parser::parse_with_session(
-            &self.grammar,
+            &self.backend_grammar,
             input,
             &entry,
             &self.config,

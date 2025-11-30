@@ -4,7 +4,7 @@
 //! including precedence-based and associativity-based disambiguation.
 
 use crate::backend::glr::forest::ForestNode;
-use crate::grammar::{Associativity, Expr, Grammar, NonTerminal, Token};
+use crate::grammar::{Associativity, CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use crate::syntax::{GreenElement, GreenNode, SyntaxKind};
 use hashbrown::HashMap;
 use std::cmp::Ordering;
@@ -197,51 +197,54 @@ where
     N: NonTerminal,
 {
     match expr {
-        Expr::Token(token) => kinds.push(token.kind()),
-        Expr::Seq(exprs) | Expr::Choice(exprs) => {
+        ExtendedExpr::Core(CoreExpr::Token(token)) => kinds.push(token.kind()),
+        ExtendedExpr::Core(CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs)) => {
             for child in exprs {
-                collect_token_kinds(child, kinds);
+                collect_token_kinds(&ExtendedExpr::Core(child.clone()), kinds);
             }
         }
-        Expr::Opt(inner)
-        | Expr::Repeat {
-            expr: inner,
-            greedy: _,
-            ..
+        ExtendedExpr::Core(
+            CoreExpr::Opt(inner)
+            | CoreExpr::Repeat { expr: inner, .. }
+            | CoreExpr::Label { expr: inner, .. }
+            | CoreExpr::Node { expr: inner, .. }
+            | CoreExpr::Flatten(inner)
+            | CoreExpr::Prune(inner),
+        ) => {
+            collect_token_kinds(&ExtendedExpr::Core((**inner).clone()), kinds);
         }
-        | Expr::Lookahead(inner)
-        | Expr::NotLookahead(inner)
-        | Expr::Cut(inner)
-        | Expr::Label { expr: inner, .. }
-        | Expr::Node { expr: inner, .. }
-        | Expr::Flatten(inner)
-        | Expr::Prune(inner)
-        | Expr::SemanticPredicate { expr: inner, .. } => {
+        ExtendedExpr::Lookahead(inner)
+        | ExtendedExpr::NotLookahead(inner)
+        | ExtendedExpr::SemanticPredicate { expr: inner, .. } => {
             collect_token_kinds(inner, kinds);
         }
-        Expr::Separated {
-            item, separator, ..
-        } => {
-            collect_token_kinds(item, kinds);
-            collect_token_kinds(separator, kinds);
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(inner) => {
+            collect_token_kinds(inner, kinds);
         }
-        Expr::Delimited {
+        ExtendedExpr::Core(CoreExpr::Separated {
+            item, separator, ..
+        }) => {
+            collect_token_kinds(&ExtendedExpr::Core((**item).clone()), kinds);
+            collect_token_kinds(&ExtendedExpr::Core((**separator).clone()), kinds);
+        }
+        ExtendedExpr::Core(CoreExpr::Delimited {
             open,
             content,
             close,
             ..
-        } => {
-            collect_token_kinds(open, kinds);
-            collect_token_kinds(content, kinds);
-            collect_token_kinds(close, kinds);
+        }) => {
+            collect_token_kinds(&ExtendedExpr::Core((**open).clone()), kinds);
+            collect_token_kinds(&ExtendedExpr::Core((**content).clone()), kinds);
+            collect_token_kinds(&ExtendedExpr::Core((**close).clone()), kinds);
         }
-        Expr::RecoveryPoint { expr, sync_tokens } => {
+        ExtendedExpr::RecoveryPoint { expr, sync_tokens } => {
             collect_token_kinds(expr, kinds);
             for token in sync_tokens {
                 kinds.push(token.kind());
             }
         }
-        Expr::Conditional {
+        ExtendedExpr::Conditional {
             condition,
             then_expr,
             else_expr,
@@ -450,24 +453,25 @@ where
     N: NonTerminal,
 {
     match expr {
-        crate::grammar::Expr::Token(t) => t == token,
-        crate::grammar::Expr::Seq(exprs) | crate::grammar::Expr::Choice(exprs) => {
-            exprs.iter().any(|e| expr_contains_token(e, token))
-        }
-        crate::grammar::Expr::Opt(e)
-        | crate::grammar::Expr::Repeat {
-            expr: e, greedy: _, ..
-        }
-        | crate::grammar::Expr::Lookahead(e)
-        | crate::grammar::Expr::NotLookahead(e)
-        | crate::grammar::Expr::Cut(e)
-        | crate::grammar::Expr::Label { expr: e, .. }
-        | crate::grammar::Expr::Node { expr: e, .. }
-        | crate::grammar::Expr::Flatten(e)
-        | crate::grammar::Expr::Prune(e)
-        | crate::grammar::Expr::RecoveryPoint { expr: e, .. }
-        | crate::grammar::Expr::SemanticPredicate { expr: e, .. } => expr_contains_token(e, token),
-        crate::grammar::Expr::Conditional {
+        ExtendedExpr::Core(CoreExpr::Token(t)) => t == token,
+        ExtendedExpr::Core(CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs)) => exprs
+            .iter()
+            .any(|e| expr_contains_token(&ExtendedExpr::Core(e.clone()), token)),
+        ExtendedExpr::Core(
+            CoreExpr::Opt(e)
+            | CoreExpr::Repeat { expr: e, .. }
+            | CoreExpr::Label { expr: e, .. }
+            | CoreExpr::Node { expr: e, .. }
+            | CoreExpr::Flatten(e)
+            | CoreExpr::Prune(e),
+        ) => expr_contains_token(&ExtendedExpr::Core((**e).clone()), token),
+        ExtendedExpr::Lookahead(e)
+        | ExtendedExpr::NotLookahead(e)
+        | ExtendedExpr::RecoveryPoint { expr: e, .. }
+        | ExtendedExpr::SemanticPredicate { expr: e, .. } => expr_contains_token(e, token),
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(e) => expr_contains_token(e, token),
+        ExtendedExpr::Conditional {
             condition,
             then_expr,
             else_expr,
@@ -478,18 +482,21 @@ where
                     .as_ref()
                     .is_some_and(|e| expr_contains_token(e, token))
         }
-        crate::grammar::Expr::Separated {
+        ExtendedExpr::Core(CoreExpr::Separated {
             item, separator, ..
-        } => expr_contains_token(item, token) || expr_contains_token(separator, token),
-        crate::grammar::Expr::Delimited {
+        }) => {
+            expr_contains_token(&ExtendedExpr::Core((**item).clone()), token)
+                || expr_contains_token(&ExtendedExpr::Core((**separator).clone()), token)
+        }
+        ExtendedExpr::Core(CoreExpr::Delimited {
             open,
             content,
             close,
             ..
-        } => {
-            expr_contains_token(open, token)
-                || expr_contains_token(content, token)
-                || expr_contains_token(close, token)
+        }) => {
+            expr_contains_token(&ExtendedExpr::Core((**open).clone()), token)
+                || expr_contains_token(&ExtendedExpr::Core((**content).clone()), token)
+                || expr_contains_token(&ExtendedExpr::Core((**close).clone()), token)
         }
         _ => false,
     }

@@ -1,6 +1,6 @@
-use crate::backend::peg::{config::PegConfig, state::ParseMemo};
+use crate::backend::peg::{config::PegConfig, grammar::PegGrammar, state::ParseMemo};
 use crate::error::{ParseError, ParseMetrics, ParseResult, ParseWarning};
-use crate::grammar::{Expr, Grammar, NonTerminal, Token};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use crate::syntax::{GreenNode, GreenNodeBuilder, TextSize};
 
 /// Default error span length when position is unknown
@@ -112,7 +112,7 @@ where
     T: Token,
     N: NonTerminal,
 {
-    grammar: &'a Grammar<T, N>,
+    backend_grammar: &'a PegGrammar<T, N>,
     input: &'a [T],
     config: &'a PegConfig,
     state: &'a mut crate::backend::peg::state::PegParserState<T, N>,
@@ -132,14 +132,14 @@ where
     /// Create a new parse context
     #[allow(clippy::missing_const_for_fn)] // Cannot be const: takes references
     fn new(
-        grammar: &'a Grammar<T, N>,
+        backend_grammar: &'a PegGrammar<T, N>,
         input: &'a [T],
         config: &'a PegConfig,
         state: &'a mut crate::backend::peg::state::PegParserState<T, N>,
         session: Option<&'a crate::incremental::IncrementalSession<'a, T::Kind>>,
     ) -> Self {
         Self {
-            grammar,
+            backend_grammar,
             input,
             config,
             state,
@@ -190,7 +190,7 @@ where
     }
 
     match expr {
-        Expr::Token(expected) => {
+        ExtendedExpr::Core(CoreExpr::Token(expected)) => {
             if *pos < ctx.input.len() {
                 let token = &ctx.input[*pos];
                 if token == expected {
@@ -216,7 +216,7 @@ where
             }
         }
 
-        Expr::Rule(nt) => {
+        ExtendedExpr::Core(CoreExpr::Rule(nt)) => {
             let start_pos = *pos;
             let start_text_pos = *text_pos;
 
@@ -364,7 +364,7 @@ where
             }
 
             // Get rule from grammar
-            let Some(rule) = ctx.grammar.get_rule(nt) else {
+            let Some(rule) = ctx.backend_grammar.original_grammar.get_rule(nt) else {
                 errors.push(ParseError::InvalidSyntax {
                     span: crate::syntax::TextRange::at(*text_pos, DEFAULT_ERROR_SPAN_LEN),
                     message: format!("Undefined rule: {}", nt.name()),
@@ -474,7 +474,7 @@ where
             }
         }
 
-        Expr::Any => {
+        ExtendedExpr::Core(CoreExpr::Any) => {
             if *pos < ctx.input.len() {
                 let token = &ctx.input[*pos];
                 let text = token.text();
@@ -496,7 +496,7 @@ where
             }
         }
 
-        Expr::Eof => {
+        ExtendedExpr::Core(CoreExpr::Eof) => {
             if *pos >= ctx.input.len() {
                 Ok(ParseExprResult::Success {
                     end_pos: *pos,
@@ -507,18 +507,26 @@ where
             }
         }
 
-        Expr::Empty => Ok(ParseExprResult::Success {
+        ExtendedExpr::Core(CoreExpr::Empty) => Ok(ParseExprResult::Success {
             end_pos: *pos,
             text_len: TextSize::zero(),
         }),
 
-        Expr::Seq(exprs) => {
+        ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
             let start_pos = *pos;
             let start_text_pos = *text_pos;
             let mut total_text_len = TextSize::zero();
 
             for expr in exprs {
-                match parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings) {
+                match parse_expr(
+                    ctx,
+                    &ExtendedExpr::Core(expr.clone()),
+                    pos,
+                    text_pos,
+                    builder,
+                    errors,
+                    warnings,
+                ) {
                     Ok(ParseExprResult::Success { text_len, .. }) => {
                         total_text_len += text_len;
                     }
@@ -538,12 +546,13 @@ where
             })
         }
 
-        Expr::Choice(alternatives) => {
+        ExtendedExpr::Core(CoreExpr::Choice(alternatives)) => {
             // PEG: ordered choice - try alternatives in order, first match wins
             let start_pos = *pos;
             let start_text_pos = *text_pos;
 
             for (idx, alt) in alternatives.iter().enumerate() {
+                let alt_expr = ExtendedExpr::Core(alt.clone());
                 // Check backtrack depth before trying alternative
                 if ctx.backtrack_depth >= ctx.config.max_backtrack_depth {
                     return Err(ParseError::InvalidSyntax {
@@ -560,7 +569,7 @@ where
                 *text_pos = start_text_pos;
 
                 ctx.backtrack_depth += 1;
-                let result = parse_expr(ctx, alt, pos, text_pos, builder, errors, warnings);
+                let result = parse_expr(ctx, &alt_expr, pos, text_pos, builder, errors, warnings);
                 ctx.backtrack_depth -= 1;
 
                 match result {
@@ -585,10 +594,18 @@ where
             Ok(ParseExprResult::Failure)
         }
 
-        Expr::Opt(expr) => {
+        ExtendedExpr::Core(CoreExpr::Opt(expr)) => {
             // Optional: try to parse, but don't fail if it doesn't match
             let start_text_pos = *text_pos;
-            match parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings) {
+            match parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**expr).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            ) {
                 Ok(ParseExprResult::Success { text_len, .. }) => {
                     // Matched - return the text length
                     Ok(ParseExprResult::Success {
@@ -617,12 +634,7 @@ where
             }
         }
 
-        Expr::Repeat {
-            expr,
-            min,
-            max,
-            greedy: _,
-        } => {
+        ExtendedExpr::Core(CoreExpr::Repeat { expr, min, max }) => {
             let mut count = 0;
             let mut total_text_len = TextSize::zero();
 
@@ -642,7 +654,15 @@ where
                 let saved_text_pos = *text_pos;
 
                 ctx.backtrack_depth += 1;
-                let result = parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings);
+                let result = parse_expr(
+                    ctx,
+                    &ExtendedExpr::Core((**expr).clone()),
+                    pos,
+                    text_pos,
+                    builder,
+                    errors,
+                    warnings,
+                );
                 ctx.backtrack_depth -= 1;
 
                 match result {
@@ -683,19 +703,27 @@ where
             }
         }
 
-        Expr::Separated {
+        ExtendedExpr::Core(CoreExpr::Separated {
             item,
             separator,
             min,
             trailing,
-        } => {
+        }) => {
             let start_pos = *pos;
             let start_text_pos = *text_pos;
             let mut count = 0;
             let mut total_text_len = TextSize::zero();
 
             // Parse first item
-            match parse_expr(ctx, item, pos, text_pos, builder, errors, warnings) {
+            match parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**item).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            ) {
                 Ok(ParseExprResult::Success { text_len, .. }) => {
                     count += 1;
                     total_text_len += text_len;
@@ -731,8 +759,15 @@ where
                 let saved_text_pos = *text_pos;
 
                 ctx.backtrack_depth += 1;
-                let sep_result =
-                    parse_expr(ctx, separator, pos, text_pos, builder, errors, warnings);
+                let sep_result = parse_expr(
+                    ctx,
+                    &ExtendedExpr::Core((**separator).clone()),
+                    pos,
+                    text_pos,
+                    builder,
+                    errors,
+                    warnings,
+                );
                 ctx.backtrack_depth -= 1;
 
                 // Try separator
@@ -740,8 +775,15 @@ where
                     Ok(ParseExprResult::Success { .. }) => {
                         // Separator matched, now try item
                         ctx.backtrack_depth += 1;
-                        let item_result =
-                            parse_expr(ctx, item, pos, text_pos, builder, errors, warnings);
+                        let item_result = parse_expr(
+                            ctx,
+                            &ExtendedExpr::Core((**item).clone()),
+                            pos,
+                            text_pos,
+                            builder,
+                            errors,
+                            warnings,
+                        );
                         ctx.backtrack_depth -= 1;
 
                         match item_result {
@@ -788,33 +830,56 @@ where
             }
         }
 
-        Expr::Delimited {
+        ExtendedExpr::Core(CoreExpr::Delimited {
             open,
             content,
             close,
-            recover,
-        } => {
+        }) => {
             let start_text_pos = *text_pos;
 
             // Parse opening delimiter
-            match parse_expr(ctx, open, pos, text_pos, builder, errors, warnings) {
+            match parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**open).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            ) {
                 Ok(ParseExprResult::Success { .. }) => {}
                 Ok(ParseExprResult::Failure) => return Ok(ParseExprResult::Failure),
                 Err(e) => return Err(e),
             }
 
             // Parse content
-            let _ = parse_expr(ctx, content, pos, text_pos, builder, errors, warnings);
+            let _ = parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**content).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            );
 
             // Parse closing delimiter
-            match parse_expr(ctx, close, pos, text_pos, builder, errors, warnings) {
+            match parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**close).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            ) {
                 Ok(ParseExprResult::Success { text_len: _, .. }) => Ok(ParseExprResult::Success {
                     end_pos: *pos,
                     text_len: (*text_pos) - start_text_pos,
                 }),
                 Ok(ParseExprResult::Failure) => {
                     // Missing closing delimiter
-                    if *recover && ctx.config.error_recovery {
+                    if ctx.config.error_recovery {
                         // Try to recover by skipping tokens until we find the closing delimiter
                         let recovery_start_text_pos = *text_pos;
                         let mut recovered = false;
@@ -827,7 +892,15 @@ where
                             let saved_text_pos = *text_pos;
 
                             // Try to parse the closing delimiter
-                            match parse_expr(ctx, close, pos, text_pos, builder, errors, warnings) {
+                            match parse_expr(
+                                ctx,
+                                &ExtendedExpr::Core((**close).clone()),
+                                pos,
+                                text_pos,
+                                builder,
+                                errors,
+                                warnings,
+                            ) {
                                 Ok(ParseExprResult::Success { .. }) => {
                                     // Found closing delimiter - recovery successful
                                     recovered = true;
@@ -891,7 +964,7 @@ where
             }
         }
 
-        Expr::Lookahead(expr) => {
+        ExtendedExpr::Lookahead(expr) => {
             // Positive lookahead: check if expression matches without consuming
             let saved_pos = *pos;
             let saved_text_pos = *text_pos;
@@ -912,7 +985,7 @@ where
             }
         }
 
-        Expr::NotLookahead(expr) => {
+        ExtendedExpr::NotLookahead(expr) => {
             // Negative lookahead: check if expression doesn't match
             let saved_pos = *pos;
             let saved_text_pos = *text_pos;
@@ -929,12 +1002,20 @@ where
             }
         }
 
-        Expr::Label { name: _, expr } => {
+        ExtendedExpr::Core(CoreExpr::Label { name: _, expr }) => {
             // Labels are for tree construction - just parse the expression
-            parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings)
+            parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**expr).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            )
         }
 
-        Expr::Node { kind, expr } => {
+        ExtendedExpr::Core(CoreExpr::Node { kind, expr }) => {
             // Convert NonTerminal to SyntaxKind using the trait method
             let node_kind = kind
                 .to_syntax_kind()
@@ -944,7 +1025,15 @@ where
 
             if let Some(k) = node_kind {
                 builder.start_node(k);
-                let result = parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings);
+                let result = parse_expr(
+                    ctx,
+                    &ExtendedExpr::Core((**expr).clone()),
+                    pos,
+                    text_pos,
+                    builder,
+                    errors,
+                    warnings,
+                );
                 builder
                     .finish_node()
                     .map_err(|e| ParseError::InvalidSyntax {
@@ -963,23 +1052,48 @@ where
                     ),
                 ));
                 // Continue parsing without the node wrapper
-                parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings)
+                parse_expr(
+                    ctx,
+                    &ExtendedExpr::Core((**expr).clone()),
+                    pos,
+                    text_pos,
+                    builder,
+                    errors,
+                    warnings,
+                )
             }
         }
 
-        Expr::Flatten(expr) => {
+        ExtendedExpr::Core(CoreExpr::Flatten(expr)) => {
             // Flatten removes one level of nesting
             // For now, just parse the expression (flattening is handled in tree construction)
-            parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings)
+            parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**expr).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            )
         }
 
-        Expr::Prune(expr) => {
+        ExtendedExpr::Core(CoreExpr::Prune(expr)) => {
             // Prune removes nodes with only one child
             // For now, just parse the expression
-            parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings)
+            parse_expr(
+                ctx,
+                &ExtendedExpr::Core((**expr).clone()),
+                pos,
+                text_pos,
+                builder,
+                errors,
+                warnings,
+            )
         }
 
-        Expr::Cut(expr) => {
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(expr) => {
             // Cut operator: prevent backtracking past this point
             // Once this succeeds, we can't backtrack to try other alternatives
             let result = parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings);
@@ -992,7 +1106,7 @@ where
             result
         }
 
-        Expr::TokenClass { class } => {
+        ExtendedExpr::TokenClass { class } => {
             // Match any token that belongs to the specified class
             if *pos < ctx.input.len() {
                 let token = &ctx.input[*pos];
@@ -1020,7 +1134,7 @@ where
             }
         }
 
-        Expr::Conditional {
+        ExtendedExpr::Conditional {
             condition,
             then_expr,
             else_expr,
@@ -1046,14 +1160,15 @@ where
             }
         }
 
-        Expr::SemanticPredicate { expr, predicate } => {
+        ExtendedExpr::SemanticPredicate { expr, predicate } => {
             // Parse the expression first
             let saved_pos = *pos;
             let saved_text_pos = *text_pos;
             match parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings) {
                 Ok(ParseExprResult::Success { .. }) => {
                     // Expression matched - check semantic predicate
-                    if predicate.check(ctx.grammar, ctx.input, saved_pos) {
+                    if predicate.check(&ctx.backend_grammar.original_grammar, ctx.input, saved_pos)
+                    {
                         // Predicate passed - success
                         Ok(ParseExprResult::Success {
                             end_pos: *pos,
@@ -1075,7 +1190,7 @@ where
             }
         }
 
-        Expr::Backreference { capture_id } => {
+        ExtendedExpr::Backreference { capture_id } => {
             // Match previously captured content
             // For now, this is a stub - full implementation would require
             // tracking captures in the parse context
@@ -1086,7 +1201,7 @@ where
             Ok(ParseExprResult::Failure)
         }
 
-        Expr::RecoveryPoint { expr, sync_tokens } => {
+        ExtendedExpr::RecoveryPoint { expr, sync_tokens } => {
             // Recovery point for error recovery
             let start_text_pos = *text_pos;
 
@@ -1158,12 +1273,19 @@ where
                 }
             }
         }
+        #[cfg(feature = "backend-pratt")]
+        ExtendedExpr::PrattOperator { .. } => {
+            Err(ParseError::InvalidSyntax {
+                span: crate::syntax::TextRange::at(*text_pos, DEFAULT_ERROR_SPAN_LEN),
+                message: "PrattOperator expressions are not supported in PEG parser backend. Use the Pratt parser backend instead.".to_string(),
+            })
+        }
     }
 }
 
 /// Parse input using PEG parser
 pub fn parse<T, N>(
-    grammar: &Grammar<T, N>,
+    backend_grammar: &PegGrammar<T, N>,
     input: &[T],
     entry: &N,
     config: &PegConfig,
@@ -1173,12 +1295,12 @@ where
     T: Token,
     N: NonTerminal,
 {
-    parse_with_session(grammar, input, entry, config, state, None)
+    parse_with_session(backend_grammar, input, entry, config, state, None)
 }
 
 /// Parse with incremental session support
 pub fn parse_with_session<T, N>(
-    grammar: &Grammar<T, N>,
+    backend_grammar: &PegGrammar<T, N>,
     input: &[T],
     entry: &N,
     config: &PegConfig,
@@ -1196,18 +1318,26 @@ where
     let start_time = std::time::Instant::now();
 
     // Start parsing from entry point
-    let Some(root_kind) = determine_root_kind_or_error(entry, input, grammar, &mut errors) else {
-        return create_error_result(entry, input, grammar, errors, warnings);
+    let Some(root_kind) =
+        determine_root_kind_or_error(entry, input, &backend_grammar.original_grammar, &mut errors)
+    else {
+        return create_error_result(
+            entry,
+            input,
+            &backend_grammar.original_grammar,
+            errors,
+            warnings,
+        );
     };
     builder.start_node(root_kind);
 
     let mut pos = 0;
     let mut text_pos = TextSize::zero();
 
-    let mut ctx = ParseContext::new(grammar, input, config, state, session);
+    let mut ctx = ParseContext::new(backend_grammar, input, config, state, session);
 
     // Get rule for entry point
-    if let Some(rule) = grammar.get_rule(entry) {
+    if let Some(rule) = backend_grammar.original_grammar.get_rule(entry) {
         match parse_expr(
             &mut ctx,
             &rule.rhs,

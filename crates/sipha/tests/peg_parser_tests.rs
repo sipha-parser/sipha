@@ -178,7 +178,7 @@ fn test_peg_ordered_choice() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 Expr::token(create_token(TestSyntaxKind::Number, "1")),
                 Expr::token(create_token(TestSyntaxKind::Number, "2")),
             ]),
@@ -284,8 +284,8 @@ fn test_peg_backtrack_limit() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Choice(vec![
-                Expr::Seq(vec![
+            Expr::choice(vec![
+                Expr::seq(vec![
                     Expr::token(create_token(TestSyntaxKind::Number, "1")),
                     Expr::token(create_token(TestSyntaxKind::Number, "2")),
                 ]),
@@ -371,7 +371,7 @@ fn test_peg_sequence_parsing() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Seq(vec![
+            Expr::seq(vec![
                 Expr::token(create_token(TestSyntaxKind::Number, "1")),
                 Expr::token(create_token(TestSyntaxKind::Plus, "+")),
                 Expr::token(create_token(TestSyntaxKind::Number, "2")),
@@ -403,12 +403,9 @@ fn test_peg_optional_parsing() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Seq(vec![
+            Expr::seq(vec![
                 Expr::token(create_token(TestSyntaxKind::Number, "1")),
-                Expr::Opt(Box::new(Expr::token(create_token(
-                    TestSyntaxKind::Plus,
-                    "+",
-                )))),
+                Expr::opt(Expr::token(create_token(TestSyntaxKind::Plus, "+"))),
             ]),
         )
         .build()
@@ -438,12 +435,12 @@ fn test_peg_repeat_parsing() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Repeat {
-                expr: Box::new(Expr::token(create_token(TestSyntaxKind::Number, "1"))),
-                min: 1,
-                max: Some(3),
-                greedy: true,
-            },
+            Expr::repeat_with_greedy(
+                Expr::token(create_token(TestSyntaxKind::Number, "1")),
+                1,
+                Some(3),
+                true,
+            ),
         )
         .build()
         .expect("Failed to build grammar");
@@ -469,8 +466,8 @@ fn test_peg_left_recursion_detection() {
         .allow_left_recursion()
         .rule(
             TestNonTerminal::Expr,
-            Expr::Seq(vec![
-                Expr::Rule(TestNonTerminal::Expr),
+            Expr::seq(vec![
+                Expr::rule(TestNonTerminal::Expr),
                 Expr::token(create_token(TestSyntaxKind::Plus, "+")),
                 Expr::token(create_token(TestSyntaxKind::Number, "1")),
             ]),
@@ -495,8 +492,8 @@ fn test_peg_backtrack_depth_limit() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Choice(vec![
-                Expr::Seq(vec![
+            Expr::choice(vec![
+                Expr::seq(vec![
                     Expr::token(create_token(TestSyntaxKind::Number, "1")),
                     Expr::token(create_token(TestSyntaxKind::Number, "2")),
                 ]),
@@ -654,7 +651,7 @@ fn test_peg_text_position_accuracy() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Seq(vec![
+            Expr::seq(vec![
                 Expr::token(create_token(TestSyntaxKind::Number, "1")),
                 Expr::token(create_token(TestSyntaxKind::Plus, "+")),
                 Expr::token(create_token(TestSyntaxKind::Number, "2")),

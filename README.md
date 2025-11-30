@@ -33,6 +33,8 @@ This makes Sipha perfect for building language servers, IDEs, and other tools th
 ### Additional Features
 
 - **Multiple parsing backends**: Choose from LL(k), LR, GLR, and PEG (via feature flags)
+- **Grammar transformation**: Automatic transformation of grammars to backend-specific optimized formats
+- **Grammar optimization**: Configurable optimization levels for improved parsing performance
 - **Immutable syntax trees**: Green/red tree representation for efficient manipulation
 - **Error recovery**: Configurable error recovery strategies for robust parsing
 - **Flexible grammar definition**: Builder API for defining your grammar
@@ -173,6 +175,14 @@ use sipha::backend::ParserBackend;
 let config = LlConfig::default();
 let mut parser = LlParser::new(&grammar, config)
     .expect("Failed to create parser");
+
+// Or with optimization enabled:
+let config = LlConfig {
+    optimize: true,
+    optimization_level: sipha::grammar::hint::OptimizationLevel::Basic,
+    ..Default::default()
+};
+let mut parser = LlParser::new(&grammar, config)?;
 
 let result = parser.parse(&tokens, ArithNonTerminal::Expr);
 ```

@@ -120,10 +120,10 @@ fn build_expr_grammar() -> Grammar<TestToken, TestNonTerminal> {
         .entry_point(TestNonTerminal::Expr);
     builder = builder.rule_with(
         TestNonTerminal::Expr,
-        Expr::Seq(vec![
-            Expr::Rule(TestNonTerminal::Expr),
-            Expr::Token(TestToken::new(TestSyntaxKind::Plus, "+")),
-            Expr::Rule(TestNonTerminal::Expr),
+        Expr::seq(vec![
+            Expr::rule(TestNonTerminal::Expr),
+            Expr::token(TestToken::new(TestSyntaxKind::Plus, "+")),
+            Expr::rule(TestNonTerminal::Expr),
         ]),
         |meta| {
             meta.add_hint(PrecedenceHint {
@@ -134,10 +134,10 @@ fn build_expr_grammar() -> Grammar<TestToken, TestNonTerminal> {
     );
     builder = builder.rule_with(
         TestNonTerminal::Expr,
-        Expr::Seq(vec![
-            Expr::Rule(TestNonTerminal::Expr),
-            Expr::Token(TestToken::new(TestSyntaxKind::Minus, "-")),
-            Expr::Rule(TestNonTerminal::Expr),
+        Expr::seq(vec![
+            Expr::rule(TestNonTerminal::Expr),
+            Expr::token(TestToken::new(TestSyntaxKind::Minus, "-")),
+            Expr::rule(TestNonTerminal::Expr),
         ]),
         |meta| {
             meta.add_hint(PrecedenceHint {
@@ -148,10 +148,10 @@ fn build_expr_grammar() -> Grammar<TestToken, TestNonTerminal> {
     );
     builder = builder.rule_with(
         TestNonTerminal::Expr,
-        Expr::Seq(vec![
-            Expr::Rule(TestNonTerminal::Expr),
-            Expr::Token(TestToken::new(TestSyntaxKind::Multiply, "*")),
-            Expr::Rule(TestNonTerminal::Expr),
+        Expr::seq(vec![
+            Expr::rule(TestNonTerminal::Expr),
+            Expr::token(TestToken::new(TestSyntaxKind::Multiply, "*")),
+            Expr::rule(TestNonTerminal::Expr),
         ]),
         |meta| {
             meta.add_hint(PrecedenceHint {
@@ -162,7 +162,7 @@ fn build_expr_grammar() -> Grammar<TestToken, TestNonTerminal> {
     );
     builder = builder.rule(
         TestNonTerminal::Expr,
-        Expr::Token(TestToken::new(TestSyntaxKind::Number, "n")),
+        Expr::token(TestToken::new(TestSyntaxKind::Number, "n")),
     );
     builder.build().expect("valid grammar")
 }
@@ -173,7 +173,7 @@ fn test_glr_parser_creation() {
     let mut builder = GrammarBuilder::new().entry_point(TestNonTerminal::Expr);
     builder = builder.rule(
         TestNonTerminal::Expr,
-        Expr::Token(TestToken::new(TestSyntaxKind::Number, "1")),
+        Expr::token(TestToken::new(TestSyntaxKind::Number, "1")),
     );
 
     let grammar = builder.build().expect("valid grammar");

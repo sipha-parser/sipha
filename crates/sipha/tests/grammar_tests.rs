@@ -72,9 +72,9 @@ fn test_grammar_builder_choice() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 Expr::token(create_token(TestSyntaxKind::Number)),
-                Expr::Seq(vec![
+                Expr::seq(vec![
                     Expr::token(create_token(TestSyntaxKind::Number)),
                     Expr::token(create_token(TestSyntaxKind::Plus)),
                     Expr::token(create_token(TestSyntaxKind::Number)),
@@ -92,7 +92,7 @@ fn test_grammar_builder_optional() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Opt(Box::new(Expr::token(create_token(TestSyntaxKind::Number)))),
+            Expr::opt(Expr::token(create_token(TestSyntaxKind::Number))),
         )
         .build();
 
@@ -112,7 +112,7 @@ fn test_first_follow_conflict_detection() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Opt(Box::new(Expr::token(create_token(TestSyntaxKind::Number)))),
+            Expr::opt(Expr::token(create_token(TestSyntaxKind::Number))),
         )
         .build()
         .expect("Grammar should build");
@@ -135,12 +135,12 @@ fn test_grammar_builder_repeat() {
         .entry_point(TestNonTerminal::Expr)
         .rule(
             TestNonTerminal::Expr,
-            Expr::Repeat {
-                expr: Box::new(Expr::token(create_token(TestSyntaxKind::Number))),
-                min: 0,
-                max: None,
-                greedy: true,
-            },
+            Expr::repeat_with_greedy(
+                Expr::token(create_token(TestSyntaxKind::Number)),
+                0,
+                None,
+                true,
+            ),
         )
         .build();
 

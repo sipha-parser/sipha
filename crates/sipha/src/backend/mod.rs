@@ -78,7 +78,13 @@ pub mod glr;
 #[cfg(feature = "backend-peg")]
 pub mod peg;
 
+#[cfg(feature = "backend-pratt")]
+pub mod pratt;
+
 pub mod common;
+pub mod optimizer;
+pub mod pipeline;
+pub mod traits;
 
 /// Main parser backend trait
 pub trait ParserBackend<T, N>: Sized + Send
@@ -89,6 +95,8 @@ where
     type Config: Default + Clone;
     type Error: std::error::Error + Send + Sync + 'static;
     type State: Send + Sync;
+    /// Backend-specific grammar type (the transformed grammar representation)
+    type BackendGrammar: Send + Sync;
 
     /// Create parser from grammar
     ///
@@ -168,4 +176,5 @@ pub enum Algorithm {
     PEG,
     Packrat,
     Earley,
+    Pratt,
 }

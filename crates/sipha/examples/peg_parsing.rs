@@ -138,49 +138,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .entry_point(PegNonTerminal::Expr)
         .rule(
             PegNonTerminal::Expr,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 // Expr -> Expr + Term (lower precedence, tried first)
-                Expr::Seq(vec![
-                    Expr::Rule(PegNonTerminal::Expr),
+                Expr::seq(vec![
+                    Expr::rule(PegNonTerminal::Expr),
                     Expr::token(create_token(PegSyntaxKind::Plus, "+")),
-                    Expr::Rule(PegNonTerminal::Term),
+                    Expr::rule(PegNonTerminal::Term),
                 ]),
                 // Expr -> Expr - Term
-                Expr::Seq(vec![
-                    Expr::Rule(PegNonTerminal::Expr),
+                Expr::seq(vec![
+                    Expr::rule(PegNonTerminal::Expr),
                     Expr::token(create_token(PegSyntaxKind::Minus, "-")),
-                    Expr::Rule(PegNonTerminal::Term),
+                    Expr::rule(PegNonTerminal::Term),
                 ]),
                 // Expr -> Term (base case, tried last)
-                Expr::Rule(PegNonTerminal::Term),
+                Expr::rule(PegNonTerminal::Term),
             ]),
         )
         .rule(
             PegNonTerminal::Term,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 // Term -> Term * Factor (higher precedence)
-                Expr::Seq(vec![
-                    Expr::Rule(PegNonTerminal::Term),
+                Expr::seq(vec![
+                    Expr::rule(PegNonTerminal::Term),
                     Expr::token(create_token(PegSyntaxKind::Multiply, "*")),
-                    Expr::Rule(PegNonTerminal::Factor),
+                    Expr::rule(PegNonTerminal::Factor),
                 ]),
                 // Term -> Term / Factor
-                Expr::Seq(vec![
-                    Expr::Rule(PegNonTerminal::Term),
+                Expr::seq(vec![
+                    Expr::rule(PegNonTerminal::Term),
                     Expr::token(create_token(PegSyntaxKind::Divide, "/")),
-                    Expr::Rule(PegNonTerminal::Factor),
+                    Expr::rule(PegNonTerminal::Factor),
                 ]),
                 // Term -> Factor (base case)
-                Expr::Rule(PegNonTerminal::Factor),
+                Expr::rule(PegNonTerminal::Factor),
             ]),
         )
         .rule(
             PegNonTerminal::Factor,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 // Factor -> ( Expr )
-                Expr::Seq(vec![
+                Expr::seq(vec![
                     Expr::token(create_token(PegSyntaxKind::LParen, "(")),
-                    Expr::Rule(PegNonTerminal::Expr),
+                    Expr::rule(PegNonTerminal::Expr),
                     Expr::token(create_token(PegSyntaxKind::RParen, ")")),
                 ]),
                 // Factor -> Number
@@ -203,7 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokens.iter().map(|t| t.text.as_str()).collect::<Vec<_>>()
     );
 
-    // Step 4: Create PEG parser with memoization
+    // Step 4: Create PEG parser with memoization and optimization
     println!("4. Creating PEG parser with memoization (packrat parsing)...");
     let config = PegConfig {
         enable_memoization: true,
@@ -211,6 +211,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         error_recovery: true,
         max_errors: 100,
         max_backtrack_depth: 1000,
+        optimize: false, // Set to true to enable grammar optimization
+        optimization_level: sipha::grammar::hint::OptimizationLevel::None,
     };
     let parser = PegParser::new(&grammar, config)?;
     let mut incremental = IncrementalParser::new(parser);
@@ -269,10 +271,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("8. Comparing performance with/without memoization:");
     let config_with = PegConfig {
         enable_memoization: true,
+        optimize: false,
+        optimization_level: sipha::grammar::hint::OptimizationLevel::None,
         ..Default::default()
     };
     let config_without = PegConfig {
         enable_memoization: false,
+        optimize: false,
+        optimization_level: sipha::grammar::hint::OptimizationLevel::None,
         ..Default::default()
     };
 

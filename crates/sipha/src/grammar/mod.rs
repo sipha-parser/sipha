@@ -61,13 +61,13 @@
 //!
 //! let grammar = GrammarBuilder::new()
 //!     .entry_point(MyNonTerminal::Expr)
-//!     .rule(MyNonTerminal::Expr, Expr::Choice(vec![
-//!         Expr::Seq(vec![
-//!             Expr::Rule(MyNonTerminal::Term),
-//!             Expr::Token(MyToken::Plus),
-//!             Expr::Rule(MyNonTerminal::Expr),
+//!     .rule(MyNonTerminal::Expr, Expr::choice(vec![
+//!         Expr::seq(vec![
+//!             Expr::rule(MyNonTerminal::Term),
+//!             Expr::token(MyToken::Plus),
+//!             Expr::rule(MyNonTerminal::Expr),
 //!         ]),
-//!         Expr::Rule(MyNonTerminal::Term),
+//!         Expr::rule(MyNonTerminal::Term),
 //!     ]))
 //!     .build()?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
@@ -93,7 +93,9 @@
 pub mod analysis;
 pub mod builder;
 pub mod capture;
+pub mod core_expr;
 pub mod expr;
+pub mod extended_expr;
 pub mod hint;
 pub mod predicate;
 pub mod token_class;
@@ -105,7 +107,9 @@ pub mod docs;
 pub use analysis::*;
 pub use builder::*;
 pub use capture::*;
+pub use core_expr::{CoreExpr, TrailingSeparator};
 pub use expr::*;
+pub use extended_expr::ExtendedExpr;
 pub use hint::*;
 pub use predicate::*;
 pub use token_class::*;

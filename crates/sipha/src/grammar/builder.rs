@@ -1,5 +1,6 @@
 use crate::grammar::{
-    BackendHint, Expr, GrammarValidationOptions, NonTerminal, Token, validate_grammar_with_options,
+    BackendHint, CoreExpr, Expr, ExtendedExpr, GrammarValidationOptions, NonTerminal, Token,
+    validate_grammar_with_options,
 };
 use hashbrown::HashMap;
 use lasso::Rodeo;
@@ -43,7 +44,7 @@ use smallvec::SmallVec;
 /// # }
 /// let grammar = GrammarBuilder::<MyToken, MyNonTerminal>::new()
 ///     .entry_point(MyNonTerminal::Expr)
-///     .rule(MyNonTerminal::Expr, Expr::Empty)
+///     .rule(MyNonTerminal::Expr, Expr::empty())
 ///     .build()
 ///     .expect("Failed to build grammar");
 /// ```
@@ -187,7 +188,7 @@ where
     /// # }
     /// # let grammar = GrammarBuilder::<MyToken, MyNonTerminal>::new()
     /// #     .entry_point(MyNonTerminal::Expr)
-    /// #     .rule(MyNonTerminal::Expr, Expr::Empty)
+    /// #     .rule(MyNonTerminal::Expr, Expr::empty())
     /// #     .build()
     /// #     .unwrap();
     /// let markdown = grammar.to_markdown(&|t| format!("{t:?}"));
@@ -226,7 +227,7 @@ where
     /// # }
     /// # let grammar = GrammarBuilder::<MyToken, MyNonTerminal>::new()
     /// #     .entry_point(MyNonTerminal::Expr)
-    /// #     .rule(MyNonTerminal::Expr, Expr::Empty)
+    /// #     .rule(MyNonTerminal::Expr, Expr::empty())
     /// #     .build()
     /// #     .unwrap();
     /// let mut config = MarkdownConfig::default();
@@ -406,40 +407,44 @@ where
 
         fn collect_nonterminals<T: Token, N: NonTerminal>(expr: &Expr<T, N>, result: &mut Vec<N>) {
             match expr {
-                Expr::Rule(n) => {
+                ExtendedExpr::Core(CoreExpr::Rule(n)) => {
                     result.push(n.clone());
                 }
-                Expr::Seq(exprs) | Expr::Choice(exprs) => {
+                ExtendedExpr::Core(CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs)) => {
                     for e in exprs {
-                        collect_nonterminals(e, result);
+                        collect_nonterminals(&ExtendedExpr::Core(e.clone()), result);
                     }
                 }
-                Expr::Opt(e) | Expr::Repeat { expr: e, .. } => {
-                    collect_nonterminals(e, result);
+                ExtendedExpr::Core(CoreExpr::Opt(e) | CoreExpr::Repeat { expr: e, .. }) => {
+                    collect_nonterminals(&ExtendedExpr::Core(*e.clone()), result);
                 }
-                Expr::Separated {
+                ExtendedExpr::Core(CoreExpr::Separated {
                     item, separator, ..
-                } => {
-                    collect_nonterminals(item, result);
-                    collect_nonterminals(separator, result);
+                }) => {
+                    collect_nonterminals(&ExtendedExpr::Core(*item.clone()), result);
+                    collect_nonterminals(&ExtendedExpr::Core(*separator.clone()), result);
                 }
-                Expr::Delimited {
+                ExtendedExpr::Core(CoreExpr::Delimited {
                     open,
                     content,
                     close,
                     ..
-                } => {
-                    collect_nonterminals(open, result);
-                    collect_nonterminals(content, result);
-                    collect_nonterminals(close, result);
+                }) => {
+                    collect_nonterminals(&ExtendedExpr::Core(*open.clone()), result);
+                    collect_nonterminals(&ExtendedExpr::Core(*content.clone()), result);
+                    collect_nonterminals(&ExtendedExpr::Core(*close.clone()), result);
                 }
-                Expr::Label { expr, .. }
-                | Expr::Node { expr, .. }
-                | Expr::Flatten(expr)
-                | Expr::Prune(expr)
-                | Expr::Lookahead(expr)
-                | Expr::NotLookahead(expr)
-                | Expr::RecoveryPoint { expr, .. } => {
+                ExtendedExpr::Core(
+                    CoreExpr::Label { expr, .. }
+                    | CoreExpr::Node { expr, .. }
+                    | CoreExpr::Flatten(expr)
+                    | CoreExpr::Prune(expr),
+                ) => {
+                    collect_nonterminals(&ExtendedExpr::Core(*expr.clone()), result);
+                }
+                ExtendedExpr::Lookahead(expr)
+                | ExtendedExpr::NotLookahead(expr)
+                | ExtendedExpr::RecoveryPoint { expr, .. } => {
                     collect_nonterminals(expr, result);
                 }
                 _ => {}
@@ -447,46 +452,74 @@ where
         }
 
         match expr {
-            Expr::Seq(exprs) => {
-                process_sequence(self, exprs, lhs, follow_sets, changed);
+            ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
+                let extended_exprs: Vec<Expr<T, N>> = exprs
+                    .iter()
+                    .map(|e| ExtendedExpr::Core(e.clone()))
+                    .collect();
+                process_sequence(self, &extended_exprs, lhs, follow_sets, changed);
             }
-            Expr::Choice(exprs) => {
+            ExtendedExpr::Core(CoreExpr::Choice(exprs)) => {
                 for expr in exprs {
-                    self.update_follow_sets_for_expr(expr, lhs, follow_sets, changed);
+                    self.update_follow_sets_for_expr(
+                        &ExtendedExpr::Core(expr.clone()),
+                        lhs,
+                        follow_sets,
+                        changed,
+                    );
                 }
             }
-            Expr::Opt(expr)
-            | Expr::Repeat { expr, .. }
-            | Expr::Label { expr, .. }
-            | Expr::Node { expr, .. }
-            | Expr::Flatten(expr)
-            | Expr::Prune(expr)
-            | Expr::Lookahead(expr)
-            | Expr::NotLookahead(expr)
-            | Expr::RecoveryPoint { expr, .. } => {
+            ExtendedExpr::Core(
+                CoreExpr::Opt(expr)
+                | CoreExpr::Repeat { expr, .. }
+                | CoreExpr::Label { expr, .. }
+                | CoreExpr::Node { expr, .. }
+                | CoreExpr::Flatten(expr)
+                | CoreExpr::Prune(expr),
+            ) => {
+                self.update_follow_sets_for_expr(
+                    &ExtendedExpr::Core(*expr.clone()),
+                    lhs,
+                    follow_sets,
+                    changed,
+                );
+            }
+            ExtendedExpr::Lookahead(expr)
+            | ExtendedExpr::NotLookahead(expr)
+            | ExtendedExpr::RecoveryPoint { expr, .. } => {
                 self.update_follow_sets_for_expr(expr, lhs, follow_sets, changed);
             }
-            Expr::Separated {
+            ExtendedExpr::Core(CoreExpr::Separated {
                 item, separator, ..
-            } => {
+            }) => {
                 // Treat as sequence: item separator item separator ...
                 // For simplicity, process item and separator separately
-                self.update_follow_sets_for_expr(item, lhs, follow_sets, changed);
-                self.update_follow_sets_for_expr(separator, lhs, follow_sets, changed);
+                self.update_follow_sets_for_expr(
+                    &ExtendedExpr::Core(*item.clone()),
+                    lhs,
+                    follow_sets,
+                    changed,
+                );
+                self.update_follow_sets_for_expr(
+                    &ExtendedExpr::Core(*separator.clone()),
+                    lhs,
+                    follow_sets,
+                    changed,
+                );
             }
-            Expr::Delimited {
+            ExtendedExpr::Core(CoreExpr::Delimited {
                 open,
                 content,
                 close,
                 ..
-            } => {
+            }) => {
                 // Treat as sequence: open content close
                 process_sequence(
                     self,
                     &[
-                        open.as_ref().clone(),
-                        content.as_ref().clone(),
-                        close.as_ref().clone(),
+                        ExtendedExpr::Core(*open.clone()),
+                        ExtendedExpr::Core(*content.clone()),
+                        ExtendedExpr::Core(*close.clone()),
                     ],
                     lhs,
                     follow_sets,
@@ -612,7 +645,7 @@ where
     /// GrammarBuilder::<MyToken, MyNonTerminal>::new()
     ///     .rule_with_description(
     ///         MyNonTerminal::Expr,
-    ///         Expr::Empty,
+    ///         Expr::empty(),
     ///         "An expression rule".to_string(),
     ///     );
     /// ```

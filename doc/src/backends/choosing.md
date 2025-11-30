@@ -4,16 +4,17 @@ This guide helps you choose the right parsing backend for your use case.
 
 ## Quick Comparison
 
-| Feature | LL(k) | LR | GLR | PEG |
-|---------|-------|----|-----|-----|
-| Grammar compatibility | LL(k) | LR | Any | Most |
-| Ambiguity handling | No | No | Yes | No (ordered choice) |
-| Left recursion | With elimination | Yes | Yes | Yes |
-| Error recovery | Good | Excellent | Good | Good |
-| Incremental parsing | Yes | Yes | Yes | Yes |
-| Performance | Fast | Fast | Slower (ambiguous) | Fast (with memo) |
-| Memory usage | Small | Medium | Medium | Medium (with memo) |
-| Complexity | Low | Medium | High | Medium |
+| Feature | LL(k) | LR | GLR | PEG | Pratt |
+|---------|-------|----|-----|-----|-------|
+| Grammar compatibility | LL(k) | LR | Any | Most | Expression-focused |
+| Ambiguity handling | No | No | Yes | No (ordered choice) | No |
+| Left recursion | With elimination | Yes | Yes | Yes | Via precedence |
+| Error recovery | Good | Excellent | Good | Good | Good |
+| Incremental parsing | Yes | Yes | Yes | Yes | Yes |
+| Performance | Fast | Fast | Slower (ambiguous) | Fast (with memo) | Fast |
+| Memory usage | Small | Medium | Medium | Medium (with memo) | Small |
+| Complexity | Low | Medium | High | Medium | Low |
+| Operator precedence | Via grammar | Via grammar | Via grammar | Via ordering | Native |
 
 ## Decision Tree
 
@@ -23,11 +24,14 @@ flowchart TD
     Ambiguous -->|Yes| GLR[Use GLR Parser]
     Ambiguous -->|No| UseCase{Primary<br/>Use Case?}
     
-    UseCase -->|Expression Parser<br/>Precedence-based| PEG1[Use PEG Parser]
+    UseCase -->|Expression Parser<br/>Operator Precedence| Expression{Need Native<br/>Precedence?}
     UseCase -->|Interactive Tools<br/>IDEs/Editors| Interactive{Need<br/>Memoization?}
     UseCase -->|Batch Processing| LR[Use LR Parser]
     UseCase -->|Complex Language| GLR2[Use GLR Parser]
     UseCase -->|Simple Grammar| LL[Use LL Parser]
+    
+    Expression -->|Yes| Pratt[Use Pratt Parser]
+    Expression -->|No| PEG1[Use PEG Parser]
     
     Interactive -->|Yes| PEG2[Use PEG Parser]
     Interactive -->|No| LL2[Use LL Parser]
@@ -39,6 +43,7 @@ flowchart TD
     LL2 --> End
     PEG1 --> End
     PEG2 --> End
+    Pratt --> End
     
     style GLR fill:#ffccbc,color:#000000
     style GLR2 fill:#ffccbc,color:#000000
@@ -47,10 +52,11 @@ flowchart TD
     style LL2 fill:#c8e6c9,color:#000000
     style PEG1 fill:#e1bee7,color:#000000
     style PEG2 fill:#e1bee7,color:#000000
+    style Pratt fill:#b2dfdb,color:#000000
     style End fill:#e1f5ff,color:#000000
 ```
 
-### Step-by-Step Decision Process
+## Step-by-Step Decision Process
 
 ### 1. Is your grammar ambiguous?
 
@@ -59,11 +65,16 @@ flowchart TD
 
 ### 2. What's your primary use case?
 
-- **Expression parser / Precedence-based** → Use **PEG** (natural ordered choice)
+- **Expression parser / Operator precedence** → Continue to step 2a
 - **Interactive tools (IDEs, editors)** → Continue to step 3
 - **Batch parsing** → Use **LR** (efficient, good error recovery)
 - **Complex language (C++, etc.)** → Use **GLR** (handles ambiguities)
 - **Simple grammar** → Use **LL(k)** (simplest)
+
+### 2a. For Expression Parsers: Need native precedence?
+
+- **Yes** → Use **Pratt** (native operator precedence parsing)
+- **No** → Use **PEG** (natural ordered choice for precedence)
 
 ### 3. For Interactive Tools: Need memoization?
 
@@ -76,14 +87,23 @@ flowchart TD
 
 **Grammar**: Arithmetic expressions with precedence (e.g., `1 + 2 * 3`)
 
-**Recommendation**: **PEG** or **LL(k)** with left-recursion elimination
+**Recommendation**: **Pratt** (best), **PEG**, or **LL(k)** with left-recursion elimination
 
 **Reasoning**:
 - Grammar is unambiguous
+- **Pratt parser provides native operator precedence** - no grammar transformations needed
 - **PEG's ordered choice makes precedence natural** - lower precedence operators tried first
-- Left recursion can be eliminated (LL) or handled (PEG)
+- Left recursion can be eliminated (LL) or handled (PEG/Pratt)
 - Simple and fast
 - Good for interactive tools
+
+**Pratt Grammar Example**:
+```rust,ignore
+// Precedence: + (10) < * (20) < ( ) (30)
+Expr -> PrattOperator(Term, precedence: 10, left)  // + and -
+Term -> PrattOperator(Factor, precedence: 20, left)  // * and /
+Factor -> ( Expr ) | Number
+```
 
 **PEG Grammar Example**:
 ```rust,ignore
@@ -94,6 +114,7 @@ Term -> Term * Factor | Factor  // * tried later (higher precedence)
 Factor -> ( Expr ) | Number     // () tried last (highest precedence)
 ```
 
+**Why Pratt works best**: Native precedence handling with explicit precedence levels and associativity.
 **Why PEG works well**: The ordering naturally expresses precedence without needing precedence tables.
 
 ### Scenario 2: Language Server
@@ -184,6 +205,13 @@ Factor -> ( Expr ) | Number     // () tried last (highest precedence)
 - **Left recursion**: Detected and handled (may require restructuring)
 - **Ordered choice**: Resolves ambiguity automatically
 - **Best for**: Precedence-based expressions, structured data, interactive tools
+
+### Pratt Compatible
+
+- **Expression-focused grammars**: Ideal for operator-heavy languages
+- **Operator precedence**: Native support via `PrattOperator` expressions
+- **Left recursion**: Handled via precedence levels
+- **Best for**: Expression parsing, operator precedence, mathematical languages
 
 **Writing PEG Grammars**:
 - Order alternatives from **most specific to least specific**
@@ -297,5 +325,6 @@ Term -> Term * Factor | Factor  // * tried later (higher precedence)
   - [LR Parser](lr-parser.md)
   - [GLR Parser](glr-parser.md)
   - [PEG Parser](peg-parser.md)
+  - [Pratt Parser](pratt-parser.md)
 - Check [Examples](../examples/) for real-world usage
 
