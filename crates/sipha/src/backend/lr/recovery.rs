@@ -38,12 +38,12 @@ where
         match error {
             ParseError::UnexpectedToken { expected, .. } => {
                 // Try to skip tokens until we find an expected one
-                if !expected.is_empty() {
+                if expected.is_empty() {
+                    Ok(RecoveryAction::SkipToken)
+                } else {
                     Ok(RecoveryAction::SkipToSyncPoint {
                         tokens: vec![], // Would need to convert expected strings to tokens
                     })
-                } else {
-                    Ok(RecoveryAction::SkipToken)
                 }
             }
             ParseError::UnexpectedEof {

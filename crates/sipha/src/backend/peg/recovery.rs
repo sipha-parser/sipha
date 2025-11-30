@@ -37,13 +37,13 @@ where
         match error {
             ParseError::UnexpectedToken { expected, .. } => {
                 // Try to skip tokens until we find an expected one
-                if !expected.is_empty() {
+                if expected.is_empty() {
+                    // Backtrack and try alternative
+                    Ok(RecoveryAction::Backtrack)
+                } else {
                     Ok(RecoveryAction::SkipToSyncPoint {
                         tokens: vec![], // Would need to convert expected strings to tokens
                     })
-                } else {
-                    // Backtrack and try alternative
-                    Ok(RecoveryAction::Backtrack)
                 }
             }
             ParseError::UnexpectedEof {

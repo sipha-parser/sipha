@@ -56,15 +56,14 @@ impl std::fmt::Display for TransformError {
             Self::UnsupportedFeature { feature, backend } => {
                 write!(
                     f,
-                    "Feature '{}' is not supported by {} backend",
-                    feature, backend
+                    "Feature '{feature}' is not supported by {backend} backend"
                 )
             }
             Self::TransformationFailed { reason } => {
-                write!(f, "Transformation failed: {}", reason)
+                write!(f, "Transformation failed: {reason}")
             }
             Self::ValidationError(msg) => {
-                write!(f, "Validation error: {}", msg)
+                write!(f, "Validation error: {msg}")
             }
         }
     }
@@ -106,7 +105,7 @@ where
 
 /// Optimization level for grammar optimizations
 ///
-/// Re-exported from grammar::hint for convenience
+/// Re-exported from `grammar::hint` for convenience
 pub use crate::grammar::hint::OptimizationLevel;
 
 /// Capabilities of a grammar optimizer
@@ -137,7 +136,7 @@ impl std::fmt::Display for OptimizeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::OptimizationFailed(reason) => {
-                write!(f, "Optimization failed: {}", reason)
+                write!(f, "Optimization failed: {reason}")
             }
             Self::InvalidLevel => {
                 write!(f, "Invalid optimization level")
@@ -198,12 +197,11 @@ impl<T: std::fmt::Debug> std::fmt::Debug for RecoveryAction<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SkipToken => write!(f, "RecoveryAction::SkipToken"),
-            Self::InsertToken(token) => write!(f, "RecoveryAction::InsertToken({:?})", token),
+            Self::InsertToken(token) => write!(f, "RecoveryAction::InsertToken({token:?})"),
             Self::SkipToSyncPoint { tokens } => {
                 write!(
                     f,
-                    "RecoveryAction::SkipToSyncPoint {{ tokens: {:?} }}",
-                    tokens
+                    "RecoveryAction::SkipToSyncPoint {{ tokens: {tokens:?} }}"
                 )
             }
             Self::DeleteUntil { .. } => {
@@ -212,8 +210,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for RecoveryAction<T> {
             Self::InsertExpected { expected } => {
                 write!(
                     f,
-                    "RecoveryAction::InsertExpected {{ expected: {:?} }}",
-                    expected
+                    "RecoveryAction::InsertExpected {{ expected: {expected:?} }}"
                 )
             }
             Self::Backtrack => write!(f, "RecoveryAction::Backtrack"),

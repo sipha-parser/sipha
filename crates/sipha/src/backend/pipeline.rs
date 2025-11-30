@@ -64,6 +64,7 @@ impl GrammarTransformPipeline {
     /// 1. Validate the grammar
     /// 2. Transform to backend-specific format
     /// 3. Optimize the backend grammar (if enabled in config)
+    #[allow(clippy::needless_pass_by_value)] // Optimizers are typically zero-sized types
     pub fn transform_with_optimizer<T, N, Transformer, Optimizer>(
         grammar: &Grammar<T, N>,
         config: &TransformConfig,
@@ -83,7 +84,7 @@ impl GrammarTransformPipeline {
             backend_grammar = optimizer
                 .optimize(&backend_grammar, config.optimization_level)
                 .map_err(|e| TransformError::TransformationFailed {
-                    reason: format!("Optimization failed: {}", e),
+                    reason: format!("Optimization failed: {e}"),
                 })?;
         }
 
@@ -125,7 +126,7 @@ impl GrammarTransformPipeline {
                     Ok(None) => {
                         // Expression should be rejected
                         return Err(TransformError::UnsupportedFeature {
-                            feature: format!("{:?}", rule.rhs),
+                            feature: format!("{rule:?}", rule = rule.rhs),
                             backend: "unknown".to_string(),
                         });
                     }
@@ -140,7 +141,7 @@ impl GrammarTransformPipeline {
         builder
             .build()
             .map_err(|e| TransformError::TransformationFailed {
-                reason: format!("Failed to build normalized grammar: {:?}", e),
+                reason: format!("Failed to build normalized grammar: {e:?}"),
             })
     }
 }

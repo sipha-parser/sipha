@@ -60,6 +60,7 @@ where
 
 impl PegOptimizer {
     /// Optimize the memoization table
+    #[allow(clippy::unnecessary_wraps)] // Required by trait
     fn optimize_memo_table<T, N>(
         grammar: &PegGrammar<T, N>,
     ) -> Result<PegGrammar<T, N>, OptimizeError>
@@ -79,6 +80,7 @@ impl PegOptimizer {
     }
 
     /// Optimize left recursion handling
+    #[allow(clippy::unnecessary_wraps)] // Required by trait
     fn optimize_left_recursion<T, N>(
         grammar: &PegGrammar<T, N>,
     ) -> Result<PegGrammar<T, N>, OptimizeError>

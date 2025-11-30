@@ -1,6 +1,6 @@
 //! GLR grammar transformer
 //!
-//! Transforms ExtendedExpr grammars into GlrGrammar format suitable for GLR parsing.
+//! Transforms `ExtendedExpr` grammars into `GlrGrammar` format suitable for GLR parsing.
 //! Since GLR extends LR, we can reuse the LR transformer.
 
 use crate::backend::glr::grammar::GlrGrammar;

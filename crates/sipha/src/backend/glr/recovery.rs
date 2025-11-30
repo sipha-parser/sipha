@@ -39,13 +39,13 @@ where
             ParseError::UnexpectedToken { expected, .. } => {
                 // Try to skip tokens until we find an expected one
                 // GLR can try this on multiple stacks
-                if !expected.is_empty() {
+                if expected.is_empty() {
+                    // Skip token and let GLR prune stacks naturally
+                    Ok(RecoveryAction::SkipToken)
+                } else {
                     Ok(RecoveryAction::SkipToSyncPoint {
                         tokens: vec![], // Would need to convert expected strings to tokens
                     })
-                } else {
-                    // Skip token and let GLR prune stacks naturally
-                    Ok(RecoveryAction::SkipToken)
                 }
             }
             ParseError::UnexpectedEof {

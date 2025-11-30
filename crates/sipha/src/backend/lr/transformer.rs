@@ -1,6 +1,6 @@
 //! LR grammar transformer
 //!
-//! Transforms ExtendedExpr grammars into LrGrammar format suitable for LR parsing.
+//! Transforms `ExtendedExpr` grammars into `LrGrammar` format suitable for LR parsing.
 
 use crate::backend::lr::grammar::LrGrammar;
 use crate::backend::lr::table::LrParsingTable;
@@ -29,12 +29,11 @@ where
         let use_lalr = config
             .backend_options
             .get("use_lalr")
-            .map(|s| s == "true")
-            .unwrap_or(true);
+            .map_or(true, |s| s == "true");
 
         let table = LrParsingTable::new(&normalized_grammar, use_lalr).map_err(|e| {
             TransformError::TransformationFailed {
-                reason: format!("Failed to build LR table: {}", e),
+                reason: format!("Failed to build LR table: {e}"),
             }
         })?;
 
@@ -87,7 +86,7 @@ where
 
     fn transform_expr(
         expr: &Expr<T, N>,
-        _grammar: &Grammar<T, N>,
+        grammar: &Grammar<T, N>,
     ) -> Result<Option<CoreExpr<T, N>>, TransformError> {
         match expr {
             ExtendedExpr::Core(core) => Ok(Some(core.clone())),
@@ -115,7 +114,7 @@ where
             }),
             ExtendedExpr::RecoveryPoint { expr, .. } => {
                 // Strip recovery point wrapper, keep inner expression
-                Self::transform_expr(expr, _grammar)
+                Self::transform_expr(expr, grammar)
             }
             #[cfg(feature = "backend-peg")]
             ExtendedExpr::Cut(_) => Err(TransformError::UnsupportedFeature {
@@ -132,7 +131,7 @@ where
 }
 
 impl LrTransformer {
-    /// Normalize grammar by converting ExtendedExpr to CoreExpr
+    /// Normalize grammar by converting `ExtendedExpr` to `CoreExpr`
     fn normalize_grammar<T, N>(grammar: &Grammar<T, N>) -> Result<Grammar<T, N>, TransformError>
     where
         T: Token + Clone,
@@ -150,7 +149,7 @@ impl LrTransformer {
         builder
             .build()
             .map_err(|e| TransformError::TransformationFailed {
-                reason: format!("Failed to build normalized grammar: {:?}", e),
+                reason: format!("Failed to build normalized grammar: {e:?}"),
             })
     }
 
@@ -173,7 +172,7 @@ impl LrTransformer {
                 // Try to transform
                 Self::transform_expr(expr, grammar)?.ok_or_else(|| {
                     TransformError::TransformationFailed {
-                        reason: format!("Cannot transform expression: {:?}", expr),
+                        reason: format!("Cannot transform expression: {expr:?}"),
                     }
                 })
             }

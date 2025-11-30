@@ -1,8 +1,9 @@
 //! LL grammar transformer
 //!
-//! Transforms ExtendedExpr grammars into LlGrammar format suitable for LL parsing.
+//! Transforms `ExtendedExpr` grammars into `LlGrammar` format suitable for LL parsing.
 
 use crate::backend::ll::grammar::LlGrammar;
+use crate::backend::ll::table::ParsingTable;
 use crate::backend::traits::{GrammarTransformer, TransformConfig, TransformError};
 use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use hashbrown::HashMap;
@@ -26,7 +27,6 @@ where
         let normalized_grammar = Self::normalize_grammar(grammar)?;
 
         // Build LL parsing table using ParsingTable::new
-        use crate::backend::ll::table::ParsingTable;
         let lookahead_k = config
             .backend_options
             .get("lookahead_k")
@@ -35,7 +35,7 @@ where
 
         let table = ParsingTable::new(&normalized_grammar, lookahead_k).map_err(|e| {
             TransformError::TransformationFailed {
-                reason: format!("Failed to build LL table: {}", e),
+                reason: format!("Failed to build LL table: {e}"),
             }
         })?;
 
@@ -86,7 +86,7 @@ where
 
     fn transform_expr(
         expr: &Expr<T, N>,
-        _grammar: &Grammar<T, N>,
+        grammar: &Grammar<T, N>,
     ) -> Result<Option<CoreExpr<T, N>>, TransformError> {
         match expr {
             ExtendedExpr::Core(core) => Ok(Some(core.clone())),
@@ -114,7 +114,7 @@ where
             }),
             ExtendedExpr::RecoveryPoint { expr, .. } => {
                 // Strip recovery point wrapper
-                Self::transform_expr(expr, _grammar)
+                Self::transform_expr(expr, grammar)
             }
             #[cfg(feature = "backend-peg")]
             ExtendedExpr::Cut(_) => Err(TransformError::UnsupportedFeature {
@@ -133,17 +133,14 @@ where
 impl LlTransformer {
     /// Build LL parsing table
     #[allow(dead_code)] // May be used in future optimizations
-    fn build_ll_table<T, N>(
-        grammar: &Grammar<T, N>,
-    ) -> Result<HashMap<(N, T), usize>, TransformError>
+    fn build_ll_table<T, N>(grammar: &Grammar<T, N>) -> HashMap<(N, T), usize>
     where
         T: Token + Clone,
         N: NonTerminal + Clone,
     {
         let mut table = HashMap::new();
-        let mut production_index = 0;
 
-        for (lhs, rule) in grammar.rules() {
+        for (production_index, (lhs, rule)) in grammar.rules().enumerate() {
             // For LL parsing, we need to determine which production to use
             // based on the lookahead token. This is a simplified implementation.
             // In a full implementation, we would:
@@ -157,13 +154,12 @@ impl LlTransformer {
             for token in first_set {
                 table.insert((lhs.clone(), token), production_index);
             }
-            production_index += 1;
         }
 
-        Ok(table)
+        table
     }
 
-    /// Normalize grammar by converting ExtendedExpr to CoreExpr
+    /// Normalize grammar by converting `ExtendedExpr` to `CoreExpr`
     fn normalize_grammar<T, N>(grammar: &Grammar<T, N>) -> Result<Grammar<T, N>, TransformError>
     where
         T: Token + Clone,
@@ -181,7 +177,7 @@ impl LlTransformer {
         builder
             .build()
             .map_err(|e| TransformError::TransformationFailed {
-                reason: format!("Failed to build normalized grammar: {:?}", e),
+                reason: format!("Failed to build normalized grammar: {e:?}"),
             })
     }
 
@@ -204,7 +200,7 @@ impl LlTransformer {
                 // Try to transform
                 Self::transform_expr(expr, grammar)?.ok_or_else(|| {
                     TransformError::TransformationFailed {
-                        reason: format!("Cannot transform expression: {:?}", expr),
+                        reason: format!("Cannot transform expression: {expr:?}"),
                     }
                 })
             }

@@ -56,6 +56,7 @@ where
 
 impl PrattOptimizer {
     /// Optimize the operator precedence table
+    #[allow(clippy::unnecessary_wraps)] // Required by trait
     fn optimize_operators<T, N>(
         grammar: &PrattGrammar<T, N>,
     ) -> Result<PrattGrammar<T, N>, OptimizeError>
@@ -72,6 +73,7 @@ impl PrattOptimizer {
     }
 
     /// Flatten nested expressions
+    #[allow(clippy::unnecessary_wraps)] // Required by trait
     fn flatten_expressions<T, N>(
         grammar: &PrattGrammar<T, N>,
     ) -> Result<PrattGrammar<T, N>, OptimizeError>

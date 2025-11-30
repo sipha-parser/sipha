@@ -145,6 +145,7 @@ impl UniversalOptimizer {
     }
 
     /// Eliminate common subexpressions
+    #[allow(clippy::unnecessary_wraps)] // May return errors in future implementation
     fn eliminate_common_subexpressions<T, N>(
         grammar: &Grammar<T, N>,
     ) -> Result<Grammar<T, N>, OptimizeError>

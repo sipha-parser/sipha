@@ -1,6 +1,6 @@
 //! PEG grammar transformer
 //!
-//! Transforms ExtendedExpr grammars into PegGrammar format suitable for PEG parsing.
+//! Transforms `ExtendedExpr` grammars into `PegGrammar` format suitable for PEG parsing.
 
 use crate::backend::peg::grammar::PegGrammar;
 use crate::backend::traits::{GrammarTransformer, TransformConfig, TransformError};
@@ -45,7 +45,7 @@ where
 
     fn transform_expr(
         expr: &Expr<T, N>,
-        _grammar: &Grammar<T, N>,
+        grammar: &Grammar<T, N>,
     ) -> Result<Option<CoreExpr<T, N>>, TransformError> {
         match expr {
             ExtendedExpr::Core(core) => Ok(Some(core.clone())),
@@ -73,7 +73,7 @@ where
             }),
             ExtendedExpr::RecoveryPoint { expr, .. } => {
                 // Strip recovery point wrapper, keep inner expression
-                Self::transform_expr(expr, _grammar)
+                Self::transform_expr(expr, grammar)
             }
             #[cfg(feature = "backend-peg")]
             ExtendedExpr::Cut(_) => {
