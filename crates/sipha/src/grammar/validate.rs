@@ -1,4 +1,4 @@
-use crate::grammar::{Expr, GrammarError, NonTerminal, Token};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, GrammarError, NonTerminal, Token};
 use hashbrown::HashSet;
 
 /// Options that control grammar validation behavior.
@@ -54,7 +54,8 @@ where
 
 fn detect_left_recursion<T, N>(rules: &[crate::grammar::Rule<T, N>]) -> Option<Vec<Vec<N>>>
 where
-    N: NonTerminal,
+    T: Clone,
+    N: NonTerminal + Clone,
 {
     // Simple left recursion detection
     // In a full implementation, this would be more sophisticated
@@ -73,20 +74,22 @@ where
     }
 }
 
-fn is_directly_left_recursive<T, N: PartialEq>(expr: &Expr<T, N>, lhs: &N) -> bool {
+fn is_directly_left_recursive<T: Clone, N: PartialEq + Clone>(expr: &Expr<T, N>, lhs: &N) -> bool {
     match expr {
-        Expr::Rule(n) => n == lhs,
-        Expr::Seq(exprs) => exprs
+        ExtendedExpr::Core(CoreExpr::Rule(n)) => n == lhs,
+        ExtendedExpr::Core(CoreExpr::Seq(exprs)) => exprs
             .first()
-            .is_some_and(|e| is_directly_left_recursive(e, lhs)),
-        Expr::Choice(exprs) => exprs.iter().any(|e| is_directly_left_recursive(e, lhs)),
-        Expr::Opt(e)
-        | Expr::Repeat {
-            expr: e, greedy: _, ..
+            .is_some_and(|e| is_directly_left_recursive(&ExtendedExpr::Core(e.clone()), lhs)),
+        ExtendedExpr::Core(CoreExpr::Choice(exprs)) => exprs
+            .iter()
+            .any(|e| is_directly_left_recursive(&ExtendedExpr::Core(e.clone()), lhs)),
+        ExtendedExpr::Core(CoreExpr::Opt(e) | CoreExpr::Repeat { expr: e, .. }) => {
+            is_directly_left_recursive(&ExtendedExpr::Core((**e).clone()), lhs)
         }
-        | Expr::Cut(e)
-        | Expr::SemanticPredicate { expr: e, .. } => is_directly_left_recursive(e, lhs),
-        Expr::Conditional {
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(e) => is_directly_left_recursive(e, lhs),
+        ExtendedExpr::SemanticPredicate { expr: e, .. } => is_directly_left_recursive(e, lhs),
+        ExtendedExpr::Conditional {
             condition,
             then_expr,
             else_expr,
@@ -106,28 +109,31 @@ fn check_undefined_rules<T, N>(
     defined: &HashSet<&N>,
 ) -> Result<(), GrammarError<T, N>>
 where
-    N: NonTerminal,
+    T: Clone,
+    N: NonTerminal + Clone,
 {
     match expr {
-        Expr::Rule(n) => {
+        ExtendedExpr::Core(CoreExpr::Rule(n)) => {
             if !defined.contains(n) {
                 return Err(GrammarError::UndefinedRule(n.clone()));
             }
         }
-        Expr::Seq(exprs) | Expr::Choice(exprs) => {
+        ExtendedExpr::Core(CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs)) => {
             for e in exprs {
-                check_undefined_rules(e, defined)?;
+                check_undefined_rules(&ExtendedExpr::Core(e.clone()), defined)?;
             }
         }
-        Expr::Opt(e)
-        | Expr::Repeat {
-            expr: e, greedy: _, ..
+        ExtendedExpr::Core(CoreExpr::Opt(e) | CoreExpr::Repeat { expr: e, .. }) => {
+            check_undefined_rules(&ExtendedExpr::Core((**e).clone()), defined)?;
         }
-        | Expr::Cut(e)
-        | Expr::SemanticPredicate { expr: e, .. } => {
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(e) => {
             check_undefined_rules(e, defined)?;
         }
-        Expr::Conditional {
+        ExtendedExpr::SemanticPredicate { expr: e, .. } => {
+            check_undefined_rules(e, defined)?;
+        }
+        ExtendedExpr::Conditional {
             condition,
             then_expr,
             else_expr,
@@ -139,29 +145,33 @@ where
             }
         }
         // TokenClass and Backreference don't contain rule references
-        Expr::Separated {
+        ExtendedExpr::Core(CoreExpr::Separated {
             item, separator, ..
-        } => {
-            check_undefined_rules(item, defined)?;
-            check_undefined_rules(separator, defined)?;
+        }) => {
+            check_undefined_rules(&ExtendedExpr::Core((**item).clone()), defined)?;
+            check_undefined_rules(&ExtendedExpr::Core((**separator).clone()), defined)?;
         }
-        Expr::Delimited {
+        ExtendedExpr::Core(CoreExpr::Delimited {
             open,
             content,
             close,
             ..
-        } => {
-            check_undefined_rules(open, defined)?;
-            check_undefined_rules(content, defined)?;
-            check_undefined_rules(close, defined)?;
+        }) => {
+            check_undefined_rules(&ExtendedExpr::Core((**open).clone()), defined)?;
+            check_undefined_rules(&ExtendedExpr::Core((**content).clone()), defined)?;
+            check_undefined_rules(&ExtendedExpr::Core((**close).clone()), defined)?;
         }
-        Expr::Label { expr, .. }
-        | Expr::Node { expr, .. }
-        | Expr::Flatten(expr)
-        | Expr::Prune(expr)
-        | Expr::Lookahead(expr)
-        | Expr::NotLookahead(expr)
-        | Expr::RecoveryPoint { expr, .. } => {
+        ExtendedExpr::Core(
+            CoreExpr::Label { expr, .. }
+            | CoreExpr::Node { expr, .. }
+            | CoreExpr::Flatten(expr)
+            | CoreExpr::Prune(expr),
+        ) => {
+            check_undefined_rules(&ExtendedExpr::Core((**expr).clone()), defined)?;
+        }
+        ExtendedExpr::Lookahead(expr)
+        | ExtendedExpr::NotLookahead(expr)
+        | ExtendedExpr::RecoveryPoint { expr, .. } => {
             check_undefined_rules(expr, defined)?;
         }
         _ => {}

@@ -8,7 +8,7 @@
 //! - Detecting potential issues and optimization opportunities
 //! - Providing suggestions for grammar improvements
 
-use crate::grammar::{Expr, Grammar, NonTerminal, Token};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use hashbrown::HashSet;
 
 /// Metrics about a grammar's complexity
@@ -94,52 +94,64 @@ impl GrammarMetrics {
         N: NonTerminal,
     {
         match expr {
-            Expr::Choice(alternatives) => {
+            ExtendedExpr::Core(CoreExpr::Choice(alternatives)) => {
                 let mut max_depth = depth;
+                let alt_count = alternatives.len();
                 for alt in alternatives {
-                    let (d, _) = Self::analyze_expr(alt, grammar, depth + 1);
+                    let (d, _) =
+                        Self::analyze_expr(&ExtendedExpr::Core(alt.clone()), grammar, depth + 1);
                     max_depth = max_depth.max(d);
                 }
-                (max_depth, alternatives.len())
+                (max_depth, alt_count)
             }
-            Expr::Seq(exprs) => {
+            ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
                 let mut max_depth = depth;
                 for e in exprs {
-                    let (d, _) = Self::analyze_expr(e, grammar, depth + 1);
+                    let (d, _) =
+                        Self::analyze_expr(&ExtendedExpr::Core(e.clone()), grammar, depth + 1);
                     max_depth = max_depth.max(d);
                 }
                 (max_depth, 0)
             }
-            Expr::Rule(n) => grammar.get_rule(n).map_or((depth, 0), |rule| {
-                Self::analyze_expr(&rule.rhs, grammar, depth + 1)
-            }),
-            Expr::Opt(inner)
-            | Expr::Repeat { expr: inner, .. }
-            | Expr::Label { expr: inner, .. }
-            | Expr::Node { expr: inner, .. }
-            | Expr::Flatten(inner)
-            | Expr::Prune(inner)
-            | Expr::Lookahead(inner)
-            | Expr::NotLookahead(inner)
-            | Expr::RecoveryPoint { expr: inner, .. } => {
+            ExtendedExpr::Core(CoreExpr::Rule(n)) => {
+                grammar.get_rule(n).map_or((depth, 0), |rule| {
+                    Self::analyze_expr(&rule.rhs, grammar, depth + 1)
+                })
+            }
+            ExtendedExpr::Core(
+                CoreExpr::Opt(inner)
+                | CoreExpr::Repeat { expr: inner, .. }
+                | CoreExpr::Label { expr: inner, .. }
+                | CoreExpr::Node { expr: inner, .. }
+                | CoreExpr::Flatten(inner)
+                | CoreExpr::Prune(inner),
+            ) => Self::analyze_expr(&ExtendedExpr::Core(*inner.clone()), grammar, depth + 1),
+            ExtendedExpr::Lookahead(inner)
+            | ExtendedExpr::NotLookahead(inner)
+            | ExtendedExpr::RecoveryPoint { expr: inner, .. } => {
                 Self::analyze_expr(inner, grammar, depth + 1)
             }
-            Expr::Delimited {
+            ExtendedExpr::Core(CoreExpr::Delimited {
                 open,
                 content,
                 close,
                 ..
-            } => {
-                let (d1, _) = Self::analyze_expr(open, grammar, depth + 1);
-                let (d2, _) = Self::analyze_expr(content, grammar, depth + 1);
-                let (d3, _) = Self::analyze_expr(close, grammar, depth + 1);
+            }) => {
+                let (d1, _) =
+                    Self::analyze_expr(&ExtendedExpr::Core(*open.clone()), grammar, depth + 1);
+                let (d2, _) =
+                    Self::analyze_expr(&ExtendedExpr::Core(*content.clone()), grammar, depth + 1);
+                let (d3, _) =
+                    Self::analyze_expr(&ExtendedExpr::Core(*close.clone()), grammar, depth + 1);
                 (d1.max(d2).max(d3), 0)
             }
-            Expr::Separated {
+            ExtendedExpr::Core(CoreExpr::Separated {
                 item, separator, ..
-            } => {
-                let (d1, _) = Self::analyze_expr(item, grammar, depth + 1);
-                let (d2, _) = Self::analyze_expr(separator, grammar, depth + 1);
+            }) => {
+                let (d1, _) =
+                    Self::analyze_expr(&ExtendedExpr::Core(*item.clone()), grammar, depth + 1);
+                let (d2, _) =
+                    Self::analyze_expr(&ExtendedExpr::Core(*separator.clone()), grammar, depth + 1);
                 (d1.max(d2), 0)
             }
             _ => (depth, 0),
@@ -161,7 +173,7 @@ impl GrammarMetrics {
         }
 
         match expr {
-            Expr::Rule(n) => {
+            ExtendedExpr::Core(CoreExpr::Rule(n)) => {
                 if n == start {
                     return true; // Direct left recursion
                 }
@@ -169,21 +181,36 @@ impl GrammarMetrics {
                     .get_rule(n)
                     .is_some_and(|rule| Self::is_left_recursive(grammar, start, &rule.rhs, visited))
             }
-            Expr::Seq(exprs) => {
+            ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
                 // Check if first element can start with the non-terminal
-                exprs
-                    .first()
-                    .is_some_and(|first| Self::is_left_recursive(grammar, start, first, visited))
+                exprs.first().is_some_and(|first| {
+                    Self::is_left_recursive(
+                        grammar,
+                        start,
+                        &ExtendedExpr::Core(first.clone()),
+                        visited,
+                    )
+                })
             }
-            Expr::Choice(alternatives) => {
+            ExtendedExpr::Core(CoreExpr::Choice(alternatives)) => {
                 // Left recursive if any alternative is left recursive
-                alternatives
-                    .iter()
-                    .any(|alt| Self::is_left_recursive(grammar, start, alt, visited))
+                alternatives.iter().any(|alt| {
+                    Self::is_left_recursive(
+                        grammar,
+                        start,
+                        &ExtendedExpr::Core(alt.clone()),
+                        visited,
+                    )
+                })
             }
-            Expr::Opt(inner) | Expr::Repeat { expr: inner, .. } => {
+            ExtendedExpr::Core(CoreExpr::Opt(inner) | CoreExpr::Repeat { expr: inner, .. }) => {
                 // Optional/repeat can be empty, so check if inner is left recursive
-                Self::is_left_recursive(grammar, start, inner, visited)
+                Self::is_left_recursive(
+                    grammar,
+                    start,
+                    &ExtendedExpr::Core(*inner.clone()),
+                    visited,
+                )
             }
             _ => false,
         }
@@ -263,7 +290,7 @@ where
 
     // Check for rules with many alternatives
     for (nt, rule) in grammar.rules() {
-        if let Expr::Choice(alternatives) = &rule.rhs
+        if let ExtendedExpr::Core(CoreExpr::Choice(alternatives)) = &rule.rhs
             && alternatives.len() > 8
         {
             suggestions.push(OptimizationSuggestion {

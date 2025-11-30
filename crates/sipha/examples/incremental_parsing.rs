@@ -87,17 +87,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .entry_point(IncrementalNonTerminal::Expr)
         .rule(
             IncrementalNonTerminal::Expr,
-            Expr::Choice(vec![
+            Expr::choice(vec![
                 Expr::token(create_token(IncrementalSyntaxKind::Number, "1")),
-                Expr::Seq(vec![
-                    Expr::Rule(IncrementalNonTerminal::Expr),
+                Expr::seq(vec![
+                    Expr::rule(IncrementalNonTerminal::Expr),
                     Expr::token(create_token(IncrementalSyntaxKind::Plus, "+")),
-                    Expr::Rule(IncrementalNonTerminal::Expr),
+                    Expr::rule(IncrementalNonTerminal::Expr),
                 ]),
-                Expr::Seq(vec![
-                    Expr::Rule(IncrementalNonTerminal::Expr),
+                Expr::seq(vec![
+                    Expr::rule(IncrementalNonTerminal::Expr),
                     Expr::token(create_token(IncrementalSyntaxKind::Minus, "-")),
-                    Expr::Rule(IncrementalNonTerminal::Expr),
+                    Expr::rule(IncrementalNonTerminal::Expr),
                 ]),
             ]),
         )

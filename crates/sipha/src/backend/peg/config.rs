@@ -40,6 +40,12 @@ pub struct PegConfig {
 
     /// Maximum depth for backtracking (prevents infinite loops)
     pub max_backtrack_depth: usize,
+
+    /// Enable optimizations during transformation
+    pub optimize: bool,
+
+    /// Optimization level for grammar transformation
+    pub optimization_level: crate::grammar::hint::OptimizationLevel,
 }
 
 impl Default for PegConfig {
@@ -50,6 +56,8 @@ impl Default for PegConfig {
             error_recovery: true,
             max_errors: 100,
             max_backtrack_depth: 1000,
+            optimize: false,
+            optimization_level: crate::grammar::hint::OptimizationLevel::None,
         }
     }
 }

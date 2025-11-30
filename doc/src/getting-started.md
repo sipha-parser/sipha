@@ -288,6 +288,8 @@ Sipha supports multiple parsing algorithms:
 - **LL(k)**: Top-down predictive parsing
 - **LR**: Bottom-up shift-reduce parsing
 - **GLR**: Generalized LR for ambiguous grammars
+- **PEG**: Parsing Expression Grammar with ordered choice
+- **Pratt**: Recursive descent with operator precedence
 
 See [Parsing Backends](backends/overview.md) for more details.
 

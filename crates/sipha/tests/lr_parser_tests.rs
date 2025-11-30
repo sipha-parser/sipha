@@ -160,6 +160,8 @@ fn test_lr_config_custom() {
         max_errors: 50,
         use_lalr: false,
         enable_token_insertion: true,
+        optimize: false,
+        optimization_level: sipha::grammar::hint::OptimizationLevel::None,
     };
 
     assert!(!config.error_recovery);

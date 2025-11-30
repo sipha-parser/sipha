@@ -17,6 +17,8 @@
 ///     max_errors: 50,
 ///     use_lalr: false,  // Use canonical LR(1) instead
 ///     enable_token_insertion: true,
+///     optimize: false,
+///     optimization_level: sipha::grammar::hint::OptimizationLevel::None,
 /// };
 /// ```
 #[derive(Debug, Clone)]
@@ -36,6 +38,12 @@ pub struct LrConfig {
     /// This can help recover from missing tokens (e.g., missing semicolons) without
     /// skipping valid user code.
     pub enable_token_insertion: bool,
+
+    /// Enable optimizations during transformation
+    pub optimize: bool,
+
+    /// Optimization level for grammar transformation
+    pub optimization_level: crate::grammar::hint::OptimizationLevel,
 }
 
 impl Default for LrConfig {
@@ -45,6 +53,8 @@ impl Default for LrConfig {
             max_errors: 100,
             use_lalr: true, // LALR(1) is more practical for most grammars
             enable_token_insertion: true, // Enable token insertion by default
+            optimize: false,
+            optimization_level: crate::grammar::hint::OptimizationLevel::None,
         }
     }
 }

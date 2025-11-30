@@ -18,6 +18,8 @@
 ///     max_errors: 50,
 ///     max_cache_size: 5000,
 ///     cache_history: 3,
+///     optimize: false,
+///     optimization_level: sipha::grammar::hint::OptimizationLevel::None,
 /// };
 /// ```
 #[derive(Debug, Clone)]
@@ -36,6 +38,12 @@ pub struct LlConfig {
 
     /// Number of cache versions to keep in history
     pub cache_history: usize,
+
+    /// Enable optimizations during transformation
+    pub optimize: bool,
+
+    /// Optimization level for grammar transformation
+    pub optimization_level: crate::grammar::hint::OptimizationLevel,
 }
 
 impl Default for LlConfig {
@@ -46,6 +54,8 @@ impl Default for LlConfig {
             max_errors: 100,
             max_cache_size: 2000,
             cache_history: 2,
+            optimize: false,
+            optimization_level: crate::grammar::hint::OptimizationLevel::None,
         }
     }
 }

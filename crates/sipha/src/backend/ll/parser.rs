@@ -1,6 +1,6 @@
-use crate::backend::ll::{config::LlConfig, table::ParsingTable};
+use crate::backend::ll::{config::LlConfig, grammar::LlGrammar};
 use crate::error::{ParseError, ParseMetrics, ParseResult, ParseWarning};
-use crate::grammar::{Expr, Grammar, NonTerminal, Token};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use crate::syntax::{GreenNode, GreenNodeBuilder, TextSize};
 use hashbrown::HashMap;
 
@@ -228,8 +228,7 @@ where
     T: Token,
     N: NonTerminal,
 {
-    grammar: &'a Grammar<T, N>,
-    table: &'a ParsingTable<T, N>,
+    backend_grammar: &'a LlGrammar<T, N>,
     input: &'a [T],
     config: &'a LlConfig,
     state: &'a mut LlParserState<T, N>,
@@ -243,15 +242,13 @@ where
     /// Create a new parse context
     #[must_use]
     const fn new(
-        grammar: &'a Grammar<T, N>,
-        table: &'a ParsingTable<T, N>,
+        backend_grammar: &'a LlGrammar<T, N>,
         input: &'a [T],
         config: &'a LlConfig,
         state: &'a mut LlParserState<T, N>,
     ) -> Self {
         Self {
-            grammar,
-            table,
+            backend_grammar,
             input,
             config,
             state,
@@ -444,7 +441,7 @@ where
 
     if result.is_err() && recover && ctx.config.error_recovery {
         // Error recovery: try to find and consume the close token
-        let close_first = close.first_set(ctx.grammar);
+        let close_first = close.first_set(&ctx.backend_grammar.original_grammar);
         let mut recovered = false;
 
         while pos.pos < ctx.input.len() {
@@ -550,8 +547,7 @@ where
 
 /// Parse input using LL parser
 pub fn parse<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &ParsingTable<T, N>,
+    backend_grammar: &LlGrammar<T, N>,
     input: &[T],
     entry: &N,
     config: &LlConfig,
@@ -569,8 +565,16 @@ where
 
     // Start parsing from entry point
     // Try to get syntax kind from non-terminal, fallback to first token, then default
-    let Some(root_kind) = determine_root_kind_or_error(entry, input, grammar, &mut errors) else {
-        return create_error_result(entry, input, grammar, errors, warnings);
+    let Some(root_kind) =
+        determine_root_kind_or_error(entry, input, &backend_grammar.original_grammar, &mut errors)
+    else {
+        return create_error_result(
+            entry,
+            input,
+            &backend_grammar.original_grammar,
+            errors,
+            warnings,
+        );
     };
     builder.start_node(root_kind);
 
@@ -578,8 +582,7 @@ where
     let mut text_pos = TextSize::zero();
 
     match parse_expr(
-        grammar,
-        table,
+        backend_grammar,
         input,
         &mut pos,
         &mut text_pos,
@@ -621,8 +624,7 @@ where
 /// Parse with incremental support
 #[allow(clippy::too_many_arguments)]
 pub fn parse_with_session<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &ParsingTable<T, N>,
+    backend_grammar: &LlGrammar<T, N>,
     input: &[T],
     session: &crate::incremental::IncrementalSession<'_, T::Kind>,
     entry: &N,
@@ -635,18 +637,17 @@ where
 {
     // If no edits, use cached result if available
     if session.edits().is_empty() {
-        return parse(grammar, table, input, entry, config, state);
+        return parse(backend_grammar, input, entry, config, state);
     }
 
     // Use incremental parsing with node reuse
-    parse_incremental_with_session(grammar, table, input, session, entry, config, state)
+    parse_incremental_with_session(backend_grammar, input, session, entry, config, state)
 }
 
 /// Parse with incremental session support, attempting node reuse
 #[allow(clippy::too_many_arguments)]
 fn parse_incremental_with_session<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &ParsingTable<T, N>,
+    backend_grammar: &LlGrammar<T, N>,
     input: &[T],
     session: &crate::incremental::IncrementalSession<'_, T::Kind>,
     entry: &N,
@@ -677,7 +678,12 @@ where
                 entry.name()
             ),
         });
-        return create_incremental_error_result(entry, input, grammar, errors);
+        return create_incremental_error_result(
+            entry,
+            input,
+            &backend_grammar.original_grammar,
+            errors,
+        );
     };
     builder.start_node(root_kind);
 
@@ -685,8 +691,7 @@ where
     let mut text_pos = TextSize::zero();
 
     match parse_expr_with_session(
-        grammar,
-        table,
+        backend_grammar,
         input,
         &mut pos,
         &mut text_pos,
@@ -728,8 +733,7 @@ where
 
 #[allow(clippy::too_many_arguments)] // Required for parser API
 fn parse_expr_with_session<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &ParsingTable<T, N>,
+    backend_grammar: &LlGrammar<T, N>,
     input: &[T],
     pos: &mut usize,
     text_pos: &mut TextSize,
@@ -812,7 +816,7 @@ where
     }
 
     // No reusable node found, fall back to normal parsing with session support
-    let mut ctx = ParseContext::new(grammar, table, input, config, state);
+    let mut ctx = ParseContext::new(backend_grammar, input, config, state);
     let mut pos_struct = ParsePosition::new(*pos, *text_pos);
     let mut output = ParseOutput::new(builder, errors, warnings);
     let result = parse_expr_impl(&mut ctx, &mut pos_struct, nt, &mut output, Some(session));
@@ -907,8 +911,7 @@ where
 
 #[allow(clippy::too_many_arguments)] // Required for parser API
 fn parse_expr<T, N>(
-    grammar: &Grammar<T, N>,
-    table: &ParsingTable<T, N>,
+    backend_grammar: &LlGrammar<T, N>,
     input: &[T],
     pos: &mut usize,
     text_pos: &mut TextSize,
@@ -923,7 +926,7 @@ where
     T: Token,
     N: NonTerminal,
 {
-    let mut ctx = ParseContext::new(grammar, table, input, config, state);
+    let mut ctx = ParseContext::new(backend_grammar, input, config, state);
     let mut pos_struct = ParsePosition::new(*pos, *text_pos);
     let mut output = ParseOutput::new(builder, errors, warnings);
     let result = parse_expr_impl(&mut ctx, &mut pos_struct, nt, &mut output, None);
@@ -1059,7 +1062,8 @@ where
 
     // Get the rule for this non-terminal
     let rule = ctx
-        .grammar
+        .backend_grammar
+        .original_grammar
         .get_rule(nt)
         .ok_or_else(|| ParseError::InvalidSyntax {
             span: crate::syntax::TextRange::at(pos.text_pos, TextSize::from(1)),
@@ -1068,16 +1072,16 @@ where
 
     // Determine which alternative to use based on lookahead
     // Get up to k tokens of lookahead (optimized for common case of k=1)
-    let k = ctx.config.lookahead.min(ctx.table.k());
+    let k = ctx.config.lookahead.min(ctx.backend_grammar.table.k());
     let lookahead = if k == 1 {
         // Fast path: single token lookahead
         &ctx.input[pos.pos..(pos.pos + 1).min(ctx.input.len())]
     } else {
         &ctx.input[pos.pos..(pos.pos + k).min(ctx.input.len())]
     };
-    let Some(alt_idx) = ctx.table.get(nt, lookahead) else {
+    let Some(alt_idx) = ctx.backend_grammar.table.get(nt, lookahead) else {
         // Error: no production for this lookahead
-        let expected: Vec<String> = ctx.table.first_set(nt).map_or_else(
+        let expected: Vec<String> = ctx.backend_grammar.table.first_set(nt).map_or_else(
             || vec!["<unknown>".to_string()],
             |first| first.iter().map(|t| format!("{t:?}")).collect(),
         );
@@ -1094,9 +1098,15 @@ where
     // so we'll cache it on the next parse when we can capture it.
     // For now, we'll rely on the incremental session for node reuse.
     match &rule.rhs {
-        Expr::Choice(alternatives) => {
+        ExtendedExpr::Core(CoreExpr::Choice(alternatives)) => {
             if alt_idx < alternatives.len() {
-                parse_expr_inner(ctx, pos, &alternatives[alt_idx], output, session)
+                parse_expr_inner(
+                    ctx,
+                    pos,
+                    &ExtendedExpr::Core(alternatives[alt_idx].clone()),
+                    output,
+                    session,
+                )
             } else {
                 Err(ParseError::InvalidSyntax {
                     span: crate::syntax::TextRange::at(pos.text_pos, DEFAULT_ERROR_SPAN_LEN),
@@ -1121,7 +1131,7 @@ where
     N: NonTerminal,
 {
     match expr {
-        Expr::Token(expected) => {
+        ExtendedExpr::Core(CoreExpr::Token(expected)) => {
             if let Some(token) = ctx.input.get(pos.pos) {
                 // Compare tokens directly - they implement PartialEq by kind
                 if token == expected {
@@ -1148,7 +1158,7 @@ where
             }
         }
 
-        Expr::Rule(nt) => {
+        ExtendedExpr::Core(CoreExpr::Rule(nt)) => {
             // Try to reuse a node at this position before parsing
             let expected_kind = nt
                 .to_syntax_kind()
@@ -1168,19 +1178,21 @@ where
             parse_expr_impl(ctx, pos, nt, output, session)
         }
 
-        Expr::Seq(exprs) => {
+        ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
             for expr in exprs {
-                parse_expr_inner(ctx, pos, expr, output, session)?;
+                parse_expr_inner(ctx, pos, &ExtendedExpr::Core(expr.clone()), output, session)?;
             }
             Ok(())
         }
 
-        Expr::Choice(alternatives) => {
+        ExtendedExpr::Core(CoreExpr::Choice(alternatives)) => {
             // Should have been resolved by table lookup, but handle fallback
             for alt in alternatives {
                 let saved_pos = pos.pos;
                 let saved_text_pos = pos.text_pos;
-                if parse_expr_inner(ctx, pos, alt, output, session).is_ok() {
+                if parse_expr_inner(ctx, pos, &ExtendedExpr::Core(alt.clone()), output, session)
+                    .is_ok()
+                {
                     return Ok(());
                 }
                 pos.pos = saved_pos;
@@ -1192,27 +1204,38 @@ where
             })
         }
 
-        Expr::Opt(expr) => {
+        ExtendedExpr::Core(CoreExpr::Opt(expr)) => {
             let saved_pos = pos.pos;
             let saved_text_pos = pos.text_pos;
-            if parse_expr_inner(ctx, pos, expr, output, session).is_err() {
+            if parse_expr_inner(
+                ctx,
+                pos,
+                &ExtendedExpr::Core((**expr).clone()),
+                output,
+                session,
+            )
+            .is_err()
+            {
                 pos.pos = saved_pos;
                 pos.text_pos = saved_text_pos;
             }
             Ok(())
         }
 
-        Expr::Repeat {
-            expr,
-            min,
-            max,
-            greedy: _,
-        } => {
+        ExtendedExpr::Core(CoreExpr::Repeat { expr, min, max }) => {
             let mut count = 0;
             loop {
                 let saved_pos = pos.pos;
                 let saved_text_pos = pos.text_pos;
-                if parse_expr_inner(ctx, pos, expr, output, session).is_err() {
+                if parse_expr_inner(
+                    ctx,
+                    pos,
+                    &ExtendedExpr::Core((**expr).clone()),
+                    output,
+                    session,
+                )
+                .is_err()
+                {
                     pos.pos = saved_pos;
                     pos.text_pos = saved_text_pos;
                     break;
@@ -1234,9 +1257,9 @@ where
             }
         }
 
-        Expr::Empty => Ok(()),
+        ExtendedExpr::Core(CoreExpr::Empty) => Ok(()),
 
-        Expr::Any => {
+        ExtendedExpr::Core(CoreExpr::Any) => {
             if let Some(token) = ctx.input.get(pos.pos) {
                 let token_text = token.text();
                 let token_len = token.text_len();
@@ -1255,7 +1278,7 @@ where
             }
         }
 
-        Expr::Eof => {
+        ExtendedExpr::Core(CoreExpr::Eof) => {
             if pos.pos >= ctx.input.len() {
                 Ok(())
             } else {
@@ -1266,7 +1289,7 @@ where
             }
         }
 
-        Expr::Node { kind, expr } => {
+        ExtendedExpr::Core(CoreExpr::Node { kind, expr }) => {
             // Convert NonTerminal to SyntaxKind using the trait method
             let node_kind = kind
                 .to_syntax_kind()
@@ -1276,7 +1299,13 @@ where
 
             if let Some(k) = node_kind {
                 output.builder.start_node(k);
-                let result = parse_expr_inner(ctx, pos, expr, output, session);
+                let result = parse_expr_inner(
+                    ctx,
+                    pos,
+                    &ExtendedExpr::Core((**expr).clone()),
+                    output,
+                    session,
+                );
                 if output.builder.finish_node().is_err() {
                     output.errors.push(ParseError::InvalidSyntax {
                         span: crate::syntax::TextRange::at(pos.text_pos, TextSize::from(1)),
@@ -1296,26 +1325,50 @@ where
                     severity: crate::error::Severity::Warning,
                 });
                 // Continue parsing without the node wrapper
-                parse_expr_inner(ctx, pos, expr, output, session)
+                parse_expr_inner(
+                    ctx,
+                    pos,
+                    &ExtendedExpr::Core((**expr).clone()),
+                    output,
+                    session,
+                )
             }
         }
 
-        Expr::Label { name: _name, expr } => {
+        ExtendedExpr::Core(CoreExpr::Label { name: _name, expr }) => {
             // Labels are metadata, don't affect parsing
-            parse_expr_inner(ctx, pos, expr, output, session)
+            parse_expr_inner(
+                ctx,
+                pos,
+                &ExtendedExpr::Core((**expr).clone()),
+                output,
+                session,
+            )
         }
 
-        Expr::Flatten(expr) => {
+        ExtendedExpr::Core(CoreExpr::Flatten(expr)) => {
             // Flatten doesn't affect parsing, just tree structure
-            parse_expr_inner(ctx, pos, expr, output, session)
+            parse_expr_inner(
+                ctx,
+                pos,
+                &ExtendedExpr::Core((**expr).clone()),
+                output,
+                session,
+            )
         }
 
-        Expr::Prune(expr) => {
+        ExtendedExpr::Core(CoreExpr::Prune(expr)) => {
             // Prune doesn't affect parsing
-            parse_expr_inner(ctx, pos, expr, output, session)
+            parse_expr_inner(
+                ctx,
+                pos,
+                &ExtendedExpr::Core((**expr).clone()),
+                output,
+                session,
+            )
         }
 
-        Expr::Lookahead(expr) => {
+        ExtendedExpr::Lookahead(expr) => {
             let saved_pos = pos.pos;
             let saved_text_pos = pos.text_pos;
             let result = parse_expr_inner(ctx, pos, expr, output, session);
@@ -1324,7 +1377,7 @@ where
             result
         }
 
-        Expr::NotLookahead(expr) => {
+        ExtendedExpr::NotLookahead(expr) => {
             let saved_pos = pos.pos;
             let saved_text_pos = pos.text_pos;
             let result = parse_expr_inner(ctx, pos, expr, output, session);
@@ -1339,27 +1392,45 @@ where
             }
         }
 
-        Expr::Separated {
+        ExtendedExpr::Core(CoreExpr::Separated {
             item,
             separator,
             min,
             trailing,
-        } => parse_separated(ctx, pos, item, separator, *min, *trailing, output, session),
+        }) => parse_separated(
+            ctx,
+            pos,
+            &ExtendedExpr::Core((**item).clone()),
+            &ExtendedExpr::Core((**separator).clone()),
+            *min,
+            *trailing,
+            output,
+            session,
+        ),
 
-        Expr::Delimited {
+        ExtendedExpr::Core(CoreExpr::Delimited {
             open,
             content,
             close,
-            recover,
-        } => parse_delimited(ctx, pos, open, content, close, *recover, output, session),
+        }) => parse_delimited(
+            ctx,
+            pos,
+            &ExtendedExpr::Core((**open).clone()),
+            &ExtendedExpr::Core((**content).clone()),
+            &ExtendedExpr::Core((**close).clone()),
+            false,
+            output,
+            session,
+        ),
 
-        Expr::Cut(expr) => {
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(expr) => {
             // Cut operator: LL parsers don't backtrack, so this is a no-op
             // but we still parse the expression
             parse_expr_inner(ctx, pos, expr, output, session)
         }
 
-        Expr::TokenClass { class } => {
+        ExtendedExpr::TokenClass { class } => {
             // Match any token that belongs to the specified class
             if let Some(token) = ctx.input.get(pos.pos) {
                 if crate::grammar::token_class::token_matches_class(token, class) {
@@ -1386,7 +1457,7 @@ where
             }
         }
 
-        Expr::Conditional {
+        ExtendedExpr::Conditional {
             condition,
             then_expr,
             else_expr,
@@ -1414,14 +1485,15 @@ where
             }
         }
 
-        Expr::SemanticPredicate { expr, predicate } => {
+        ExtendedExpr::SemanticPredicate { expr, predicate } => {
             // Parse the expression first
             let saved_pos = pos.pos;
             let saved_text_pos = pos.text_pos;
             match parse_expr_inner(ctx, pos, expr, output, session) {
                 Ok(()) => {
                     // Expression matched - check semantic predicate
-                    if predicate.check(ctx.grammar, ctx.input, saved_pos) {
+                    if predicate.check(&ctx.backend_grammar.original_grammar, ctx.input, saved_pos)
+                    {
                         // Predicate passed - success
                         Ok(())
                     } else {
@@ -1444,7 +1516,7 @@ where
             }
         }
 
-        Expr::Backreference { capture_id } => {
+        ExtendedExpr::Backreference { capture_id } => {
             // Backreferences are not well-supported in LL parsers
             // Return an error indicating this is not supported
             Err(ParseError::InvalidSyntax {
@@ -1455,7 +1527,7 @@ where
             })
         }
 
-        Expr::RecoveryPoint { expr, sync_tokens } => {
+        ExtendedExpr::RecoveryPoint { expr, sync_tokens } => {
             let result = parse_expr_inner(ctx, pos, expr, output, session);
             if result.is_err() && ctx.config.error_recovery {
                 // Error recovery: skip until sync token
@@ -1469,6 +1541,13 @@ where
                 }
             }
             result
+        }
+        #[cfg(feature = "backend-pratt")]
+        ExtendedExpr::PrattOperator { .. } => {
+            Err(ParseError::InvalidSyntax {
+                span: crate::syntax::TextRange::at(pos.text_pos, DEFAULT_ERROR_SPAN_LEN),
+                message: "PrattOperator expressions are not supported in LL parser backend. Use the Pratt parser backend instead.".to_string(),
+            })
         }
     }
 }

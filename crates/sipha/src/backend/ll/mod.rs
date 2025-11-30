@@ -1,10 +1,17 @@
 mod config;
+mod grammar;
+mod optimizer;
 mod parser;
+mod recovery;
 mod table;
+mod transformer;
 
 pub use config::LlConfig;
+pub use grammar::LlGrammar;
+pub use optimizer::LlOptimizer;
 pub use parser::LlParserState;
-use table::ParsingTable;
+pub use recovery::LlRecoveryStrategy;
+pub use transformer::LlTransformer;
 
 use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
@@ -32,8 +39,7 @@ where
     T: crate::grammar::Token,
     N: crate::grammar::NonTerminal,
 {
-    grammar: Grammar<T, N>,
-    table: ParsingTable<T, N>,
+    backend_grammar: LlGrammar<T, N>,
     state: LlParserState<T, N>,
     config: LlConfig,
 }
@@ -55,27 +61,38 @@ where
     type Config = LlConfig;
     type Error = LlError;
     type State = LlParserState<T, N>;
+    type BackendGrammar = LlGrammar<T, N>;
 
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error> {
-        // Validate grammar for LL compatibility
-        let errors = Self::validate(grammar);
-        if !errors.is_empty() {
-            return Err(LlError::NotLlGrammar(
-                errors
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ));
-        }
+        use crate::backend::pipeline::GrammarTransformPipeline;
+        use crate::backend::traits::TransformConfig;
 
-        // Build parsing table
-        let table = ParsingTable::new(grammar, config.lookahead)
-            .map_err(LlError::TableConstructionFailed)?;
+        // Transform grammar using the transformation pipeline
+        let transform_config = TransformConfig {
+            optimize: config.optimize,
+            optimization_level: config.optimization_level,
+            cache: true,
+            backend_options: {
+                let mut opts = std::collections::HashMap::new();
+                opts.insert("lookahead_k".to_string(), config.lookahead.to_string());
+                opts
+            },
+        };
+
+        let backend_grammar = if config.optimize {
+            GrammarTransformPipeline::transform_with_optimizer::<T, N, LlTransformer, LlOptimizer>(
+                grammar,
+                &transform_config,
+                LlOptimizer,
+            )
+            .map_err(|e| LlError::TableConstructionFailed(e.to_string()))?
+        } else {
+            GrammarTransformPipeline::transform::<T, N, LlTransformer>(grammar, &transform_config)
+                .map_err(|e| LlError::TableConstructionFailed(e.to_string()))?
+        };
 
         Ok(Self {
-            grammar: grammar.clone(),
-            table,
+            backend_grammar,
             state: LlParserState::with_cache_settings(config.max_cache_size, config.cache_history),
             config,
         })
@@ -83,8 +100,7 @@ where
 
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
         parser::parse(
-            &self.grammar,
-            &self.table,
+            &self.backend_grammar,
             input,
             &entry,
             &self.config,
@@ -111,8 +127,7 @@ where
         self.state.invalidate_cache_range(union_range);
 
         parser::parse_with_session(
-            &self.grammar,
-            &self.table,
+            &self.backend_grammar,
             input,
             session,
             &entry,
@@ -137,7 +152,10 @@ where
 
         // Check for FIRST/FIRST conflicts in choices
         for (lhs, rule) in grammar.rules() {
-            if let crate::grammar::Expr::Choice(alternatives) = &rule.rhs {
+            if let crate::grammar::ExtendedExpr::Core(crate::grammar::CoreExpr::Choice(
+                alternatives,
+            )) = &rule.rhs
+            {
                 for (i, alt1) in alternatives.iter().enumerate() {
                     let first1 = alt1.first_set(grammar);
                     for (j, alt2) in alternatives.iter().enumerate().skip(i + 1) {

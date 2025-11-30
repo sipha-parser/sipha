@@ -1,11 +1,19 @@
 mod config;
+mod grammar;
+mod optimizer;
 mod parser;
+mod recovery;
 mod state;
 mod table;
+mod transformer;
 
 pub use config::LrConfig;
+pub use grammar::LrGrammar;
+pub use optimizer::LrOptimizer;
+pub use recovery::LrRecoveryStrategy;
 pub use state::LrParserState;
 pub use table::{Action, LrParsingTable, Production};
+pub use transformer::LrTransformer;
 
 use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
@@ -34,8 +42,7 @@ where
     T: crate::grammar::Token,
     N: crate::grammar::NonTerminal,
 {
-    grammar: Grammar<T, N>,
-    table: LrParsingTable<T, N>,
+    backend_grammar: LrGrammar<T, N>,
     state: LrParserState<T, N>,
     config: LrConfig,
 }
@@ -60,27 +67,38 @@ where
     type Config = LrConfig;
     type Error = LrError;
     type State = LrParserState<T, N>;
+    type BackendGrammar = LrGrammar<T, N>;
 
     fn new(grammar: &Grammar<T, N>, config: Self::Config) -> Result<Self, Self::Error> {
-        // Validate grammar for LR compatibility
-        let errors = Self::validate(grammar);
-        if !errors.is_empty() {
-            return Err(LrError::NotLrGrammar(
-                errors
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ));
-        }
+        use crate::backend::pipeline::GrammarTransformPipeline;
+        use crate::backend::traits::TransformConfig;
 
-        // Build parsing table
-        let table = LrParsingTable::new(grammar, config.use_lalr)
-            .map_err(LrError::TableConstructionFailed)?;
+        // Transform grammar using the transformation pipeline
+        let transform_config = TransformConfig {
+            optimize: config.optimize,
+            optimization_level: config.optimization_level,
+            cache: true,
+            backend_options: {
+                let mut opts = std::collections::HashMap::new();
+                opts.insert("use_lalr".to_string(), config.use_lalr.to_string());
+                opts
+            },
+        };
+
+        let backend_grammar = if config.optimize {
+            GrammarTransformPipeline::transform_with_optimizer::<T, N, LrTransformer, LrOptimizer>(
+                grammar,
+                &transform_config,
+                LrOptimizer,
+            )
+            .map_err(|e| LrError::TableConstructionFailed(e.to_string()))?
+        } else {
+            GrammarTransformPipeline::transform::<T, N, LrTransformer>(grammar, &transform_config)
+                .map_err(|e| LrError::TableConstructionFailed(e.to_string()))?
+        };
 
         Ok(Self {
-            grammar: grammar.clone(),
-            table,
+            backend_grammar,
             state: LrParserState::new(),
             config,
         })
@@ -88,8 +106,7 @@ where
 
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
         parser::parse(
-            &self.grammar,
-            &self.table,
+            &self.backend_grammar,
             input,
             &entry,
             &self.config,
@@ -113,8 +130,7 @@ where
         self.state.invalidate_cache();
 
         parser::parse_with_session(
-            &self.grammar,
-            &self.table,
+            &self.backend_grammar,
             input,
             session,
             &entry,

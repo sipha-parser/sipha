@@ -1,6 +1,6 @@
 //! Common utilities shared across parser backends
 
-use crate::grammar::{Expr, Grammar, GrammarError, NonTerminal};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, GrammarError, NonTerminal};
 
 /// Check for undefined non-terminal references in a grammar expression.
 ///
@@ -11,51 +11,58 @@ pub fn check_undefined_references<T, N>(
     expr: &Expr<T, N>,
     errors: &mut Vec<GrammarError<T, N>>,
 ) where
-    T: crate::grammar::Token,
-    N: NonTerminal,
+    T: crate::grammar::Token + Clone,
+    N: NonTerminal + Clone,
 {
     match expr {
-        Expr::Rule(nt) => {
+        ExtendedExpr::Core(CoreExpr::Rule(nt)) => {
             if grammar.get_rule(nt).is_none() {
                 errors.push(GrammarError::UndefinedRule(nt.clone()));
             }
         }
-        Expr::Seq(exprs) | Expr::Choice(exprs) => {
+        ExtendedExpr::Core(CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs)) => {
             for e in exprs {
-                check_undefined_references(grammar, e, errors);
+                check_undefined_references(grammar, &ExtendedExpr::Core(e.clone()), errors);
             }
         }
-        Expr::Opt(e) | Expr::Repeat { expr: e, .. } => {
-            check_undefined_references(grammar, e, errors);
+        ExtendedExpr::Core(CoreExpr::Opt(e) | CoreExpr::Repeat { expr: e, .. }) => {
+            check_undefined_references(grammar, &ExtendedExpr::Core((**e).clone()), errors);
         }
-        Expr::Separated {
+        ExtendedExpr::Core(CoreExpr::Separated {
             item, separator, ..
-        } => {
-            check_undefined_references(grammar, item, errors);
-            check_undefined_references(grammar, separator, errors);
+        }) => {
+            check_undefined_references(grammar, &ExtendedExpr::Core((**item).clone()), errors);
+            check_undefined_references(grammar, &ExtendedExpr::Core((**separator).clone()), errors);
         }
-        Expr::Delimited {
+        ExtendedExpr::Core(CoreExpr::Delimited {
             open,
             content,
             close,
             ..
-        } => {
-            check_undefined_references(grammar, open, errors);
-            check_undefined_references(grammar, content, errors);
-            check_undefined_references(grammar, close, errors);
+        }) => {
+            check_undefined_references(grammar, &ExtendedExpr::Core((**open).clone()), errors);
+            check_undefined_references(grammar, &ExtendedExpr::Core((**content).clone()), errors);
+            check_undefined_references(grammar, &ExtendedExpr::Core((**close).clone()), errors);
         }
-        Expr::Node { expr, .. }
-        | Expr::Label { expr, .. }
-        | Expr::Flatten(expr)
-        | Expr::Prune(expr)
-        | Expr::Lookahead(expr)
-        | Expr::NotLookahead(expr)
-        | Expr::Cut(expr)
-        | Expr::RecoveryPoint { expr, .. }
-        | Expr::SemanticPredicate { expr, .. } => {
+        ExtendedExpr::Core(
+            CoreExpr::Node { expr, .. }
+            | CoreExpr::Label { expr, .. }
+            | CoreExpr::Flatten(expr)
+            | CoreExpr::Prune(expr),
+        ) => {
+            check_undefined_references(grammar, &ExtendedExpr::Core((**expr).clone()), errors);
+        }
+        ExtendedExpr::Lookahead(expr)
+        | ExtendedExpr::NotLookahead(expr)
+        | ExtendedExpr::RecoveryPoint { expr, .. }
+        | ExtendedExpr::SemanticPredicate { expr, .. } => {
             check_undefined_references(grammar, expr, errors);
         }
-        Expr::Conditional {
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(expr) => {
+            check_undefined_references(grammar, expr, errors);
+        }
+        ExtendedExpr::Conditional {
             condition,
             then_expr,
             else_expr,

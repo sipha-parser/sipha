@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Grammar Transformation Architecture**: Complete redesign of grammar processing
+  - **Backend-specific grammar types**: Each parser backend now uses specialized grammar representations (`LrGrammar`, `LlGrammar`, `PegGrammar`, `GlrGrammar`)
+  - **Transformation pipeline**: Automatic grammar transformation from generic `Grammar` to backend-specific formats
+  - **Optimization support**: Configurable grammar optimization during transformation with multiple optimization levels
+  - **Unified transformation API**: Consistent transformation process across all backends via `GrammarTransformPipeline`
+  - **ParserBackend trait enhancement**: Added `BackendGrammar` associated type for accessing backend-specific grammar representations
+  - **Optimization levels**: `None`, `Basic`, and `Aggressive` optimization levels for fine-grained control
+  - **Transformation caching**: Infrastructure for caching transformed grammars (backend-specific implementation)
+
+- **Grammar Optimization**: New optimization system for improved parsing performance
+  - **GrammarOptimizer trait**: Unified interface for backend-specific optimizations
+  - **Backend-specific optimizers**: `LrOptimizer`, `LlOptimizer`, `PegOptimizer`, `GlrOptimizer`
+  - **Optimization capabilities**: Each optimizer reports its capabilities (inlining, factoring, table compression, etc.)
+  - **Configurable optimization**: Enable/disable optimization via parser config with level selection
+
 - **PEG Parser Backend** (`backend-peg` feature): Parsing Expression Grammar parser with packrat memoization
   - Ordered choice semantics (first match wins)
   - Backtracking with configurable depth limits
@@ -18,6 +33,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Error recovery for `RecoveryPoint` and `Delimited` expressions
   - Configurable memoization cache size limits
   - Comprehensive test coverage
+
+### Changed
+
+- **Parser Configuration**: All parser configs now include optimization options
+  - `LlConfig`, `LrConfig`, `PegConfig`, `GlrConfig` now have `optimize: bool` and `optimization_level: OptimizationLevel` fields
+  - Default behavior: Optimization is disabled by default, maintaining backward compatibility
+  - Optimization can be enabled per-parser instance via configuration
+
+- **Internal Architecture**: Parser internals now use backend-specific grammar types
+  - Parsers store `backend_grammar` instead of raw `Grammar`
+  - Transformation happens automatically during parser creation
+  - No changes to public API - all existing code continues to work
+
+### Migration
+
+- **No breaking changes**: The public API remains backward compatible
+- **Migration guide**: See `MIGRATION.md` for detailed migration instructions
+- **Examples updated**: Examples now demonstrate optimization features
+- **Tests added**: New tests for transformation and optimization functionality
 
 ### Improved
 

@@ -25,6 +25,7 @@
 - [LR Parser](backends/lr-parser.md)
 - [GLR Parser](backends/glr-parser.md)
 - [PEG Parser](backends/peg-parser.md)
+- [Pratt Parser](backends/pratt-parser.md)
 - [Choosing a Backend](backends/choosing.md)
 
 # Syntax Trees

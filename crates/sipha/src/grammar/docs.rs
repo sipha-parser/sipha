@@ -3,7 +3,7 @@
 //! This module provides utilities for generating markdown documentation
 //! with EBNF representation of grammars.
 
-use crate::grammar::{Expr, Grammar, NonTerminal, Token};
+use crate::grammar::{CoreExpr, Expr, ExtendedExpr, Grammar, NonTerminal, Token};
 use std::fmt::Write;
 
 /// Format an expression as EBNF.
@@ -21,23 +21,56 @@ where
     N: NonTerminal,
 {
     match expr {
-        Expr::Token(t) => {
+        ExtendedExpr::Core(core_expr) => format_core_expr_ebnf(core_expr, grammar, token_name),
+        // Handle extended expressions that need special formatting
+        ExtendedExpr::Lookahead(expr) => {
+            format!("&({})", format_expr_ebnf(expr, grammar, token_name))
+        }
+        ExtendedExpr::NotLookahead(expr) => {
+            format!("!({})", format_expr_ebnf(expr, grammar, token_name))
+        }
+        ExtendedExpr::TokenClass { .. } => "'<TOKEN_CLASS>'".to_string(),
+        ExtendedExpr::Conditional { then_expr, .. } => {
+            format_expr_ebnf(then_expr, grammar, token_name)
+        }
+        ExtendedExpr::SemanticPredicate { expr, .. } => format_expr_ebnf(expr, grammar, token_name),
+        ExtendedExpr::Backreference { .. } => "'<BACKREF>'".to_string(),
+        ExtendedExpr::RecoveryPoint { expr, .. } => format_expr_ebnf(expr, grammar, token_name),
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(_) => "'<CUT>'".to_string(),
+        #[cfg(feature = "backend-pratt")]
+        ExtendedExpr::PrattOperator { .. } => "'<PRATT_OP>'".to_string(),
+    }
+}
+
+/// Format a core expression as EBNF
+fn format_core_expr_ebnf<T, N>(
+    expr: &CoreExpr<T, N>,
+    grammar: &Grammar<T, N>,
+    token_name: &impl Fn(&T) -> String,
+) -> String
+where
+    T: Token,
+    N: NonTerminal,
+{
+    match expr {
+        CoreExpr::Token(t) => {
             // Always use the token name function for EBNF (descriptions are shown separately)
             let name = token_name(t);
             // Use single quotes for terminals in EBNF
             format!("'{name}'")
         }
-        Expr::Rule(n) => n.name().to_string(),
-        Expr::Any => "'ANY'".to_string(),
-        Expr::Eof => "'EOF'".to_string(),
-        Expr::Empty => "ε".to_string(),
-        Expr::Seq(exprs) => {
+        CoreExpr::Rule(n) => n.name().to_string(),
+        CoreExpr::Any => "'ANY'".to_string(),
+        CoreExpr::Eof => "'EOF'".to_string(),
+        CoreExpr::Empty => "ε".to_string(),
+        CoreExpr::Seq(exprs) => {
             let parts: Vec<String> = exprs
                 .iter()
                 .map(|e| {
-                    let formatted = format_expr_ebnf(e, grammar, token_name);
+                    let formatted = format_core_expr_ebnf(e, grammar, token_name);
                     // Wrap in parentheses if it's a choice or complex expression
-                    if needs_parentheses(e) {
+                    if needs_parentheses_core(e) {
                         format!("({formatted})")
                     } else {
                         formatted
@@ -46,29 +79,24 @@ where
                 .collect();
             parts.join(" ")
         }
-        Expr::Choice(exprs) => {
+        CoreExpr::Choice(exprs) => {
             let parts: Vec<String> = exprs
                 .iter()
-                .map(|e| format_expr_ebnf(e, grammar, token_name))
+                .map(|e| format_core_expr_ebnf(e, grammar, token_name))
                 .collect();
             parts.join(" | ")
         }
-        Expr::Opt(e) => {
-            let inner = format_expr_ebnf(e, grammar, token_name);
-            if needs_parentheses(e.as_ref()) {
+        CoreExpr::Opt(e) => {
+            let inner = format_core_expr_ebnf(e, grammar, token_name);
+            if needs_parentheses_core(e.as_ref()) {
                 format!("({inner})?")
             } else {
                 format!("{inner}?")
             }
         }
-        Expr::Repeat {
-            expr: e,
-            min,
-            max,
-            greedy: _,
-        } => {
-            let inner = format_expr_ebnf(e, grammar, token_name);
-            let wrapped = if needs_parentheses(e.as_ref()) {
+        CoreExpr::Repeat { expr: e, min, max } => {
+            let inner = format_core_expr_ebnf(e, grammar, token_name);
+            let wrapped = if needs_parentheses_core(e.as_ref()) {
                 format!("({inner})")
             } else {
                 inner
@@ -82,20 +110,20 @@ where
                 (min, None) => format!("{wrapped}{{{min},}}"),
             }
         }
-        Expr::Separated {
+        CoreExpr::Separated {
             item,
             separator,
             min,
             trailing: _, // Trailing separator behavior shown in expression details
         } => {
-            let item_str = format_expr_ebnf(item, grammar, token_name);
-            let sep_str = format_expr_ebnf(separator, grammar, token_name);
-            let item_wrapped = if needs_parentheses(item.as_ref()) {
+            let item_str = format_core_expr_ebnf(item, grammar, token_name);
+            let sep_str = format_core_expr_ebnf(separator, grammar, token_name);
+            let item_wrapped = if needs_parentheses_core(item.as_ref()) {
                 format!("({item_str})")
             } else {
                 item_str
             };
-            let sep_wrapped = if needs_parentheses(separator.as_ref()) {
+            let sep_wrapped = if needs_parentheses_core(separator.as_ref()) {
                 format!("({sep_str})")
             } else {
                 sep_str
@@ -105,93 +133,44 @@ where
                 n => format!("{item_wrapped} ({sep_wrapped} {item_wrapped}){{{n},}}"),
             }
         }
-        Expr::Delimited {
+        CoreExpr::Delimited {
             open,
             content,
             close,
-            ..
         } => {
-            let open_str = format_expr_ebnf(open, grammar, token_name);
-            let content_str = format_expr_ebnf(content, grammar, token_name);
-            let close_str = format_expr_ebnf(close, grammar, token_name);
+            let open_str = format_core_expr_ebnf(open, grammar, token_name);
+            let content_str = format_core_expr_ebnf(content, grammar, token_name);
+            let close_str = format_core_expr_ebnf(close, grammar, token_name);
             // For delimited expressions, format as: open content close
             format!("{open_str} {content_str} {close_str}")
         }
-        Expr::Lookahead(e) => {
-            let inner = format_expr_ebnf(e, grammar, token_name);
-            let wrapped = if needs_parentheses(e.as_ref()) {
-                format!("({inner})")
-            } else {
-                inner
-            };
-            format!("&{wrapped}")
-        }
-        Expr::NotLookahead(e) => {
-            let inner = format_expr_ebnf(e, grammar, token_name);
-            let wrapped = if needs_parentheses(e.as_ref()) {
-                format!("({inner})")
-            } else {
-                inner
-            };
-            format!("!{wrapped}")
-        }
         // These are documentation-only and don't affect the grammar structure
-        Expr::Label { expr, .. }
-        | Expr::Node { expr, .. }
-        | Expr::Flatten(expr)
-        | Expr::Prune(expr) => format_expr_ebnf(expr, grammar, token_name),
-        Expr::RecoveryPoint { expr, .. } => {
-            // Recovery info is not shown in EBNF
-            format_expr_ebnf(expr, grammar, token_name)
-        }
-        Expr::Cut(e) => {
-            let inner = format_expr_ebnf(e, grammar, token_name);
-            let wrapped = if needs_parentheses(e.as_ref()) {
-                format!("({inner})")
-            } else {
-                inner
-            };
-            format!("{wrapped}~") // ~ is common notation for cut operator
-        }
-        Expr::TokenClass { class } => {
-            format!("<{}>", class.as_str())
-        }
-        Expr::Conditional {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            let cond_str = format_expr_ebnf(condition, grammar, token_name);
-            let then_str = format_expr_ebnf(then_expr, grammar, token_name);
-            else_expr.as_ref().map_or_else(
-                || format!("({cond_str}) ? {then_str}"),
-                |else_expr| {
-                    let else_str = format_expr_ebnf(else_expr, grammar, token_name);
-                    format!("({cond_str}) ? {then_str} : {else_str}")
-                },
-            )
-        }
-        Expr::SemanticPredicate { expr, .. } => {
-            let inner = format_expr_ebnf(expr, grammar, token_name);
-            let wrapped = if needs_parentheses(expr.as_ref()) {
-                format!("({inner})")
-            } else {
-                inner
-            };
-            format!("{wrapped}?") // ? for semantic predicate
-        }
-        Expr::Backreference { capture_id } => {
-            format!("\\{}", capture_id.as_str())
-        }
+        CoreExpr::Label { expr, .. }
+        | CoreExpr::Node { expr, .. }
+        | CoreExpr::Flatten(expr)
+        | CoreExpr::Prune(expr) => format_core_expr_ebnf(expr, grammar, token_name),
     }
 }
 
-/// Check if an expression needs parentheses when used in a sequence or choice
-const fn needs_parentheses<T, N>(expr: &Expr<T, N>) -> bool {
+/// Check if a core expression needs parentheses when used in a sequence or choice
+const fn needs_parentheses_core<T, N>(expr: &CoreExpr<T, N>) -> bool {
     matches!(
         expr,
-        Expr::Choice(_) | Expr::Seq(_) | Expr::Separated { .. } | Expr::Delimited { .. }
+        CoreExpr::Choice(_)
+            | CoreExpr::Seq(_)
+            | CoreExpr::Separated { .. }
+            | CoreExpr::Delimited { .. }
     )
+}
+
+/// Check if an expression needs parentheses when used in a sequence or choice
+#[allow(dead_code)] // Used internally by format_expr_ebnf_formatted
+fn needs_parentheses<T, N>(expr: &Expr<T, N>) -> bool {
+    match expr {
+        ExtendedExpr::Core(core_expr) => needs_parentheses_core(core_expr),
+        ExtendedExpr::Lookahead(_) | ExtendedExpr::NotLookahead(_) => true,
+        _ => false,
+    }
 }
 
 /// Configuration for markdown generation
@@ -734,42 +713,64 @@ where
     N: NonTerminal,
 {
     match expr {
-        Expr::Token(t) => {
-            result.push(t.clone());
-        }
-        Expr::Seq(exprs) | Expr::Choice(exprs) => {
-            for e in exprs {
-                collect_tokens_impl(e, result);
-            }
-        }
-        Expr::Opt(e)
-        | Expr::Repeat { expr: e, .. }
-        | Expr::Label { expr: e, .. }
-        | Expr::Node { expr: e, .. }
-        | Expr::Flatten(e)
-        | Expr::Prune(e)
-        | Expr::Lookahead(e)
-        | Expr::NotLookahead(e)
-        | Expr::RecoveryPoint { expr: e, .. } => {
+        ExtendedExpr::Core(core_expr) => collect_tokens_core_impl(core_expr, result),
+        ExtendedExpr::Lookahead(e)
+        | ExtendedExpr::NotLookahead(e)
+        | ExtendedExpr::RecoveryPoint { expr: e, .. }
+        | ExtendedExpr::SemanticPredicate { expr: e, .. }
+        | ExtendedExpr::Conditional { then_expr: e, .. } => {
             collect_tokens_impl(e, result);
         }
-        Expr::Separated {
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(e) => {
+            collect_tokens_impl(e, result);
+        }
+        #[cfg(feature = "backend-pratt")]
+        ExtendedExpr::PrattOperator { expr: e, .. } => {
+            collect_tokens_impl(e, result);
+        }
+        ExtendedExpr::TokenClass { .. } | ExtendedExpr::Backreference { .. } => {}
+    }
+}
+
+fn collect_tokens_core_impl<T, N>(expr: &CoreExpr<T, N>, result: &mut Vec<T>)
+where
+    T: Token,
+    N: NonTerminal,
+{
+    match expr {
+        CoreExpr::Token(t) => {
+            result.push(t.clone());
+        }
+        CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs) => {
+            for e in exprs {
+                collect_tokens_core_impl(e, result);
+            }
+        }
+        CoreExpr::Opt(e)
+        | CoreExpr::Repeat { expr: e, .. }
+        | CoreExpr::Label { expr: e, .. }
+        | CoreExpr::Node { expr: e, .. }
+        | CoreExpr::Flatten(e)
+        | CoreExpr::Prune(e) => {
+            collect_tokens_core_impl(e, result);
+        }
+        CoreExpr::Separated {
             item, separator, ..
         } => {
-            collect_tokens_impl(item, result);
-            collect_tokens_impl(separator, result);
+            collect_tokens_core_impl(item, result);
+            collect_tokens_core_impl(separator, result);
         }
-        Expr::Delimited {
+        CoreExpr::Delimited {
             open,
             content,
             close,
-            ..
         } => {
-            collect_tokens_impl(open, result);
-            collect_tokens_impl(content, result);
-            collect_tokens_impl(close, result);
+            collect_tokens_core_impl(open, result);
+            collect_tokens_core_impl(content, result);
+            collect_tokens_core_impl(close, result);
         }
-        _ => {}
+        CoreExpr::Rule(_) | CoreExpr::Any | CoreExpr::Eof | CoreExpr::Empty => {}
     }
 }
 
@@ -794,11 +795,17 @@ where
 
     // For long expressions, try to break them up
     match expr {
-        Expr::Seq(exprs) => {
+        ExtendedExpr::Core(CoreExpr::Seq(exprs)) => {
             let parts: Vec<String> = exprs
                 .iter()
                 .map(|e| {
-                    format_expr_ebnf_formatted(e, grammar, token_name, max_line_length, indent + 2)
+                    format_expr_ebnf_formatted(
+                        &ExtendedExpr::Core(e.clone()),
+                        grammar,
+                        token_name,
+                        max_line_length,
+                        indent + 2,
+                    )
                 })
                 .collect();
             let indent_str = " ".repeat(indent);
@@ -815,11 +822,17 @@ where
                 }
             }
         }
-        Expr::Choice(exprs) => {
+        ExtendedExpr::Core(CoreExpr::Choice(exprs)) => {
             let parts: Vec<String> = exprs
                 .iter()
                 .map(|e| {
-                    format_expr_ebnf_formatted(e, grammar, token_name, max_line_length, indent + 2)
+                    format_expr_ebnf_formatted(
+                        &ExtendedExpr::Core(e.clone()),
+                        grammar,
+                        token_name,
+                        max_line_length,
+                        indent + 2,
+                    )
                 })
                 .collect();
             let indent_str = " ".repeat(indent);
@@ -1039,22 +1052,56 @@ where
 }
 
 /// Check if an expression has error recovery enabled
-fn has_error_recovery<T, N>(expr: &Expr<T, N>) -> bool {
+fn has_error_recovery<T, N>(expr: &Expr<T, N>) -> bool
+where
+    T: Clone,
+    N: Clone,
+{
     match expr {
-        Expr::Delimited { recover, .. } => *recover,
-        Expr::Seq(exprs) | Expr::Choice(exprs) => exprs.iter().any(has_error_recovery),
-        Expr::Opt(e)
-        | Expr::Repeat { expr: e, .. }
-        | Expr::Label { expr: e, .. }
-        | Expr::Node { expr: e, .. }
-        | Expr::Flatten(e)
-        | Expr::Prune(e)
-        | Expr::Lookahead(e)
-        | Expr::NotLookahead(e)
-        | Expr::RecoveryPoint { expr: e, .. } => has_error_recovery(e),
-        Expr::Separated {
+        ExtendedExpr::Core(core_expr) => has_error_recovery_core(core_expr),
+        ExtendedExpr::RecoveryPoint { .. } => true,
+        ExtendedExpr::Lookahead(e)
+        | ExtendedExpr::NotLookahead(e)
+        | ExtendedExpr::SemanticPredicate { expr: e, .. } => has_error_recovery(e),
+        ExtendedExpr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            has_error_recovery(condition)
+                || has_error_recovery(then_expr)
+                || else_expr.as_ref().map_or(false, |e| has_error_recovery(e))
+        }
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(e) => has_error_recovery(e),
+        #[cfg(feature = "backend-pratt")]
+        ExtendedExpr::PrattOperator { expr: e, .. } => has_error_recovery(e),
+        _ => false,
+    }
+}
+
+fn has_error_recovery_core<T, N>(expr: &CoreExpr<T, N>) -> bool
+where
+    T: Clone,
+    N: Clone,
+{
+    match expr {
+        CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs) => exprs
+            .iter()
+            .any(|e| has_error_recovery(&ExtendedExpr::Core(e.clone()))),
+        CoreExpr::Opt(e)
+        | CoreExpr::Repeat { expr: e, .. }
+        | CoreExpr::Label { expr: e, .. }
+        | CoreExpr::Node { expr: e, .. }
+        | CoreExpr::Flatten(e)
+        | CoreExpr::Prune(e) => has_error_recovery(&ExtendedExpr::Core(e.as_ref().clone())),
+        CoreExpr::Separated {
             item, separator, ..
-        } => has_error_recovery(item) || has_error_recovery(separator),
+        } => {
+            has_error_recovery(&ExtendedExpr::Core(item.as_ref().clone()))
+                || has_error_recovery(&ExtendedExpr::Core(separator.as_ref().clone()))
+        }
+        CoreExpr::Delimited { .. } => false, // CoreExpr::Delimited doesn't have recover field
         _ => false,
     }
 }
@@ -1276,36 +1323,23 @@ fn collect_expression_details_impl<T, N>(
     N: NonTerminal,
 {
     match expr {
-        Expr::Separated {
-            separator,
-            trailing,
-            min,
-            ..
-        } => {
-            let sep_str = format_expr_ebnf(separator, grammar, token_name);
-            let trailing_note = match trailing {
-                crate::grammar::TrailingSeparator::Forbid => "trailing separator forbidden",
-                crate::grammar::TrailingSeparator::Allow => "trailing separator allowed",
-                crate::grammar::TrailingSeparator::Require => "trailing separator required",
-            };
-            result.push(format!(
-                "Separated list with separator `{sep_str}` ({trailing_note}, min: {min})"
-            ));
+        ExtendedExpr::Core(core_expr) => {
+            collect_expression_details_core_impl(core_expr, grammar, token_name, result);
         }
-        Expr::Delimited { recover, .. } => {
-            if *recover {
-                result.push("Delimited expression with error recovery enabled".to_string());
-            }
-        }
-        Expr::Lookahead(e) => {
+        ExtendedExpr::Lookahead(e) => {
             let inner = format_expr_ebnf(e, grammar, token_name);
             result.push(format!("Positive lookahead: `&{inner}`"));
+            collect_expression_details_impl(e, grammar, token_name, result);
         }
-        Expr::NotLookahead(e) => {
+        ExtendedExpr::NotLookahead(e) => {
             let inner = format_expr_ebnf(e, grammar, token_name);
             result.push(format!("Negative lookahead: `!{inner}`"));
+            collect_expression_details_impl(e, grammar, token_name, result);
         }
-        Expr::RecoveryPoint { sync_tokens, .. } => {
+        ExtendedExpr::RecoveryPoint {
+            sync_tokens,
+            expr: e,
+        } => {
             if sync_tokens.is_empty() {
                 result.push("Recovery point (no sync tokens specified)".to_string());
             } else {
@@ -1318,19 +1352,91 @@ fn collect_expression_details_impl<T, N>(
                     "Recovery point with sync tokens: {token_names_str}"
                 ));
             }
+            collect_expression_details_impl(e, grammar, token_name, result);
         }
-        Expr::Seq(exprs) | Expr::Choice(exprs) => {
-            for e in exprs {
-                collect_expression_details_impl(e, grammar, token_name, result);
+        ExtendedExpr::SemanticPredicate { expr: e, .. } => {
+            collect_expression_details_impl(e, grammar, token_name, result);
+        }
+        ExtendedExpr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_expression_details_impl(condition, grammar, token_name, result);
+            collect_expression_details_impl(then_expr, grammar, token_name, result);
+            if let Some(else_expr) = else_expr {
+                collect_expression_details_impl(else_expr, grammar, token_name, result);
             }
         }
-        Expr::Opt(e)
-        | Expr::Repeat { expr: e, .. }
-        | Expr::Label { expr: e, .. }
-        | Expr::Node { expr: e, .. }
-        | Expr::Flatten(e)
-        | Expr::Prune(e) => {
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(e) => {
             collect_expression_details_impl(e, grammar, token_name, result);
+        }
+        #[cfg(feature = "backend-pratt")]
+        ExtendedExpr::PrattOperator { expr: e, .. } => {
+            collect_expression_details_impl(e, grammar, token_name, result);
+        }
+        ExtendedExpr::TokenClass { .. } | ExtendedExpr::Backreference { .. } => {}
+    }
+}
+
+fn collect_expression_details_core_impl<T, N>(
+    expr: &CoreExpr<T, N>,
+    grammar: &Grammar<T, N>,
+    token_name: &impl Fn(&T) -> String,
+    result: &mut Vec<String>,
+) where
+    T: Token,
+    N: NonTerminal,
+{
+    match expr {
+        CoreExpr::Separated {
+            separator,
+            trailing,
+            min,
+            ..
+        } => {
+            let sep_str = format_core_expr_ebnf(separator, grammar, token_name);
+            let trailing_note = match trailing {
+                crate::grammar::TrailingSeparator::Forbid => "trailing separator forbidden",
+                crate::grammar::TrailingSeparator::Allow => "trailing separator allowed",
+                crate::grammar::TrailingSeparator::Require => "trailing separator required",
+            };
+            result.push(format!(
+                "Separated list with separator `{sep_str}` ({trailing_note}, min: {min})"
+            ));
+            collect_expression_details_impl(
+                &ExtendedExpr::Core(separator.as_ref().clone()),
+                grammar,
+                token_name,
+                result,
+            );
+        }
+        CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs) => {
+            for e in exprs {
+                collect_expression_details_impl(
+                    &ExtendedExpr::Core(e.clone()),
+                    grammar,
+                    token_name,
+                    result,
+                );
+            }
+        }
+        CoreExpr::Opt(e)
+        | CoreExpr::Repeat { expr: e, .. }
+        | CoreExpr::Label { expr: e, .. }
+        | CoreExpr::Node { expr: e, .. }
+        | CoreExpr::Flatten(e)
+        | CoreExpr::Prune(e) => {
+            collect_expression_details_impl(
+                &ExtendedExpr::Core(e.as_ref().clone()),
+                grammar,
+                token_name,
+                result,
+            );
+        }
+        CoreExpr::Delimited { .. } => {
+            // Delimited doesn't have a recover field in CoreExpr
         }
         _ => {}
     }
@@ -1353,42 +1459,76 @@ where
     N: NonTerminal,
 {
     match expr {
-        Expr::Rule(n) => {
-            result.push(n.clone());
+        ExtendedExpr::Core(core_expr) => {
+            collect_referenced_rules_core_impl(core_expr, result);
         }
-        Expr::Seq(exprs) | Expr::Choice(exprs) => {
-            for e in exprs {
-                collect_referenced_rules_impl(e, result);
-            }
-        }
-        Expr::Opt(e)
-        | Expr::Repeat { expr: e, .. }
-        | Expr::Label { expr: e, .. }
-        | Expr::Node { expr: e, .. }
-        | Expr::Flatten(e)
-        | Expr::Prune(e)
-        | Expr::Lookahead(e)
-        | Expr::NotLookahead(e)
-        | Expr::RecoveryPoint { expr: e, .. } => {
+        ExtendedExpr::Lookahead(e)
+        | ExtendedExpr::NotLookahead(e)
+        | ExtendedExpr::RecoveryPoint { expr: e, .. }
+        | ExtendedExpr::SemanticPredicate { expr: e, .. } => {
             collect_referenced_rules_impl(e, result);
         }
-        Expr::Separated {
+        ExtendedExpr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_referenced_rules_impl(condition, result);
+            collect_referenced_rules_impl(then_expr, result);
+            if let Some(else_expr) = else_expr {
+                collect_referenced_rules_impl(else_expr, result);
+            }
+        }
+        #[cfg(feature = "backend-peg")]
+        ExtendedExpr::Cut(e) => {
+            collect_referenced_rules_impl(e, result);
+        }
+        #[cfg(feature = "backend-pratt")]
+        ExtendedExpr::PrattOperator { expr: e, .. } => {
+            collect_referenced_rules_impl(e, result);
+        }
+        ExtendedExpr::TokenClass { .. } | ExtendedExpr::Backreference { .. } => {}
+    }
+}
+
+fn collect_referenced_rules_core_impl<T, N>(expr: &CoreExpr<T, N>, result: &mut Vec<N>)
+where
+    T: Token,
+    N: NonTerminal,
+{
+    match expr {
+        CoreExpr::Rule(n) => {
+            result.push(n.clone());
+        }
+        CoreExpr::Seq(exprs) | CoreExpr::Choice(exprs) => {
+            for e in exprs {
+                collect_referenced_rules_core_impl(e, result);
+            }
+        }
+        CoreExpr::Opt(e)
+        | CoreExpr::Repeat { expr: e, .. }
+        | CoreExpr::Label { expr: e, .. }
+        | CoreExpr::Node { expr: e, .. }
+        | CoreExpr::Flatten(e)
+        | CoreExpr::Prune(e) => {
+            collect_referenced_rules_core_impl(e, result);
+        }
+        CoreExpr::Separated {
             item, separator, ..
         } => {
-            collect_referenced_rules_impl(item, result);
-            collect_referenced_rules_impl(separator, result);
+            collect_referenced_rules_core_impl(item, result);
+            collect_referenced_rules_core_impl(separator, result);
         }
-        Expr::Delimited {
+        CoreExpr::Delimited {
             open,
             content,
             close,
-            ..
         } => {
-            collect_referenced_rules_impl(open, result);
-            collect_referenced_rules_impl(content, result);
-            collect_referenced_rules_impl(close, result);
+            collect_referenced_rules_core_impl(open, result);
+            collect_referenced_rules_core_impl(content, result);
+            collect_referenced_rules_core_impl(close, result);
         }
-        _ => {}
+        CoreExpr::Token(_) | CoreExpr::Any | CoreExpr::Eof | CoreExpr::Empty => {}
     }
 }
 
@@ -1577,7 +1717,7 @@ mod tests {
             .entry_point(TestNonTerminal::Expr)
             .rule(
                 TestNonTerminal::Expr,
-                Expr::Choice(vec![
+                Expr::choice(vec![
                     Expr::token(TestToken::Number),
                     Expr::token(TestToken::Plus),
                 ]),
@@ -1585,7 +1725,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Choice(vec![
+        let expr = Expr::choice(vec![
             Expr::token(TestToken::Number),
             Expr::token(TestToken::Plus),
         ]);
@@ -1599,7 +1739,7 @@ mod tests {
             .entry_point(TestNonTerminal::Expr)
             .rule(
                 TestNonTerminal::Expr,
-                Expr::Seq(vec![
+                Expr::seq(vec![
                     Expr::token(TestToken::Number),
                     Expr::token(TestToken::Plus),
                     Expr::token(TestToken::Number),
@@ -1608,7 +1748,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Seq(vec![
+        let expr = Expr::seq(vec![
             Expr::token(TestToken::Number),
             Expr::token(TestToken::Plus),
             Expr::token(TestToken::Number),
@@ -1625,7 +1765,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Opt(Box::new(Expr::token(TestToken::Number)));
+        let expr = Expr::opt(Expr::token(TestToken::Number));
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'Number'?");
     }
@@ -1638,12 +1778,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Repeat {
-            expr: Box::new(Expr::token(TestToken::Number)),
-            min: 0,
-            max: None,
-            greedy: true,
-        };
+        let expr = Expr::star(Expr::token(TestToken::Number));
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'Number'*");
     }
@@ -1656,12 +1791,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Repeat {
-            expr: Box::new(Expr::token(TestToken::Number)),
-            min: 1,
-            max: None,
-            greedy: true,
-        };
+        let expr = Expr::plus(Expr::token(TestToken::Number));
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'Number'+");
     }
@@ -1674,12 +1804,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Repeat {
-            expr: Box::new(Expr::token(TestToken::Number)),
-            min: 2,
-            max: Some(5),
-            greedy: true,
-        };
+        let expr = Expr::repeat_with_greedy(Expr::token(TestToken::Number), 2, Some(5), true);
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'Number'{2,5}");
     }
@@ -1692,12 +1817,12 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Delimited {
-            open: Box::new(Expr::token(TestToken::LParen)),
-            content: Box::new(Expr::token(TestToken::Number)),
-            close: Box::new(Expr::token(TestToken::RParen)),
-            recover: true,
-        };
+        let expr = Expr::delimited_with_recovery(
+            Expr::token(TestToken::LParen),
+            Expr::token(TestToken::Number),
+            Expr::token(TestToken::RParen),
+            true,
+        );
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert_eq!(ebnf, "'LParen' 'Number' 'RParen'");
     }
@@ -1710,12 +1835,12 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Separated {
-            item: Box::new(Expr::token(TestToken::Number)),
-            separator: Box::new(Expr::token(TestToken::Plus)),
-            min: 0,
-            trailing: crate::grammar::TrailingSeparator::Forbid,
-        };
+        let expr = Expr::separated_with_config(
+            Expr::token(TestToken::Number),
+            Expr::token(TestToken::Plus),
+            0,
+            crate::grammar::TrailingSeparator::Forbid,
+        );
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
         assert!(ebnf.contains("'Number'"));
         assert!(ebnf.contains("'Plus'"));
@@ -1729,9 +1854,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::Lookahead(Box::new(Expr::token(TestToken::Number)));
+        let expr = Expr::lookahead(Expr::token(TestToken::Number));
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
-        assert_eq!(ebnf, "&'Number'");
+        assert_eq!(ebnf, "&('Number')");
     }
 
     #[test]
@@ -1742,22 +1867,28 @@ mod tests {
             .build()
             .unwrap();
 
-        let expr = Expr::NotLookahead(Box::new(Expr::token(TestToken::Number)));
+        let expr = Expr::not_lookahead(Expr::token(TestToken::Number));
         let ebnf = format_expr_ebnf(&expr, &grammar, &token_name);
-        assert_eq!(ebnf, "!'Number'");
+        assert_eq!(ebnf, "!('Number')");
     }
 
     #[test]
     fn test_ebnf_format_primitives() {
         let grammar = GrammarBuilder::new()
             .entry_point(TestNonTerminal::Expr)
-            .rule(TestNonTerminal::Expr, Expr::Empty)
+            .rule(TestNonTerminal::Expr, Expr::empty())
             .build()
             .unwrap();
 
-        assert_eq!(format_expr_ebnf(&Expr::Any, &grammar, &token_name), "'ANY'");
-        assert_eq!(format_expr_ebnf(&Expr::Eof, &grammar, &token_name), "'EOF'");
-        assert_eq!(format_expr_ebnf(&Expr::Empty, &grammar, &token_name), "ε");
+        assert_eq!(
+            format_expr_ebnf(&Expr::any(), &grammar, &token_name),
+            "'ANY'"
+        );
+        assert_eq!(
+            format_expr_ebnf(&Expr::eof(), &grammar, &token_name),
+            "'EOF'"
+        );
+        assert_eq!(format_expr_ebnf(&Expr::empty(), &grammar, &token_name), "ε");
     }
 
     #[test]
@@ -1826,8 +1957,8 @@ mod tests {
             .entry_point(TestNonTerminal::Expr)
             .rule_with_description(
                 TestNonTerminal::Expr,
-                Expr::Choice(vec![
-                    Expr::Seq(vec![
+                Expr::choice(vec![
+                    Expr::seq(vec![
                         Expr::rule(TestNonTerminal::Term),
                         Expr::token(TestToken::Plus),
                         Expr::rule(TestNonTerminal::Expr),
@@ -1852,7 +1983,7 @@ mod tests {
 
     #[test]
     fn test_collect_tokens() {
-        let expr: Expr<TestToken, TestNonTerminal> = Expr::Seq(vec![
+        let expr: Expr<TestToken, TestNonTerminal> = Expr::seq(vec![
             Expr::token(TestToken::Number),
             Expr::token(TestToken::Plus),
             Expr::token(TestToken::Number),
@@ -1866,9 +1997,9 @@ mod tests {
 
     #[test]
     fn test_collect_tokens_nested() {
-        let expr: Expr<TestToken, TestNonTerminal> = Expr::Choice(vec![
+        let expr: Expr<TestToken, TestNonTerminal> = Expr::choice(vec![
             Expr::token(TestToken::Number),
-            Expr::Seq(vec![
+            Expr::seq(vec![
                 Expr::token(TestToken::Plus),
                 Expr::token(TestToken::Minus),
             ]),
