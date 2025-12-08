@@ -63,7 +63,7 @@ jobs:
           path: ~/.cargo/bin/
           key: ${{ runner.os }}-cargo-bin-mdbook-mermaid
       - name: Install mdBook
-        uses: peaceiris/actions-mdbook@v1
+        uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: 'latest'
       - name: Install mdbook-mermaid
@@ -101,7 +101,7 @@ jobs:
           path: ~/.cargo/bin/
           key: ${{ runner.os }}-cargo-bin-mdbook-mermaid
       - name: Install mdBook
-        uses: peaceiris/actions-mdbook@v1
+        uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: 'latest'
       - name: Install mdbook-mermaid
