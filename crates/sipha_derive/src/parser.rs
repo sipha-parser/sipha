@@ -332,7 +332,6 @@ fn parse_primary(input: ParseStream) -> Result<GrammarExpr> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quote::quote;
 
     fn parse_expr(input: &str) -> GrammarExpr {
         syn::parse_str(input).unwrap()

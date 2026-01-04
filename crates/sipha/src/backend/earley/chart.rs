@@ -1,7 +1,7 @@
 //! Chart data structure for Earley parser
 
-use crate::grammar::{Expr, Grammar, NonTerminal, Token};
-use std::collections::{HashMap, HashSet};
+use crate::grammar::{Expr, NonTerminal, Token};
+use std::collections::HashSet;
 
 /// An Earley item (state) in the chart
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -180,6 +180,7 @@ where
     }
 
     /// Get the set of items at a given position (mutable)
+    #[allow(dead_code)]
     pub fn get_mut(&mut self, position: usize) -> &mut HashSet<EarleyItem<T, N>> {
         &mut self.chart[position]
     }
@@ -191,11 +192,13 @@ where
     }
 
     /// Check if an item exists at the given position
+    #[allow(dead_code)]
     pub fn contains(&self, position: usize, item: &EarleyItem<T, N>) -> bool {
         self.chart[position].contains(item)
     }
 
     /// Get the number of positions (input length + 1)
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.chart.len()
     }

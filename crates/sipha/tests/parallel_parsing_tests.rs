@@ -147,7 +147,8 @@ fn test_aggregate_results() {
 #[test]
 fn test_parallel_parser_new() {
     let grammar = create_test_grammar();
-    let parser: ParallelParser<TestToken, TestNonTerminal, TestKind> = ParallelParser::new(Arc::new(grammar));
+    let parser: ParallelParser<TestToken, TestNonTerminal, TestKind> =
+        ParallelParser::new(Arc::new(grammar));
     assert!(parser.grammar().rules().next().is_some());
 }
 

@@ -463,6 +463,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_aggregate_results() {
         use crate::syntax::{GreenElement, GreenNode, GreenToken, TextSize};
 

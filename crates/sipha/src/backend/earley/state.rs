@@ -1,6 +1,6 @@
 //! Parser state for Earley parser
 
-use crate::grammar::{Grammar, NonTerminal, Token};
+use crate::grammar::{NonTerminal, Token};
 use std::collections::HashMap;
 
 /// Parser state for Earley algorithm

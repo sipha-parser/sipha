@@ -563,6 +563,7 @@ mod tests {
     use crate::syntax::TextSize;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[allow(dead_code)]
     enum TestKind {
         Ident,
         Semi,
@@ -580,6 +581,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn make_token(kind: TestKind, text: &str) -> Token<TestKind> {
         Token {
             kind,

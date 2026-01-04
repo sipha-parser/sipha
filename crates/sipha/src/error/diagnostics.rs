@@ -257,6 +257,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_string_similarity() {
         assert_eq!(string_similarity("hello", "hello"), 1.0);
         assert!(string_similarity("hello", "hell") > 0.5);

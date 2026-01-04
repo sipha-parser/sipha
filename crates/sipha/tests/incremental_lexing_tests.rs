@@ -141,12 +141,18 @@ fn test_incremental_lexer_token_reuse() {
     // Tokens before the edit should be unchanged (at least some tokens should be preserved)
     // The changed_range.start indicates where the changes begin
     // We expect at least the first token ("foo") to be unchanged
-    assert!(delta.changed_range.start >= 1, "At least the first token should be unchanged");
+    assert!(
+        delta.changed_range.start >= 1,
+        "At least the first token should be unchanged"
+    );
 
     // Tokens after the edit should be preserved (just positions updated)
     let final_tokens = incr.tokens();
     // After replacing "bar" with "qux", we should have similar token count
-    assert!(final_tokens.len() >= initial_tokens.len() - 2, "Most tokens should be preserved");
+    assert!(
+        final_tokens.len() >= initial_tokens.len() - 2,
+        "Most tokens should be preserved"
+    );
 }
 
 #[test]

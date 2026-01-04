@@ -359,14 +359,8 @@ mod tests {
     fn test_find_delimiter() {
         assert_eq!(SimdScanner::find_delimiter(b"hello;world", b";"), Some(5));
         assert_eq!(SimdScanner::find_delimiter(b"hello", b";"), None);
-        assert_eq!(
-            SimdScanner::find_delimiter(b"a,b;c", &[b',', b';']),
-            Some(1)
-        );
-        assert_eq!(
-            SimdScanner::find_delimiter(b"abc", &[b',', b';', b':']),
-            None
-        );
+        assert_eq!(SimdScanner::find_delimiter(b"a,b;c", b",;"), Some(1));
+        assert_eq!(SimdScanner::find_delimiter(b"abc", b",;:"), None);
     }
 
     #[test]

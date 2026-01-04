@@ -3,7 +3,7 @@
 #[cfg(feature = "backend-earley")]
 use sipha::backend::ParserBackend;
 #[cfg(feature = "backend-earley")]
-use sipha::backend::earley::{EarleyConfig, EarleyError, EarleyParser};
+use sipha::backend::earley::{EarleyConfig, EarleyParser};
 #[cfg(feature = "backend-earley")]
 use sipha::grammar::{Expr, GrammarBuilder, NonTerminal, Token};
 #[cfg(feature = "backend-earley")]

@@ -465,8 +465,6 @@ pub struct GrammarStats {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Tests would require full grammar setup which is complex
     // See integration tests for full examples
 }

@@ -3,18 +3,19 @@
 use crate::backend::earley::chart::{EarleyChart, EarleyItem, EarleySymbol};
 use crate::backend::earley::config::EarleyConfig;
 use crate::backend::earley::state::EarleyParserState;
-use crate::error::{ParseError, ParseMetrics, ParseResult, ParseWarning};
+use crate::error::{ParseError, ParseMetrics, ParseResult};
 use crate::grammar::{Expr, Grammar, NonTerminal, Token};
 use crate::syntax::builder::GreenNodeBuilder;
-use crate::syntax::{GreenElement, GreenNode, GreenToken, SyntaxKind, TextRange, TextSize};
+use crate::syntax::{GreenNode, TextSize};
 use std::sync::Arc;
 
 /// Parse input using Earley algorithm
+#[allow(clippy::too_many_lines)]
 pub fn parse<T, N>(
     grammar: &Grammar<T, N>,
     input: &[T],
     entry: &N,
-    config: &EarleyConfig,
+    _config: &EarleyConfig,
     _state: &mut EarleyParserState<T, N>,
 ) -> ParseResult<T, N>
 where
@@ -23,7 +24,7 @@ where
 {
     let start_time = std::time::Instant::now();
     let mut errors = Vec::new();
-    let mut warnings = Vec::new();
+    let warnings = Vec::new();
 
     // Initialize chart
     let mut chart = EarleyChart::new(input.len());
@@ -116,21 +117,18 @@ where
                             EarleySymbol::NonTerminal(nt) => {
                                 // Predictor: add items for all productions of this non-terminal
                                 if let Some(nt_rule) = grammar.get_rule(&nt) {
-                                    match &nt_rule.rhs {
-                                        Expr::Choice(alts) => {
-                                            for (alt_idx, _) in alts.iter().enumerate() {
-                                                let new_item =
-                                                    EarleyItem::new(nt.clone(), alt_idx, 0, i);
-                                                if chart.add(i, new_item) {
-                                                    changed = true;
-                                                }
-                                            }
-                                        }
-                                        _ => {
-                                            let new_item = EarleyItem::new(nt.clone(), 0, 0, i);
+                                    if let Expr::Choice(alts) = &nt_rule.rhs {
+                                        for (alt_idx, _) in alts.iter().enumerate() {
+                                            let new_item =
+                                                EarleyItem::new(nt.clone(), alt_idx, 0, i);
                                             if chart.add(i, new_item) {
                                                 changed = true;
                                             }
+                                        }
+                                    } else {
+                                        let new_item = EarleyItem::new(nt.clone(), 0, 0, i);
+                                        if chart.add(i, new_item) {
+                                            changed = true;
                                         }
                                     }
                                 }
@@ -157,18 +155,18 @@ where
                                 // Check if completer is waiting for item.lhs
                                 if let Some(EarleySymbol::NonTerminal(nt)) =
                                     completer.next_symbol(completer_rhs)
+                                    && nt == item.lhs
+                                    && completer.start == item.start
                                 {
-                                    if nt == item.lhs && completer.start == item.start {
-                                        // Advance the completer
-                                        let new_item = EarleyItem::new(
-                                            completer.lhs.clone(),
-                                            completer.rule_index,
-                                            completer.dot + 1,
-                                            completer.start,
-                                        );
-                                        if chart.add(i, new_item) {
-                                            changed = true;
-                                        }
+                                    // Advance the completer
+                                    let new_item = EarleyItem::new(
+                                        completer.lhs.clone(),
+                                        completer.rule_index,
+                                        completer.dot + 1,
+                                        completer.start,
+                                    );
+                                    if chart.add(i, new_item) {
+                                        changed = true;
                                     }
                                 }
                             }
@@ -186,7 +184,7 @@ where
         .filter(|item| {
             item.lhs == *entry
                 && item.start == 0
-                && grammar.get_rule(&item.lhs).map_or(false, |rule| {
+                && grammar.get_rule(&item.lhs).is_some_and(|rule| {
                     let rhs = match &rule.rhs {
                         Expr::Choice(alts) => {
                             if item.rule_index < alts.len() {
@@ -255,11 +253,12 @@ where
 }
 
 /// Parse with incremental session support
+#[allow(clippy::too_many_lines)]
 pub fn parse_with_session<T, N>(
     grammar: &Grammar<T, N>,
     input: &[T],
     entry: &N,
-    config: &EarleyConfig,
+    _config: &EarleyConfig,
     _state: &mut EarleyParserState<T, N>,
     session: &crate::incremental::IncrementalSession<'_, T::Kind>,
 ) -> ParseResult<T, N>
@@ -269,7 +268,7 @@ where
 {
     let start_time = std::time::Instant::now();
     let mut errors = Vec::new();
-    let mut warnings = Vec::new();
+    let warnings = Vec::new();
 
     // Initialize chart
     let mut chart = EarleyChart::new(input.len());
@@ -362,21 +361,18 @@ where
                             EarleySymbol::NonTerminal(nt) => {
                                 // Predictor: add items for all productions of this non-terminal
                                 if let Some(nt_rule) = grammar.get_rule(&nt) {
-                                    match &nt_rule.rhs {
-                                        Expr::Choice(alts) => {
-                                            for (alt_idx, _) in alts.iter().enumerate() {
-                                                let new_item =
-                                                    EarleyItem::new(nt.clone(), alt_idx, 0, i);
-                                                if chart.add(i, new_item) {
-                                                    changed = true;
-                                                }
-                                            }
-                                        }
-                                        _ => {
-                                            let new_item = EarleyItem::new(nt.clone(), 0, 0, i);
+                                    if let Expr::Choice(alts) = &nt_rule.rhs {
+                                        for (alt_idx, _) in alts.iter().enumerate() {
+                                            let new_item =
+                                                EarleyItem::new(nt.clone(), alt_idx, 0, i);
                                             if chart.add(i, new_item) {
                                                 changed = true;
                                             }
+                                        }
+                                    } else {
+                                        let new_item = EarleyItem::new(nt.clone(), 0, 0, i);
+                                        if chart.add(i, new_item) {
+                                            changed = true;
                                         }
                                     }
                                 }
@@ -400,20 +396,19 @@ where
                                     _ => &completer_rule.rhs,
                                 };
 
-                                if let Some(next_sym) = completer.next_symbol(completer_rhs) {
-                                    if let EarleySymbol::NonTerminal(nt) = next_sym {
-                                        if nt == item.lhs {
-                                            // This completer is waiting for item.lhs
-                                            let new_item = EarleyItem::new(
-                                                completer.lhs.clone(),
-                                                completer.rule_index,
-                                                completer.dot + 1,
-                                                completer.start,
-                                            );
-                                            if chart.add(i, new_item) {
-                                                changed = true;
-                                            }
-                                        }
+                                if let Some(EarleySymbol::NonTerminal(nt)) =
+                                    completer.next_symbol(completer_rhs)
+                                    && nt == item.lhs
+                                {
+                                    // This completer is waiting for item.lhs
+                                    let new_item = EarleyItem::new(
+                                        completer.lhs.clone(),
+                                        completer.rule_index,
+                                        completer.dot + 1,
+                                        completer.start,
+                                    );
+                                    if chart.add(i, new_item) {
+                                        changed = true;
                                     }
                                 }
                             }
@@ -547,8 +542,8 @@ where
 {
     // Calculate text position for this range
     let mut text_pos = TextSize::zero();
-    for i in 0..start.min(input.len()) {
-        text_pos += input[i].text_len();
+    for token in input.iter().take(start.min(input.len())) {
+        text_pos += token.text_len();
     }
 
     // Check if we can reuse a node from the session
@@ -626,13 +621,12 @@ where
                             }
                             Expr::Rule(nt) => {
                                 // Find completed item for this non-terminal
-                                if let Some(child_item) = find_completed_item(chart, nt, pos, end) {
-                                    if let Some(child_node) =
+                                if let Some(child_item) = find_completed_item(chart, nt, pos, end)
+                                    && let Some(child_node) =
                                         extract_tree(grammar, chart, &child_item, input, pos, end)
-                                    {
-                                        builder.reuse_node(child_node).ok()?;
-                                        pos = end; // Simplified - should track actual end
-                                    }
+                                {
+                                    builder.reuse_node(child_node).ok()?;
+                                    pos = end; // Simplified - should track actual end
                                 }
                             }
                             _ => {
@@ -650,12 +644,11 @@ where
                 }
             }
             Expr::Rule(nt) => {
-                if let Some(child_item) = find_completed_item(chart, nt, start, end) {
-                    if let Some(child_node) =
+                if let Some(child_item) = find_completed_item(chart, nt, start, end)
+                    && let Some(child_node) =
                         extract_tree(grammar, chart, &child_item, input, start, end)
-                    {
-                        builder.reuse_node(child_node).ok()?;
-                    }
+                {
+                    builder.reuse_node(child_node).ok()?;
                 }
             }
             _ => {
@@ -664,7 +657,7 @@ where
         }
 
         builder.finish_node().ok()?;
-        Some(builder.finish().ok()?.into())
+        Some(builder.finish().ok()?)
     } else {
         None
     }

@@ -9,8 +9,6 @@ use sipha::backend::ParserBackend;
 use sipha::backend::ll::{LlConfig, LlParser};
 #[cfg(feature = "backend-lr")]
 use sipha::backend::lr::{LrConfig, LrParser};
-#[cfg(feature = "backend-peg")]
-use sipha::backend::peg::{PegConfig, PegParser};
 use sipha::grammar::{Expr, GrammarBuilder, NonTerminal, Token, capture::CaptureId};
 use sipha::syntax::{SyntaxKind, TextSize};
 

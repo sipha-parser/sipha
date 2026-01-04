@@ -313,6 +313,7 @@ mod tests {
     use super::*;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[allow(dead_code)]
     enum TestKind {
         Root,
         Expr,

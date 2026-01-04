@@ -265,7 +265,7 @@ mod error_recovery_property_tests {
                     .iter()
                     .map(|t| create_token(t.kind(), &t.text().to_string()))
                     .collect();
-                
+
                 let grammar = build_arithmetic_grammar();
                 // This grammar has left recursion, so LL parser creation may fail
                 // Skip parsing if parser creation fails (this is expected for this grammar)
