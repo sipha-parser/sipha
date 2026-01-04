@@ -10,7 +10,9 @@ mod parser;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DataEnum, DeriveInput, Expr, Fields, LitStr, Meta, MetaNameValue};
+use syn::{
+    Data, DataEnum, DeriveInput, Expr, Fields, LitStr, Meta, MetaNameValue, parse_macro_input,
+};
 
 /// Derive typed AST wrappers for a non-terminal enum
 ///
@@ -264,7 +266,7 @@ fn derive_token_impl(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStrea
             return Err(syn::Error::new_spanned(
                 input,
                 "GrammarToken can only be derived for enums",
-            ))
+            ));
         }
     };
 

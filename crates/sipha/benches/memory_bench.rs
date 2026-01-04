@@ -3,7 +3,7 @@
 //! This benchmark suite measures memory consumption for various parsing scenarios.
 //! It helps identify memory hotspots and optimize allocation patterns.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sipha::syntax::{GreenNode, GreenNodeBuilder, SyntaxKind, SyntaxNode, TextSize};
 use std::time::Duration;
 
@@ -70,7 +70,11 @@ fn bench_tree_construction_memory(c: &mut Criterion) {
     group.finish();
 }
 
-fn build_tree_recursive(builder: &mut GreenNodeBuilder<BenchSyntaxKind>, kind: BenchSyntaxKind, remaining: usize) {
+fn build_tree_recursive(
+    builder: &mut GreenNodeBuilder<BenchSyntaxKind>,
+    kind: BenchSyntaxKind,
+    remaining: usize,
+) {
     if remaining == 0 {
         builder.token(BenchSyntaxKind::Number, "1");
         return;
@@ -81,7 +85,11 @@ fn build_tree_recursive(builder: &mut GreenNodeBuilder<BenchSyntaxKind>, kind: B
         // Build two children
         build_tree_recursive(builder, BenchSyntaxKind::Expr, remaining / 2);
         builder.token(BenchSyntaxKind::Plus, "+");
-        build_tree_recursive(builder, BenchSyntaxKind::Expr, remaining - remaining / 2 - 1);
+        build_tree_recursive(
+            builder,
+            BenchSyntaxKind::Expr,
+            remaining - remaining / 2 - 1,
+        );
     } else {
         builder.token(BenchSyntaxKind::Number, "1");
     }
@@ -94,15 +102,11 @@ fn bench_cache_memory(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(2));
 
-    use sipha::incremental::cache::{CacheEntry, ContentCacheKey, IncrementalCache};
     use lasso::Spur;
+    use sipha::incremental::cache::{CacheEntry, ContentCacheKey, IncrementalCache};
     use std::sync::Arc;
 
-    let cache_sizes = vec![
-        ("small", 10),
-        ("medium", 100),
-        ("large", 1000),
-    ];
+    let cache_sizes = vec![("small", 10), ("medium", 100), ("large", 1000)];
 
     for (size_name, entry_count) in cache_sizes {
         group.bench_with_input(
@@ -110,7 +114,8 @@ fn bench_cache_memory(c: &mut Criterion) {
             &entry_count,
             |b, count| {
                 b.iter(|| {
-                    let mut cache: IncrementalCache<BenchSyntaxKind> = IncrementalCache::new(*count);
+                    let mut cache: IncrementalCache<BenchSyntaxKind> =
+                        IncrementalCache::new(*count);
 
                     // Create cache entries
                     for i in 0..*count {
@@ -144,11 +149,7 @@ fn bench_allocation_strategies(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(2));
 
-    let sizes = vec![
-        ("small", 100),
-        ("medium", 1000),
-        ("large", 10000),
-    ];
+    let sizes = vec![("small", 100), ("medium", 1000), ("large", 10000)];
 
     for (size_name, node_count) in sizes {
         group.bench_with_input(
@@ -181,4 +182,3 @@ criterion_group!(
     bench_allocation_strategies
 );
 criterion_main!(benches);
-

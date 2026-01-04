@@ -24,7 +24,7 @@ where
             parse_cache: HashMap::new(),
         }
     }
-    
+
     /// Clear the parse cache
     pub fn clear_cache(&mut self) {
         self.parse_cache.clear();
@@ -40,4 +40,3 @@ where
         Self::new()
     }
 }
-

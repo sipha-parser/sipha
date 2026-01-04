@@ -173,11 +173,15 @@ impl LineIndex {
     /// ```
     #[must_use]
     pub fn offset(&self, line: u32, character: u32) -> TextSize {
-        let line_start = self
-            .line_start(line)
-            .unwrap_or_else(|| panic!("Line {} is out of bounds (max: {})", line, self.line_count().saturating_sub(1)));
-        let offset_u32 = u32::from(line_start.into()).saturating_add(character);
-        TextSize::from(offset_u32.min(u32::from(self.text_len.into())))
+        let line_start = self.line_start(line).unwrap_or_else(|| {
+            panic!(
+                "Line {} is out of bounds (max: {})",
+                line,
+                self.line_count().saturating_sub(1)
+            )
+        });
+        let offset_u32 = line_start.into().saturating_add(character);
+        TextSize::from(offset_u32.min(self.text_len.into()))
     }
 }
 

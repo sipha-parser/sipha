@@ -4,7 +4,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Result, Error};
+use syn::{Error, Result};
 
 use crate::parser::{GrammarDef, GrammarExpr, TokenPattern};
 
@@ -15,20 +15,21 @@ fn validate_grammar(grammar: &GrammarDef) -> Result<()> {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
             "grammar must have at least one rule\n\
-             help: define rules like: `RuleName = expression;`"
+             help: define rules like: `RuleName = expression;`",
         ));
     }
 
     // Check for entry point
-    let has_entry = grammar.rules.iter().any(|r| {
-        r.attrs.iter().any(|attr| attr.name == "entry")
-    });
-    
+    let has_entry = grammar
+        .rules
+        .iter()
+        .any(|r| r.attrs.iter().any(|attr| attr.name == "entry"));
+
     if !has_entry {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
             "grammar must have an entry point\n\
-             help: mark one rule with `#[entry]`, e.g., `#[entry] Expr = ...;`"
+             help: mark one rule with `#[entry]`, e.g., `#[entry] Expr = ...;`",
         ));
     }
 
@@ -38,8 +39,11 @@ fn validate_grammar(grammar: &GrammarDef) -> Result<()> {
         if !rule_names.insert(&rule.name) {
             return Err(Error::new_spanned(
                 &rule.name,
-                format!("duplicate rule name `{}`\n\
-                         help: each rule must have a unique name", rule.name)
+                format!(
+                    "duplicate rule name `{}`\n\
+                         help: each rule must have a unique name",
+                    rule.name
+                ),
             ));
         }
     }
@@ -50,14 +54,19 @@ fn validate_grammar(grammar: &GrammarDef) -> Result<()> {
         if !token_names.insert(&token.name) {
             return Err(Error::new_spanned(
                 &token.name,
-                format!("duplicate token name `{}`\n\
-                         help: each token must have a unique name", token.name)
+                format!(
+                    "duplicate token name `{}`\n\
+                         help: each token must have a unique name",
+                    token.name
+                ),
             ));
         }
     }
 
     // Validate rule references
-    let all_names: std::collections::HashSet<_> = grammar.rules.iter()
+    let all_names: std::collections::HashSet<_> = grammar
+        .rules
+        .iter()
         .map(|r| &r.name)
         .chain(grammar.tokens.iter().map(|t| &t.name))
         .collect();
@@ -81,10 +90,9 @@ fn validate_expr(
                 return Err(Error::new_spanned(
                     ident,
                     format!(
-                        "undefined reference `{}` in rule `{}`\n\
-                         help: make sure `{}` is defined as a rule or token before use",
-                        ident, rule_name, ident
-                    )
+                        "undefined reference `{ident}` in rule `{rule_name}`\n\
+                         help: make sure `{ident}` is defined as a rule or token before use"
+                    ),
                 ));
             }
         }
@@ -93,7 +101,10 @@ fn validate_expr(
                 validate_expr(item, valid_names, rule_name)?;
             }
         }
-        GrammarExpr::Opt(inner) | GrammarExpr::Star(inner) | GrammarExpr::Plus(inner) | GrammarExpr::Group(inner) => {
+        GrammarExpr::Opt(inner)
+        | GrammarExpr::Star(inner)
+        | GrammarExpr::Plus(inner)
+        | GrammarExpr::Group(inner) => {
             validate_expr(inner, valid_names, rule_name)?;
         }
         GrammarExpr::Literal(_) => {
@@ -107,7 +118,7 @@ fn validate_expr(
 pub fn generate(grammar: &GrammarDef) -> Result<TokenStream> {
     // Validate grammar before generating code
     validate_grammar(grammar)?;
-    
+
     let syntax_kind_enum = generate_syntax_kind(grammar)?;
     let syntax_kind_impl = generate_syntax_kind_impl(grammar)?;
     let non_terminal_enum = generate_non_terminal(grammar)?;
@@ -176,11 +187,7 @@ fn generate_syntax_kind_impl(grammar: &GrammarDef) -> Result<TokenStream> {
     let trivia_names: Vec<_> = grammar
         .tokens
         .iter()
-        .filter(|t| {
-            t.attrs
-                .iter()
-                .any(|attr| attr.name == "trivia" || attr.name.to_string() == "trivia")
-        })
+        .filter(|t| t.attrs.iter().any(|attr| attr.name == "trivia"))
         .map(|t| &t.name)
         .collect();
 
@@ -379,4 +386,3 @@ mod tests {
         assert!(code_str.contains("rule_ref"));
     }
 }
-

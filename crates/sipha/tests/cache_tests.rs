@@ -1,9 +1,9 @@
 //! Additional tests for incremental cache functionality
 
+use lasso::Key;
 use sipha::grammar::Token;
 use sipha::incremental::cache::{ContentCacheKey, IncrementalCache};
 use sipha::syntax::{GreenElement, GreenNode, GreenToken, SyntaxKind, TextSize};
-use lasso::Key;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum TestKind {
@@ -58,14 +58,24 @@ fn test_content_cache_key_from_tokens() {
     let context = 100;
 
     let tokens1 = vec![
-        TestToken { kind: TestKind::Ident },
-        TestToken { kind: TestKind::Ident },
+        TestToken {
+            kind: TestKind::Ident,
+        },
+        TestToken {
+            kind: TestKind::Ident,
+        },
     ];
     let tokens2 = vec![
-        TestToken { kind: TestKind::Ident },
-        TestToken { kind: TestKind::Ident },
+        TestToken {
+            kind: TestKind::Ident,
+        },
+        TestToken {
+            kind: TestKind::Ident,
+        },
     ];
-    let tokens3 = vec![TestToken { kind: TestKind::Ident }];
+    let tokens3 = vec![TestToken {
+        kind: TestKind::Ident,
+    }];
 
     let key1 = ContentCacheKey::from_tokens(rule, &tokens1, context);
     let key2 = ContentCacheKey::from_tokens(rule, &tokens2, context);
@@ -73,9 +83,12 @@ fn test_content_cache_key_from_tokens() {
 
     // Same tokens should produce same key
     assert_eq!(key1, key2, "Same tokens should produce same cache key");
-    
+
     // Different tokens should produce different key
-    assert_ne!(key1, key3, "Different tokens should produce different cache key");
+    assert_ne!(
+        key1, key3,
+        "Different tokens should produce different cache key"
+    );
 }
 
 /// Test ContentCacheKey::from_tokens with empty token list
@@ -86,7 +99,7 @@ fn test_content_cache_key_from_empty_tokens() {
     let tokens: Vec<TestToken> = vec![];
 
     let key = ContentCacheKey::from_tokens(rule, &tokens, context);
-    
+
     // Should not panic and create a valid key
     assert_eq!(key.rule, rule);
     assert_eq!(key.context_hash, context);
@@ -101,16 +114,13 @@ fn test_cache_different_rules() {
     let rule1 = lasso::Spur::try_from_usize(1).unwrap();
     let rule2 = lasso::Spur::try_from_usize(2).unwrap();
 
-    let tokens = vec![TestToken { kind: TestKind::Ident }];
+    let tokens = vec![TestToken {
+        kind: TestKind::Ident,
+    }];
     let key1 = ContentCacheKey::from_tokens(rule1, &tokens, 0);
     let key2 = ContentCacheKey::from_tokens(rule2, &tokens, 0);
 
-    let entry = sipha::incremental::cache::CacheEntry::new(
-        node.clone(),
-        1,
-        TextSize::from(1),
-        0,
-    );
+    let entry = sipha::incremental::cache::CacheEntry::new(node.clone(), 1, TextSize::from(1), 0);
 
     cache.insert(key1.clone(), entry.clone());
     cache.insert(key2.clone(), entry);
@@ -120,4 +130,3 @@ fn test_cache_different_rules() {
     assert!(cache.contains(&key2));
     assert_eq!(cache.len(), 2);
 }
-

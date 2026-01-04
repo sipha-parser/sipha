@@ -1087,17 +1087,18 @@ where
             // Capture the matched content for later use in backreferences
             let start_pos = *pos;
             let start_text_pos = *text_pos;
-            
+
             // Parse the inner expression
             match parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings) {
                 Ok(ParseExprResult::Success { text_len, .. }) => {
                     // Extract the captured tokens and text
                     let captured_tokens: Vec<&T> = ctx.input[start_pos..*pos].iter().collect();
                     let captured_text: String = captured_tokens.iter().map(|t| t.text()).collect();
-                    
+
                     // Store the capture
-                    ctx.captures.insert(id.clone(), (captured_tokens, captured_text));
-                    
+                    ctx.captures
+                        .insert(id.clone(), (captured_tokens, captured_text));
+
                     Ok(ParseExprResult::Success {
                         end_pos: *pos,
                         text_len,
@@ -1122,46 +1123,46 @@ where
                     // Match tokens one by one
                     let mut matched = true;
                     let mut total_text_len = TextSize::zero();
-                    
+
                     for (i, captured_token) in captured_tokens.iter().enumerate() {
                         if *pos + i >= ctx.input.len() {
                             matched = false;
                             break;
                         }
-                        
+
                         let input_token = &ctx.input[*pos + i];
-                        
+
                         // Compare tokens (they should match exactly)
                         if input_token != *captured_token {
                             matched = false;
                             break;
                         }
-                        
+
                         // Also verify text matches (for safety)
                         if input_token.text() != captured_token.text() {
                             matched = false;
                             break;
                         }
-                        
+
                         total_text_len += input_token.text_len();
                     }
-                    
+
                     if matched {
                         // All tokens matched - add them to builder and advance position
                         for i in 0..captured_tokens.len() {
                             let token = &ctx.input[*pos + i];
                             let text = token.text();
-                            builder
-                                .token(token.kind(), text)
-                                .map_err(|e| ParseError::InvalidSyntax {
+                            builder.token(token.kind(), text).map_err(|e| {
+                                ParseError::InvalidSyntax {
                                     span: crate::syntax::TextRange::at(*text_pos, total_text_len),
                                     message: format!("Builder error: {e}"),
-                                })?;
+                                }
+                            })?;
                         }
-                        
+
                         *pos += captured_tokens.len();
                         *text_pos += total_text_len;
-                        
+
                         Ok(ParseExprResult::Success {
                             end_pos: *pos,
                             text_len: total_text_len,

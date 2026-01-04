@@ -6,7 +6,7 @@
 
 use sipha::grammar::{Grammar, NonTerminal, Token};
 use syn::visit::Visit;
-use syn::{File, ExprMethodCall, ExprPath};
+use syn::{ExprMethodCall, ExprPath, File};
 
 /// Extract a grammar from a Rust source file
 ///
@@ -45,11 +45,11 @@ where
 {
     // Parse the Rust file
     let ast: File = syn::parse_file(source)?;
-    
+
     // Visit the AST to find and extract grammar definitions
     let mut visitor = GrammarExtractor::new();
     visitor.visit_file(&ast);
-    
+
     // If we found grammar definitions, we've extracted the structure
     // However, we cannot build a Grammar<T, N> without concrete T and N types
     // Return None to indicate extraction was attempted but cannot be completed
@@ -99,7 +99,7 @@ impl GrammarExtractor {
             macro_invocations: Vec::new(),
         }
     }
-    
+
     fn found_grammar_definitions(&self) -> bool {
         self.found_builder || self.found_macro
     }
@@ -112,10 +112,10 @@ impl<'ast> Visit<'ast> for GrammarExtractor {
             // Check if the receiver is a GrammarBuilder
             if is_grammar_builder_path(path_expr) {
                 self.found_builder = true;
-                
+
                 // Extract method name
                 let method_name = call.method.to_string();
-                
+
                 // Get or create the current builder chain
                 if self.builder_chains.is_empty() {
                     self.builder_chains.push(BuilderChain {
@@ -124,7 +124,7 @@ impl<'ast> Visit<'ast> for GrammarExtractor {
                     });
                 }
                 let chain = self.builder_chains.last_mut().unwrap();
-                
+
                 match method_name.as_str() {
                     "rule" => {
                         // Try to extract rule information
@@ -154,11 +154,11 @@ impl<'ast> Visit<'ast> for GrammarExtractor {
                 }
             }
         }
-        
+
         // Continue visiting
         syn::visit::visit_expr_method_call(self, call);
     }
-    
+
     fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
         // Look for GrammarBuilder::new() calls
         if let syn::Expr::Path(path_expr) = &*call.func {
@@ -166,17 +166,17 @@ impl<'ast> Visit<'ast> for GrammarExtractor {
                 self.found_builder = true;
             }
         }
-        
+
         // Continue visiting
         syn::visit::visit_expr_call(self, call);
     }
-    
+
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
         // Look for grammar! macro invocations
         if let Some(ident) = mac.path.get_ident() {
             if ident == "grammar" {
                 self.found_macro = true;
-                
+
                 // Try to parse the macro body using the same parser as the macro
                 // This would require access to sipha_derive::parser, which we don't have
                 // For now, we just detect that the macro exists and store the tokens
@@ -186,7 +186,7 @@ impl<'ast> Visit<'ast> for GrammarExtractor {
                 });
             }
         }
-        
+
         // Continue visiting
         syn::visit::visit_macro(self, mac);
     }
@@ -194,7 +194,7 @@ impl<'ast> Visit<'ast> for GrammarExtractor {
 
 /// Check if a path expression refers to GrammarBuilder
 fn is_grammar_builder_path(path: &ExprPath) -> bool {
-    if let Some(segment) = path.path.segments.last() {
+    if let Some(_segment) = path.path.segments.last() {
         // Check if it's GrammarBuilder or a variable that might be a GrammarBuilder
         let path_str = quote::quote!(#path).to_string();
         path_str.contains("GrammarBuilder") || path_str.contains("builder")
@@ -243,4 +243,3 @@ fn extract_expr_structure(expr: &syn::Expr) -> String {
     // A full implementation would parse Expr::seq, Expr::choice, etc.
     quote::quote!(#expr).to_string()
 }
-

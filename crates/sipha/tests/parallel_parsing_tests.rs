@@ -1,7 +1,7 @@
 //! Tests for parallel parsing functionality
 
-use sipha::parser::parallel::{aggregate_results, FileParseResult, ParseBatch, ParallelParser};
 use sipha::grammar::{Grammar, GrammarBuilder, NonTerminal, Token};
+use sipha::parser::parallel::{FileParseResult, ParallelParser, ParseBatch, aggregate_results};
 use sipha::syntax::{GreenElement, GreenNode, GreenToken, SyntaxKind, TextSize};
 use std::sync::Arc;
 
@@ -160,14 +160,19 @@ fn test_parse_batch_sequential() {
     batch.add("file2.txt", "content2", TestNonTerminal::Root);
 
     // Mock lexer function
-    let lexer_fn = |_content: &str| -> Result<Vec<sipha::lexer::Token<TestKind>>, Vec<sipha::error::LexerError>> {
-        Ok(vec![])
-    };
+    let lexer_fn = |_content: &str| -> Result<
+        Vec<sipha::lexer::Token<TestKind>>,
+        Vec<sipha::error::LexerError>,
+    > { Ok(vec![]) };
 
     // Mock parser function
     let parse_fn = |_grammar: &Grammar<TestToken, TestNonTerminal>,
                     _tokens: &[sipha::lexer::Token<TestKind>],
-                    _entry: &TestNonTerminal| -> (Option<Arc<GreenNode<TestKind>>>, Vec<sipha::error::ParseError>) {
+                    _entry: &TestNonTerminal|
+     -> (
+        Option<Arc<GreenNode<TestKind>>>,
+        Vec<sipha::error::ParseError>,
+    ) {
         let tree = create_test_tree();
         (Some(tree), vec![])
     };
@@ -188,7 +193,10 @@ fn test_parse_batch_with_errors() {
     batch.add("file2.txt", "content2", TestNonTerminal::Root);
 
     // Mock lexer function that fails for file2
-    let lexer_fn = |content: &str| -> Result<Vec<sipha::lexer::Token<TestKind>>, Vec<sipha::error::LexerError>> {
+    let lexer_fn = |content: &str| -> Result<
+        Vec<sipha::lexer::Token<TestKind>>,
+        Vec<sipha::error::LexerError>,
+    > {
         if content == "content2" {
             Err(vec![sipha::error::LexerError {
                 span: sipha::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
@@ -202,7 +210,11 @@ fn test_parse_batch_with_errors() {
     // Mock parser function
     let parse_fn = |_grammar: &Grammar<TestToken, TestNonTerminal>,
                     _tokens: &[sipha::lexer::Token<TestKind>],
-                    _entry: &TestNonTerminal| -> (Option<Arc<GreenNode<TestKind>>>, Vec<sipha::error::ParseError>) {
+                    _entry: &TestNonTerminal|
+     -> (
+        Option<Arc<GreenNode<TestKind>>>,
+        Vec<sipha::error::ParseError>,
+    ) {
         let tree = create_test_tree();
         (Some(tree), vec![])
     };
@@ -225,13 +237,18 @@ fn test_parse_batch_with_progress() {
     batch.add("file2.txt", "content2", TestNonTerminal::Root);
     batch.add("file3.txt", "content3", TestNonTerminal::Root);
 
-    let lexer_fn = |_content: &str| -> Result<Vec<sipha::lexer::Token<TestKind>>, Vec<sipha::error::LexerError>> {
-        Ok(vec![])
-    };
+    let lexer_fn = |_content: &str| -> Result<
+        Vec<sipha::lexer::Token<TestKind>>,
+        Vec<sipha::error::LexerError>,
+    > { Ok(vec![]) };
 
     let parse_fn = |_grammar: &Grammar<TestToken, TestNonTerminal>,
                     _tokens: &[sipha::lexer::Token<TestKind>],
-                    _entry: &TestNonTerminal| -> (Option<Arc<GreenNode<TestKind>>>, Vec<sipha::error::ParseError>) {
+                    _entry: &TestNonTerminal|
+     -> (
+        Option<Arc<GreenNode<TestKind>>>,
+        Vec<sipha::error::ParseError>,
+    ) {
         let tree = create_test_tree();
         (Some(tree), vec![])
     };
@@ -247,4 +264,3 @@ fn test_parse_batch_with_progress() {
     assert!(progress_calls.len() >= 3); // Progress should be called for each file
     assert!(progress_calls.iter().all(|(c, t)| *c <= *t && *t == 3));
 }
-

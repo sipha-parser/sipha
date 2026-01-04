@@ -5,9 +5,8 @@
 use clap::Parser;
 use sipha_tools::cli::{Cli, Commands, OutputFormat};
 use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -21,30 +20,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Grammar visualization implementation
             // Note: Full grammar extraction from Rust source files requires Rust AST parsing
             // which is complex. This implementation provides a framework that can be extended.
-            
+
             if !input.exists() {
-                eprintln!("Error: Input file {:?} does not exist", input);
+                eprintln!("Error: Input file {} does not exist", input.display());
                 return Err("Input file not found".into());
             }
-            
+
             // Attempt to extract grammar from the Rust source file
             // Note: Full grammar extraction is complex and requires type information
             // This is a simplified implementation that detects grammar usage but cannot
             // extract the full grammar without runtime type information
-            // 
+            //
             // For now, we provide a placeholder message and framework for future extension
             // Note: Grammar extraction from Rust source files requires concrete types
             // which cannot be determined at compile time. The extract_grammar_from_source
             // function always returns None for this reason.
             // For now, we skip extraction and go straight to the placeholder visualization.
-            eprintln!("Note: Grammar extraction from Rust source files is not yet fully implemented.");
+            eprintln!(
+                "Note: Grammar extraction from Rust source files is not yet fully implemented."
+            );
             eprintln!("The file may not contain GrammarBuilder usage or grammar! macro calls.");
             eprintln!("For now, use the library API directly to visualize grammars:");
             eprintln!();
             eprintln!("  use sipha_tools::visualize::generate_dot;");
             eprintln!("  let dot = generate_dot(&grammar, |t| format!(\"{{:?}}\", t));");
             eprintln!();
-            
+
             // Generate a basic visualization using the file as context
             // This is used when grammar extraction fails or finds nothing
             let content = match format {
@@ -56,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dot.push_str("  node [shape=box];\n\n");
                     dot.push_str("  // Grammar extracted from: ");
                     dot.push_str(&input.to_string_lossy());
-                    dot.push_str("\n");
+                    dot.push('\n');
                     dot.push_str("  // Note: Full grammar extraction not yet implemented\n");
                     dot.push_str("  // Use the library API directly for now\n");
                     dot.push_str("}\n");
@@ -143,20 +144,19 @@ let html = generate_html_with_conflicts(
                     .to_string()
                 }
             };
-            
+
             if let Some(output_path) = output {
                 fs::write(&output_path, content)?;
-                println!("Wrote visualization to {:?}", output_path);
+                println!("Wrote visualization to {}", output_path.display());
                 if show_conflicts {
                     println!("Note: Conflict highlighting requires full grammar extraction");
                 }
             } else {
                 // Write to stdout
-                print!("{}", content);
+                print!("{content}");
             }
         }
     }
 
     Ok(())
 }
-

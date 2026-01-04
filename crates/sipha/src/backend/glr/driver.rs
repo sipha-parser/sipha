@@ -117,14 +117,15 @@ impl<T: Token, N: NonTerminal> GlrDriver<T, N> {
     pub fn parse(&self, input: &[T], entry: &N) -> ParseResult<T, N> {
         use crate::error::{ParseError, ParseMetrics, ParseWarning};
         use crate::syntax::{GreenNode, TextRange, TextSize};
-        
+
         // Create an error indicating the feature is required
         let error = ParseError::InvalidSyntax {
             span: TextRange::at(TextSize::zero(), TextSize::from(1)),
             message: "GLR backend requires the 'backend-lr' feature to be enabled. \
-                      Add 'backend-lr' to your Cargo.toml features.".to_string(),
+                      Add 'backend-lr' to your Cargo.toml features."
+                .to_string(),
         };
-        
+
         // Try to get a syntax kind for the error root node
         let error_kind = input
             .first()
@@ -136,16 +137,21 @@ impl<T: Token, N: NonTerminal> GlrDriver<T, N> {
                 // This should rarely happen in practice
                 entry.default_syntax_kind().unwrap_or_else(|| {
                     // Last resort: use the first token kind from input if available
-                    input.first().map(crate::grammar::Token::kind).unwrap_or_else(|| {
-                        // This is a fallback that should never be reached in practice
-                        // but we need to satisfy the type system
-                        panic!("Cannot create error result: no syntax kind available. \
+                    input
+                        .first()
+                        .map(crate::grammar::Token::kind)
+                        .unwrap_or_else(|| {
+                            // This is a fallback that should never be reached in practice
+                            // but we need to satisfy the type system
+                            panic!(
+                                "Cannot create error result: no syntax kind available. \
                                 This indicates a configuration error. \
-                                Ensure NonTerminal::default_syntax_kind() returns Some.")
-                    })
+                                Ensure NonTerminal::default_syntax_kind() returns Some."
+                            )
+                        })
                 })
             });
-        
+
         ParseResult {
             root: std::sync::Arc::new(GreenNode::new(error_kind, [], TextSize::zero())),
             errors: vec![error],

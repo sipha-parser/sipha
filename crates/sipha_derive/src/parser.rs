@@ -3,9 +3,9 @@
 //! Parses the grammar! macro input into an AST.
 
 use syn::{
-    bracketed, parenthesized,
+    Ident, LitStr, Result, Token, bracketed, parenthesized,
     parse::{Parse, ParseStream},
-    token, Ident, LitStr, Result, Token,
+    token,
 };
 
 /// A complete grammar definition
@@ -55,9 +55,8 @@ impl Parse for RuleDef {
         // Parse = with better error message
         if !input.peek(Token![=]) {
             return Err(input.error(format!(
-                "expected `=` after rule name `{}`\n\
-                 help: grammar rules must have the form: RuleName = expression;",
-                name
+                "expected `=` after rule name `{name}`\n\
+                 help: grammar rules must have the form: RuleName = expression;"
             )));
         }
         input.parse::<Token![=]>()?;
@@ -68,9 +67,8 @@ impl Parse for RuleDef {
         // Parse ; with better error message
         if !input.peek(Token![;]) {
             return Err(input.error(format!(
-                "expected `;` after rule `{}` expression\n\
-                 help: grammar rules must end with a semicolon",
-                name
+                "expected `;` after rule `{name}` expression\n\
+                 help: grammar rules must end with a semicolon"
             )));
         }
         input.parse::<Token![;]>()?;
@@ -84,6 +82,7 @@ impl Parse for RuleDef {
 pub struct RuleAttr {
     pub name: Ident,
     /// Optional attribute arguments (for future use, e.g., precedence levels)
+    #[allow(dead_code)]
     pub args: Option<syn::Meta>,
 }
 
@@ -92,36 +91,41 @@ impl Parse for RuleAttr {
         input.parse::<Token![#]>()?;
         let content;
         bracketed!(content in input);
-        
+
         // Try to parse as meta (supports both simple #[attr] and #[attr(args)])
         let meta: syn::Meta = content.parse()?;
         let name = match &meta {
-            syn::Meta::Path(path) => {
-                path.get_ident()
-                    .ok_or_else(|| content.error("expected attribute name"))?
-                    .clone()
-            }
-            syn::Meta::NameValue(nv) => nv.path.get_ident()
+            syn::Meta::Path(path) => path
+                .get_ident()
                 .ok_or_else(|| content.error("expected attribute name"))?
                 .clone(),
-            syn::Meta::List(list) => list.path.get_ident()
+            syn::Meta::NameValue(nv) => nv
+                .path
+                .get_ident()
+                .ok_or_else(|| content.error("expected attribute name"))?
+                .clone(),
+            syn::Meta::List(list) => list
+                .path
+                .get_ident()
                 .ok_or_else(|| content.error("expected attribute name"))?
                 .clone(),
         };
-        
+
         // Validate known attributes
         let attr_str = name.to_string();
-        if !matches!(attr_str.as_str(), "entry" | "precedence" | "left" | "right" | "nonassoc") {
+        if !matches!(
+            attr_str.as_str(),
+            "entry" | "precedence" | "left" | "right" | "nonassoc"
+        ) {
             return Err(syn::Error::new_spanned(
                 &name,
                 format!(
-                    "unknown attribute `{}`\n\
-                     help: valid rule attributes are: `entry`, `precedence`, `left`, `right`, `nonassoc`",
-                    attr_str
-                )
+                    "unknown attribute `{attr_str}`\n\
+                     help: valid rule attributes are: `entry`, `precedence`, `left`, `right`, `nonassoc`"
+                ),
             ));
         }
-        
+
         Ok(RuleAttr {
             name,
             args: Some(meta),
@@ -148,34 +152,36 @@ impl Parse for TokenDef {
         if !input.peek(Token![@]) {
             return Err(input.error(
                 "expected `@` before token name\n\
-                 help: token definitions must start with `@`, e.g., `@TokenName = pattern;`"
+                 help: token definitions must start with `@`, e.g., `@TokenName = pattern;`",
             ));
         }
         input.parse::<Token![@]>()?;
-        
+
         let name: Ident = input.parse()?;
-        
+
         if !input.peek(Token![=]) {
             return Err(input.error(format!(
-                "expected `=` after token name `{}`\n\
-                 help: token definitions must have the form: @TokenName = pattern;",
-                name
+                "expected `=` after token name `{name}`\n\
+                 help: token definitions must have the form: @TokenName = pattern;"
             )));
         }
         input.parse::<Token![=]>()?;
-        
+
         let pattern = input.parse()?;
-        
+
         if !input.peek(Token![;]) {
             return Err(input.error(format!(
-                "expected `;` after token `{}` pattern\n\
-                 help: token definitions must end with a semicolon",
-                name
+                "expected `;` after token `{name}` pattern\n\
+                 help: token definitions must end with a semicolon"
             )));
         }
         input.parse::<Token![;]>()?;
 
-        Ok(TokenDef { attrs, name, pattern })
+        Ok(TokenDef {
+            attrs,
+            name,
+            pattern,
+        })
     }
 }
 
@@ -318,7 +324,7 @@ fn parse_primary(input: ParseStream) -> Result<GrammarExpr> {
              - Rule or token references: `RuleName` or `TokenName`\n\
              - Literal strings: `\"+\"` or `\"keyword\"`\n\
              - Parenthesized groups: `(Expr | Term)`\n\
-             - Repetitions: `Expr*`, `Expr+`, `Expr?`"
+             - Repetitions: `Expr*`, `Expr+`, `Expr?`",
         ))
     }
 }
@@ -368,4 +374,3 @@ mod tests {
         assert!(matches!(expr, GrammarExpr::Group(_)));
     }
 }
-

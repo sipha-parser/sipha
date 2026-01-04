@@ -4,14 +4,14 @@
 //! in parsers that don't fully support backreferences (LL, LR).
 //! The Capture variant should be unwrapped and the inner expression parsed.
 
+use sipha::backend::ParserBackend;
 #[cfg(feature = "backend-ll")]
 use sipha::backend::ll::{LlConfig, LlParser};
 #[cfg(feature = "backend-lr")]
 use sipha::backend::lr::{LrConfig, LrParser};
 #[cfg(feature = "backend-peg")]
 use sipha::backend::peg::{PegConfig, PegParser};
-use sipha::backend::ParserBackend;
-use sipha::grammar::{capture::CaptureId, Expr, GrammarBuilder, NonTerminal, Token};
+use sipha::grammar::{Expr, GrammarBuilder, NonTerminal, Token, capture::CaptureId};
 use sipha::syntax::{SyntaxKind, TextSize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -223,4 +223,3 @@ fn test_ll_parser_backreference_fails_gracefully() {
     );
     // Just verify it fails - the exact error message may vary
 }
-

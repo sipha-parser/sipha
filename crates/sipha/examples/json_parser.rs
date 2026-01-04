@@ -15,10 +15,10 @@ enum JsonSyntaxKind {
     True,
     False,
     Null,
-    LBrace,    // {
-    RBrace,    // }
-    LBracket,  // [
-    RBracket,  // ]
+    LBrace,   // {
+    RBrace,   // }
+    LBracket, // [
+    RBracket, // ]
     Comma,
     Colon,
     Whitespace,
@@ -97,10 +97,17 @@ fn create_token(kind: JsonSyntaxKind, text: &str) -> JsonToken {
     }
 }
 
-fn build_json_lexer() -> Result<sipha::lexer::CompiledLexer<JsonSyntaxKind>, Box<dyn std::error::Error>> {
+fn build_json_lexer()
+-> Result<sipha::lexer::CompiledLexer<JsonSyntaxKind>, Box<dyn std::error::Error>> {
     Ok(LexerBuilder::new()
-        .token(JsonSyntaxKind::String, Pattern::Regex(r#""([^"\\]|\\.)*""#.into()))
-        .token(JsonSyntaxKind::Number, Pattern::Regex(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?".into()))
+        .token(
+            JsonSyntaxKind::String,
+            Pattern::Regex(r#""([^"\\]|\\.)*""#.into()),
+        )
+        .token(
+            JsonSyntaxKind::Number,
+            Pattern::Regex(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?".into()),
+        )
         .token(JsonSyntaxKind::True, Pattern::Literal("true".into()))
         .token(JsonSyntaxKind::False, Pattern::Literal("false".into()))
         .token(JsonSyntaxKind::Null, Pattern::Literal("null".into()))
@@ -122,7 +129,8 @@ fn build_json_lexer() -> Result<sipha::lexer::CompiledLexer<JsonSyntaxKind>, Box
         .build(JsonSyntaxKind::Eof, JsonSyntaxKind::String)?)
 }
 
-fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerminal>, Box<dyn std::error::Error>> {
+fn build_json_grammar()
+-> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerminal>, Box<dyn std::error::Error>> {
     // JSON grammar:
     // Value -> String | Number | Object | Array | True | False | Null
     // Object -> { Pairs? }
@@ -133,7 +141,6 @@ fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerm
 
     GrammarBuilder::new()
         .entry_point(JsonNonTerminal::Value)
-        
         // Value -> String | Number | Object | Array | True | False | Null
         .rule(
             JsonNonTerminal::Value,
@@ -147,7 +154,6 @@ fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerm
                 Expr::token(create_token(JsonSyntaxKind::Null, "null")),
             ]),
         )
-        
         // Object -> { Pairs? }
         .rule(
             JsonNonTerminal::Object,
@@ -157,7 +163,6 @@ fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerm
                 Expr::token(create_token(JsonSyntaxKind::RBrace, "}")),
             ]),
         )
-        
         // Array -> [ Elements? ]
         .rule(
             JsonNonTerminal::Array,
@@ -167,7 +172,6 @@ fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerm
                 Expr::token(create_token(JsonSyntaxKind::RBracket, "]")),
             ]),
         )
-        
         // Pairs -> Pair ( , Pair )*
         .rule(
             JsonNonTerminal::Pairs,
@@ -184,7 +188,6 @@ fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerm
                 },
             ]),
         )
-        
         // Elements -> Value ( , Value )*
         .rule(
             JsonNonTerminal::Elements,
@@ -201,7 +204,6 @@ fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerm
                 },
             ]),
         )
-        
         // Pair -> String : Value
         .rule(
             JsonNonTerminal::Pair,
@@ -211,26 +213,25 @@ fn build_json_grammar() -> Result<sipha::grammar::Grammar<JsonToken, JsonNonTerm
                 Expr::rule(JsonNonTerminal::Value),
             ]),
         )
-        
         .build()
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== JSON Parser Example ===\n");
-    
+
     // Build lexer
     println!("1. Building JSON lexer...");
     let lexer = build_json_lexer()?;
     println!("   ✓ Lexer built successfully\n");
-    
+
     // Build grammar
     println!("2. Building JSON grammar...");
     let grammar = build_json_grammar()?;
     println!("   ✓ Grammar built successfully");
     println!("   Rules: {}", grammar.rules().count());
     println!();
-    
+
     // Test cases
     let test_cases = vec![
         ("42", "number"),
@@ -240,9 +241,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("null", "null"),
         (r#"{"key": "value"}"#, "object"),
         (r#"[1, 2, 3]"#, "array"),
-        (r#"{"name": "John", "age": 30}"#, "object with multiple pairs"),
+        (
+            r#"{"name": "John", "age": 30}"#,
+            "object with multiple pairs",
+        ),
     ];
-    
+
     println!("3. Testing JSON parsing:");
     for (input, description) in test_cases {
         println!("   Testing: {} ({})", description, input);
@@ -257,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     println!();
     println!("=== Example completed! ===");
     println!();
@@ -267,7 +271,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  2. Parse the tokens using the grammar");
     println!("  3. Build a syntax tree from the parse result");
     println!("  4. Optionally, build an AST from the syntax tree");
-    
+
     Ok(())
 }
-

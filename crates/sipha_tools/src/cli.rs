@@ -19,15 +19,15 @@ pub enum Commands {
         /// Input Rust file containing grammar definition
         #[arg(short, long)]
         input: PathBuf,
-        
+
         /// Output file (default: stdout)
         #[arg(short, long)]
         output: Option<PathBuf>,
-        
+
         /// Output format
         #[arg(short, long, default_value = "dot")]
         format: OutputFormat,
-        
+
         /// Show conflicts and issues
         #[arg(short, long)]
         show_conflicts: bool,
@@ -49,8 +49,7 @@ impl std::str::FromStr for OutputFormat {
             "dot" | "graphviz" => Ok(OutputFormat::Dot),
             "html" => Ok(OutputFormat::Html),
             "json" => Ok(OutputFormat::Json),
-            _ => Err(format!("Unknown format: {}. Supported: dot, html, json", s)),
+            _ => Err(format!("Unknown format: {s}. Supported: dot, html, json")),
         }
     }
 }
-

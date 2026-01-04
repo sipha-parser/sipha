@@ -10,6 +10,10 @@
 
 use crate::error::ParseError;
 use crate::syntax::{TextRange, line_col::LineIndex};
+use std::fmt::Write;
+
+#[cfg(test)]
+use crate::syntax::TextSize;
 
 /// Generate a "Did you mean?" suggestion for an unexpected token
 ///
@@ -105,36 +109,32 @@ pub fn extract_context(
 }
 
 /// Format an error with surrounding context
-pub fn format_error_with_context(
-    error: &ParseError,
-    source: &str,
-    context_chars: usize,
-) -> String {
+pub fn format_error_with_context(error: &ParseError, source: &str, context_chars: usize) -> String {
     let mut result = String::new();
 
     // Main error message
-    result.push_str(&format!("{}", error));
+    write!(result, "{error}").unwrap();
 
     // Add context if available
-    if let Some(span) = error.span() {
-        if let Some((before, error_text, after)) = extract_context(source, span, context_chars) {
-            result.push_str("\n\nContext:\n");
-            result.push_str("  ...");
-            result.push_str(&before);
-            result.push('[');
-            result.push_str(&error_text);
-            result.push(']');
-            result.push_str(&after);
-            result.push_str("...");
-        }
+    if let Some(span) = error.span()
+        && let Some((before, error_text, after)) = extract_context(source, span, context_chars)
+    {
+        result.push_str("\n\nContext:\n");
+        result.push_str("  ...");
+        result.push_str(&before);
+        result.push('[');
+        result.push_str(&error_text);
+        result.push(']');
+        result.push_str(&after);
+        result.push_str("...");
     }
 
     // Add suggestions
-    if let Some(expected) = error.expected_tokens() {
-        if !expected.is_empty() {
-            result.push_str("\n\nExpected one of: ");
-            result.push_str(&expected.join(", "));
-        }
+    if let Some(expected) = error.expected_tokens()
+        && !expected.is_empty()
+    {
+        result.push_str("\n\nExpected one of: ");
+        result.push_str(&expected.join(", "));
     }
 
     result
@@ -152,13 +152,26 @@ pub fn format_error_with_location(
         let line_index = LineIndex::new(source);
         let start_line_col = line_index.line_col(span.start());
         if let Some(filename) = filename {
-            result.push_str(&format!("{}:{}:{}: ", filename, start_line_col.line + 1, start_line_col.column + 1));
+            write!(
+                result,
+                "{}:{}:{}: ",
+                filename,
+                start_line_col.line + 1,
+                start_line_col.column + 1
+            )
+            .unwrap();
         } else {
-            result.push_str(&format!("{}:{}: ", start_line_col.line + 1, start_line_col.column + 1));
+            write!(
+                result,
+                "{}:{}: ",
+                start_line_col.line + 1,
+                start_line_col.column + 1
+            )
+            .unwrap();
         }
     }
 
-    result.push_str(&format!("{}", error));
+    write!(result, "{error}").unwrap();
     result
 }
 
@@ -196,17 +209,17 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     let mut matrix = vec![vec![0; s2_len + 1]; s1_len + 1];
 
     // Initialize first row and column
-    for i in 0..=s1_len {
-        matrix[i][0] = i;
+    for (i, row) in matrix.iter_mut().enumerate().take(s1_len + 1) {
+        row[0] = i;
     }
-    for j in 0..=s2_len {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate().take(s2_len + 1) {
+        *cell = j;
     }
 
     // Fill the matrix
     for i in 1..=s1_len {
         for j in 1..=s2_len {
-            let cost = if s1_chars[i - 1] == s2_chars[j - 1] { 0 } else { 1 };
+            let cost = usize::from(s1_chars[i - 1] != s2_chars[j - 1]);
             matrix[i][j] = (matrix[i - 1][j] + 1)
                 .min(matrix[i][j - 1] + 1)
                 .min(matrix[i - 1][j - 1] + cost);
@@ -308,4 +321,3 @@ mod tests {
         assert_eq!(after, "");
     }
 }
-

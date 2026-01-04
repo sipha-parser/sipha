@@ -33,6 +33,8 @@ missing_fields_in_debug = "allow"
 type_complexity = "allow"
 # Allow unnecessary wraps (Result/Option) for API consistency  
 unnecessary_wraps = "allow"
+# Allow custom feature flags in cfg attributes
+unexpected_cfgs = "allow"
 
 [workspace.lints.rust]
 unsafe_code = "warn"

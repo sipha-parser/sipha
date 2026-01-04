@@ -33,11 +33,10 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-pub mod server;
 pub mod handlers;
+pub mod server;
 pub mod session;
 
-pub use server::{LspServer, ServerConfig};
 pub use handlers::*;
+pub use server::{LspServer, ServerConfig};
 pub use session::LspSession;
-

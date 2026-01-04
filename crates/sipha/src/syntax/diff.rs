@@ -416,9 +416,7 @@ fn compute_lcs<K: SyntaxKind>(
 fn elements_match<K: SyntaxKind>(a: &GreenElement<K>, b: &GreenElement<K>) -> bool {
     match (a, b) {
         (GreenElement::Node(na), GreenElement::Node(nb)) => na.kind() == nb.kind(),
-        (GreenElement::Token(ta), GreenElement::Token(tb)) => {
-            ta.kind() == tb.kind()
-        }
+        (GreenElement::Token(ta), GreenElement::Token(tb)) => ta.kind() == tb.kind(),
         _ => false,
     }
 }
@@ -552,16 +550,13 @@ mod tests {
         assert!(!diff.is_empty());
         // When token kind changes, tokens don't match in LCS, so they're treated as Delete+Insert or Replace
         // Check that there's a change (could be UpdateKind, Replace, Delete, or Insert)
-        assert!(
-            diff.changes()
-                .any(|op| matches!(
-                    op,
-                    DiffOp::UpdateKind { .. }
-                        | DiffOp::Replace { .. }
-                        | DiffOp::Delete { .. }
-                        | DiffOp::Insert { .. }
-                ))
-        );
+        assert!(diff.changes().any(|op| matches!(
+            op,
+            DiffOp::UpdateKind { .. }
+                | DiffOp::Replace { .. }
+                | DiffOp::Delete { .. }
+                | DiffOp::Insert { .. }
+        )));
     }
 
     #[test]

@@ -227,7 +227,7 @@ impl<K: SyntaxKind> ErrorRecoveryStrategy<K> for MinimalCostRecovery {
     fn recover(&self, ctx: &RecoveryContext<K>) -> RecoveryAction<K> {
         // Try different recovery strategies and pick the best one
         // We score each strategy based on how likely it is to succeed
-        
+
         let mut best_action: Option<RecoveryAction<K>> = None;
         let mut best_score = usize::MAX;
 
@@ -239,37 +239,35 @@ impl<K: SyntaxKind> ErrorRecoveryStrategy<K> for MinimalCostRecovery {
                 .filter_map(|_kind| {
                     // Create a synthetic token - we can't create a real token without text,
                     // so we'll use the current token's text if available, or empty
-                    ctx.current_token.as_ref().map(|t| {
-                        let new_token = t.clone();
-                        // Note: In a real implementation, we'd need to create proper tokens
-                        // For now, we'll use Insert action which the engine can handle
-                        new_token
-                    })
+                    ctx.current_token.clone()
                 })
                 .collect();
-            
+
             if !insert_tokens.is_empty() {
                 let score = 1; // Insert has low cost
                 if score < best_score {
                     best_score = score;
-                    best_action = Some(RecoveryAction::Insert { tokens: insert_tokens });
+                    best_action = Some(RecoveryAction::Insert {
+                        tokens: insert_tokens,
+                    });
                 }
             }
         }
 
         // Strategy 2: Try replacing current token with expected token
-        if let Some(current) = &ctx.current_token {
-            if !ctx.expected.is_empty() && !ctx.expected.contains(&current.kind) {
-                // Current token doesn't match expected, try replacing
-                if let Some(_expected_kind) = ctx.expected.first() {
-                    // Create replacement token (simplified - real implementation would need proper token creation)
-                    let score = 2; // Replace has medium cost
-                    if score < best_score {
-                        // For now, we'll skip since we can't easily create replacement tokens
-                        // In a real implementation, we'd create a token with the expected kind
-                        best_score = score;
-                        best_action = Some(RecoveryAction::Skip { count: 1 });
-                    }
+        if let Some(current) = &ctx.current_token
+            && !ctx.expected.is_empty()
+            && !ctx.expected.contains(&current.kind)
+        {
+            // Current token doesn't match expected, try replacing
+            if let Some(_expected_kind) = ctx.expected.first() {
+                // Create replacement token (simplified - real implementation would need proper token creation)
+                let score = 2; // Replace has medium cost
+                if score < best_score {
+                    // For now, we'll skip since we can't easily create replacement tokens
+                    // In a real implementation, we'd create a token with the expected kind
+                    best_score = score;
+                    best_action = Some(RecoveryAction::Skip { count: 1 });
                 }
             }
         }
@@ -283,7 +281,9 @@ impl<K: SyntaxKind> ErrorRecoveryStrategy<K> for MinimalCostRecovery {
         // Strategy 4: If deeply nested, try to skip to reduce depth
         if ctx.depth > 2 {
             // Try skipping more aggressively when deeply nested
-            let depth_skip = RecoveryAction::Skip { count: ctx.depth.min(3) };
+            let depth_skip = RecoveryAction::Skip {
+                count: ctx.depth.min(3),
+            };
             let depth_score = 4;
             if depth_score < best_score {
                 best_action = Some(depth_skip);
@@ -342,30 +342,28 @@ impl<K: SyntaxKind> ErrorRecoveryStrategy<K> for PhraseRecovery<K> {
                 if token.kind == *open {
                     open_count += 1;
                     last_open = Some(*close);
-                } else if token.kind == *close {
-                    if open_count > 0 {
-                        open_count -= 1;
-                    }
+                } else if token.kind == *close && open_count > 0 {
+                    open_count -= 1;
                 }
             }
         }
 
         // If we have unmatched opening brackets, try to insert closing token
-        if open_count > 0 {
-            if let Some(close_kind) = last_open {
-                // Try to insert the closing token
-                // Note: In a real implementation, we'd create a proper token
-                // For now, we'll use context to suggest the recovery
-                if let Some(current) = &ctx.current_token {
-                    // If current token is the expected close, we're good
-                    if current.kind == close_kind {
-                        return RecoveryAction::Skip { count: 0 };
-                    }
+        if open_count > 0
+            && let Some(close_kind) = last_open
+        {
+            // Try to insert the closing token
+            // Note: In a real implementation, we'd create a proper token
+            // For now, we'll use context to suggest the recovery
+            if let Some(current) = &ctx.current_token {
+                // If current token is the expected close, we're good
+                if current.kind == close_kind {
+                    return RecoveryAction::Skip { count: 0 };
                 }
-                // Try inserting the closing token
-                // Since we can't easily create tokens here, we'll skip and let the parser handle it
-                return RecoveryAction::Skip { count: 1 };
             }
+            // Try inserting the closing token
+            // Since we can't easily create tokens here, we'll skip and let the parser handle it
+            return RecoveryAction::Skip { count: 1 };
         }
 
         // Check if current token matches an expected closing token

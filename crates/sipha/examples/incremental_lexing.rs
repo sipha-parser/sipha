@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Demonstrate token reuse with a small edit
     println!("3. Making a small edit: change \"42\" to \"100\"");
     println!("   This should reuse tokens after the edit point\n");
-    
+
     let edit = TextEdit::replace(0..2, "100");
     let delta = incr.update(&edit, "100 + 10");
 
@@ -110,11 +110,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("6. Line tracking:");
     let multiline_input = "42 + 10\n20 * 5\n100 / 2";
     let mut incr2 = IncrementalLexer::new(build_arithmetic_lexer(), multiline_input.into());
-    
-    println!("   Input with {} lines", multiline_input.matches('\n').count() + 1);
-    println!("   Line at offset 0: {}", incr2.line_at_offset(TextSize::from(0)));
-    println!("   Line at offset 10: {}", incr2.line_at_offset(TextSize::from(10)));
-    println!("   Line at offset 20: {}", incr2.line_at_offset(TextSize::from(20)));
+
+    println!(
+        "   Input with {} lines",
+        multiline_input.matches('\n').count() + 1
+    );
+    println!(
+        "   Line at offset 0: {}",
+        incr2.line_at_offset(TextSize::from(0))
+    );
+    println!(
+        "   Line at offset 10: {}",
+        incr2.line_at_offset(TextSize::from(10))
+    );
+    println!(
+        "   Line at offset 20: {}",
+        incr2.line_at_offset(TextSize::from(20))
+    );
     println!();
 
     println!("=== Example completed! ===");
@@ -128,4 +140,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

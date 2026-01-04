@@ -510,7 +510,6 @@ where
         result
     }
 
-
     /// Update cache after parsing by populating it with nodes from the parse result.
     ///
     /// This extracts nodes from the parse tree and stores them in the cache for future reuse.

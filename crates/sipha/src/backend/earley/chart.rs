@@ -34,12 +34,12 @@ where
             start,
         }
     }
-    
+
     /// Check if this item is complete (dot is at the end)
     pub fn is_complete(&self, rule_rhs_len: usize) -> bool {
         self.dot >= rule_rhs_len
     }
-    
+
     /// Get the symbol after the dot
     pub fn next_symbol(&self, rule_rhs: &Expr<T, N>) -> Option<EarleySymbol<T, N>> {
         match rule_rhs {
@@ -73,7 +73,7 @@ where
 }
 
 /// Convert a grammar expression to an Earley symbol
-/// 
+///
 /// For complex expressions, we extract the first symbol that can be matched.
 /// This is used during Earley parsing to determine what to predict/scan next.
 fn expr_to_symbol<T, N>(expr: &Expr<T, N>) -> EarleySymbol<T, N>
@@ -119,7 +119,9 @@ where
             // Any matches any token - treat as a special terminal
             // This is a limitation: we can't represent "any" properly in EarleySymbol
             // For now, we'll need to handle this specially in the parser
-            panic!("Expr::Any not directly supported in Earley parser - use Expr::TokenClass instead");
+            panic!(
+                "Expr::Any not directly supported in Earley parser - use Expr::TokenClass instead"
+            );
         }
         Expr::Eof => {
             panic!("Expr::Eof should be handled specially, not as a symbol");
@@ -162,31 +164,30 @@ where
         }
         Self { chart }
     }
-    
+
     /// Get the set of items at a given position
     pub fn get(&self, position: usize) -> &HashSet<EarleyItem<T, N>> {
         &self.chart[position]
     }
-    
+
     /// Get the set of items at a given position (mutable)
     pub fn get_mut(&mut self, position: usize) -> &mut HashSet<EarleyItem<T, N>> {
         &mut self.chart[position]
     }
-    
+
     /// Add an item to the chart at the given position
     /// Returns true if the item was newly added
     pub fn add(&mut self, position: usize, item: EarleyItem<T, N>) -> bool {
         self.chart[position].insert(item)
     }
-    
+
     /// Check if an item exists at the given position
     pub fn contains(&self, position: usize, item: &EarleyItem<T, N>) -> bool {
         self.chart[position].contains(item)
     }
-    
+
     /// Get the number of positions (input length + 1)
     pub fn len(&self) -> usize {
         self.chart.len()
     }
 }
-

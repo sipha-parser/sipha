@@ -24,10 +24,10 @@ where
     let start_time = std::time::Instant::now();
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
-    
+
     // Initialize chart
     let mut chart = EarleyChart::new(input.len());
-    
+
     // Add initial items for the entry point
     if let Some(entry_rule) = grammar.get_rule(entry) {
         // For each production of the entry rule, add an item at position 0
@@ -45,7 +45,7 @@ where
             span: crate::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
             message: format!("Entry point {} not found in grammar", entry.name()),
         });
-        
+
         let error_kind = input
             .first()
             .map(crate::grammar::Token::kind)
@@ -58,13 +58,9 @@ where
                      NonTerminal::default_syntax_kind() to return Some for error cases.",
                 )
             });
-        
+
         return ParseResult {
-            root: Arc::new(GreenNode::new(
-                error_kind,
-                vec![],
-                TextSize::zero(),
-            )),
+            root: Arc::new(GreenNode::new(error_kind, vec![], TextSize::zero())),
             errors,
             warnings,
             metrics: ParseMetrics::default(),
@@ -73,18 +69,18 @@ where
             _phantom: std::marker::PhantomData,
         };
     }
-    
+
     // Main Earley algorithm: process each position
     for i in 0..=input.len() {
         let mut changed = true;
-        
+
         // Process items until no new items are added (closure)
         while changed {
             changed = false;
-            
+
             // Get items to process (clone to avoid borrow issues)
             let items_to_process: Vec<EarleyItem<T, N>> = chart.get(i).iter().cloned().collect();
-            
+
             for item in items_to_process {
                 // Get the rule for this item
                 if let Some(rule) = grammar.get_rule(&item.lhs) {
@@ -98,7 +94,7 @@ where
                         }
                         _ => &rule.rhs,
                     };
-                    
+
                     // Check what symbol comes after the dot
                     if let Some(symbol) = item.next_symbol(rhs) {
                         match symbol {
@@ -123,7 +119,8 @@ where
                                     match &nt_rule.rhs {
                                         Expr::Choice(alts) => {
                                             for (alt_idx, _) in alts.iter().enumerate() {
-                                                let new_item = EarleyItem::new(nt.clone(), alt_idx, 0, i);
+                                                let new_item =
+                                                    EarleyItem::new(nt.clone(), alt_idx, 0, i);
                                                 if chart.add(i, new_item) {
                                                     changed = true;
                                                 }
@@ -142,7 +139,8 @@ where
                     } else {
                         // Completer: item is complete, advance items that were waiting for this non-terminal
                         // Find all items at position i that are waiting for item.lhs
-                        let completers: Vec<EarleyItem<T, N>> = chart.get(i).iter().cloned().collect();
+                        let completers: Vec<EarleyItem<T, N>> =
+                            chart.get(i).iter().cloned().collect();
                         for completer in completers {
                             if let Some(completer_rule) = grammar.get_rule(&completer.lhs) {
                                 let completer_rhs = match &completer_rule.rhs {
@@ -155,9 +153,11 @@ where
                                     }
                                     _ => &completer_rule.rhs,
                                 };
-                                
+
                                 // Check if completer is waiting for item.lhs
-                                if let Some(EarleySymbol::NonTerminal(nt)) = completer.next_symbol(completer_rhs) {
+                                if let Some(EarleySymbol::NonTerminal(nt)) =
+                                    completer.next_symbol(completer_rhs)
+                                {
                                     if nt == item.lhs && completer.start == item.start {
                                         // Advance the completer
                                         let new_item = EarleyItem::new(
@@ -178,9 +178,10 @@ where
             }
         }
     }
-    
+
     // Check if we have a complete parse
-    let complete_items: Vec<_> = chart.get(input.len())
+    let complete_items: Vec<_> = chart
+        .get(input.len())
         .iter()
         .filter(|item| {
             item.lhs == *entry
@@ -200,7 +201,7 @@ where
                 })
         })
         .collect();
-    
+
     if complete_items.is_empty() {
         errors.push(ParseError::UnexpectedEof {
             span: crate::syntax::TextRange::at(
@@ -210,7 +211,7 @@ where
             expected: vec!["complete parse".to_string()],
         });
     }
-    
+
     // Build parse tree from chart
     let root_kind = entry
         .to_syntax_kind()
@@ -224,17 +225,15 @@ where
                  NonTerminal::default_syntax_kind() to return Some for error cases.",
             )
         });
-    
+
     // Extract parse tree from chart
     let root = if let Some(complete_item) = complete_items.first() {
         extract_tree(grammar, &chart, complete_item, input, 0, input.len())
-            .unwrap_or_else(|| {
-                Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero()))
-            })
+            .unwrap_or_else(|| Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero())))
     } else {
         Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero()))
     };
-    
+
     let metrics = ParseMetrics {
         parse_time: start_time.elapsed(),
         tokens_consumed: input.len(),
@@ -243,7 +242,7 @@ where
         cache_hits: 0,
         cache_misses: 0,
     };
-    
+
     ParseResult {
         root,
         errors,
@@ -271,10 +270,10 @@ where
     let start_time = std::time::Instant::now();
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
-    
+
     // Initialize chart
     let mut chart = EarleyChart::new(input.len());
-    
+
     // Add initial items for the entry point
     if let Some(entry_rule) = grammar.get_rule(entry) {
         // For each production of the entry rule, add an item at position 0
@@ -292,7 +291,7 @@ where
             span: crate::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
             message: format!("Entry point {} not found in grammar", entry.name()),
         });
-        
+
         let error_kind = input
             .first()
             .map(crate::grammar::Token::kind)
@@ -305,13 +304,9 @@ where
                      NonTerminal::default_syntax_kind() to return Some for error cases.",
                 )
             });
-        
+
         return ParseResult {
-            root: Arc::new(GreenNode::new(
-                error_kind,
-                vec![],
-                TextSize::zero(),
-            )),
+            root: Arc::new(GreenNode::new(error_kind, vec![], TextSize::zero())),
             errors,
             warnings,
             metrics: ParseMetrics::default(),
@@ -320,18 +315,18 @@ where
             _phantom: std::marker::PhantomData,
         };
     }
-    
+
     // Main Earley algorithm: process each position
     for i in 0..=input.len() {
         let mut changed = true;
-        
+
         // Process items until no new items are added (closure)
         while changed {
             changed = false;
-            
+
             // Get items to process (clone to avoid borrow issues)
             let items_to_process: Vec<EarleyItem<T, N>> = chart.get(i).iter().cloned().collect();
-            
+
             for item in items_to_process {
                 // Get the rule for this item
                 if let Some(rule) = grammar.get_rule(&item.lhs) {
@@ -345,7 +340,7 @@ where
                         }
                         _ => &rule.rhs,
                     };
-                    
+
                     // Check what symbol comes after the dot
                     if let Some(symbol) = item.next_symbol(rhs) {
                         match symbol {
@@ -370,7 +365,8 @@ where
                                     match &nt_rule.rhs {
                                         Expr::Choice(alts) => {
                                             for (alt_idx, _) in alts.iter().enumerate() {
-                                                let new_item = EarleyItem::new(nt.clone(), alt_idx, 0, i);
+                                                let new_item =
+                                                    EarleyItem::new(nt.clone(), alt_idx, 0, i);
                                                 if chart.add(i, new_item) {
                                                     changed = true;
                                                 }
@@ -389,7 +385,8 @@ where
                     } else {
                         // Completer: item is complete, advance items that were waiting for this non-terminal
                         // Find all items at position i that are waiting for item.lhs
-                        let completers: Vec<EarleyItem<T, N>> = chart.get(i).iter().cloned().collect();
+                        let completers: Vec<EarleyItem<T, N>> =
+                            chart.get(i).iter().cloned().collect();
                         for completer in completers {
                             if let Some(completer_rule) = grammar.get_rule(&completer.lhs) {
                                 let completer_rhs = match &completer_rule.rhs {
@@ -402,7 +399,7 @@ where
                                     }
                                     _ => &completer_rule.rhs,
                                 };
-                                
+
                                 if let Some(next_sym) = completer.next_symbol(completer_rhs) {
                                     if let EarleySymbol::NonTerminal(nt) = next_sym {
                                         if nt == item.lhs {
@@ -426,7 +423,7 @@ where
             }
         }
     }
-    
+
     // Find completed items at the end
     let complete_items: Vec<EarleyItem<T, N>> = chart
         .get(input.len())
@@ -451,7 +448,7 @@ where
                 }
         })
         .collect();
-    
+
     if complete_items.is_empty() {
         errors.push(ParseError::UnexpectedEof {
             span: crate::syntax::TextRange::at(
@@ -461,7 +458,7 @@ where
             expected: vec!["complete parse".to_string()],
         });
     }
-    
+
     // Build parse tree from chart with node reuse
     let root_kind = entry
         .to_syntax_kind()
@@ -475,17 +472,23 @@ where
                  NonTerminal::default_syntax_kind() to return Some for error cases.",
             )
         });
-    
+
     // Extract parse tree from chart with incremental session support
     let root = if let Some(complete_item) = complete_items.first() {
-        extract_tree_with_session(grammar, &chart, complete_item, input, 0, input.len(), session)
-            .unwrap_or_else(|| {
-                Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero()))
-            })
+        extract_tree_with_session(
+            grammar,
+            &chart,
+            complete_item,
+            input,
+            0,
+            input.len(),
+            session,
+        )
+        .unwrap_or_else(|| Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero())))
     } else {
         Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero()))
     };
-    
+
     let metrics = ParseMetrics {
         parse_time: start_time.elapsed(),
         tokens_consumed: input.len(),
@@ -494,7 +497,7 @@ where
         cache_hits: 0,
         cache_misses: 0,
     };
-    
+
     ParseResult {
         root,
         errors,
@@ -547,25 +550,26 @@ where
     for i in 0..start.min(input.len()) {
         text_pos += input[i].text_len();
     }
-    
+
     // Check if we can reuse a node from the session
-    let expected_kind = item.lhs
+    let expected_kind = item
+        .lhs
         .to_syntax_kind()
         .or_else(|| item.lhs.default_syntax_kind());
-    
+
     if let Some(cached_node) = session.find_cached_node(item.lhs.name(), text_pos, expected_kind) {
         // Verify the cached node covers the expected range
         let node_text_len = cached_node.text_len();
         let expected_text_len: TextSize = (start..end.min(input.len()))
             .map(|i| input[i].text_len())
             .sum();
-        
+
         // If the cached node's text length matches, we can reuse it
         if node_text_len == expected_text_len {
             return Some(cached_node);
         }
     }
-    
+
     // Fall back to regular tree extraction
     extract_tree(grammar, chart, item, input, start, end)
 }
@@ -594,15 +598,16 @@ where
             }
             _ => &rule.rhs,
         };
-        
-        let kind = item.lhs
+
+        let kind = item
+            .lhs
             .to_syntax_kind()
             .or_else(|| item.lhs.default_syntax_kind())
             .or_else(|| input.get(start).map(crate::grammar::Token::kind))?;
-        
+
         let mut builder = GreenNodeBuilder::new();
         builder.start_node(kind);
-        
+
         // Extract children based on expression type
         match rhs {
             Expr::Seq(items) => {
@@ -622,7 +627,9 @@ where
                             Expr::Rule(nt) => {
                                 // Find completed item for this non-terminal
                                 if let Some(child_item) = find_completed_item(chart, nt, pos, end) {
-                                    if let Some(child_node) = extract_tree(grammar, chart, &child_item, input, pos, end) {
+                                    if let Some(child_node) =
+                                        extract_tree(grammar, chart, &child_item, input, pos, end)
+                                    {
                                         builder.reuse_node(child_node).ok()?;
                                         pos = end; // Simplified - should track actual end
                                     }
@@ -644,7 +651,9 @@ where
             }
             Expr::Rule(nt) => {
                 if let Some(child_item) = find_completed_item(chart, nt, start, end) {
-                    if let Some(child_node) = extract_tree(grammar, chart, &child_item, input, start, end) {
+                    if let Some(child_node) =
+                        extract_tree(grammar, chart, &child_item, input, start, end)
+                    {
                         builder.reuse_node(child_node).ok()?;
                     }
                 }
@@ -653,7 +662,7 @@ where
                 // For other expression types, create a simple node
             }
         }
-        
+
         builder.finish_node().ok()?;
         Some(builder.finish().ok()?.into())
     } else {
@@ -673,9 +682,9 @@ where
     N: NonTerminal,
 {
     // Look for completed items at position end that started at start
-    chart.get(end)
+    chart
+        .get(end)
         .iter()
         .find(|item| item.lhs == *nt && item.start == start)
         .cloned()
 }
-

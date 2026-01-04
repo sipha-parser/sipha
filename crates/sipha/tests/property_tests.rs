@@ -152,8 +152,8 @@ fn numbers_to_tokens(numbers: &[u32]) -> Vec<PropTestToken> {
 #[cfg(feature = "backend-ll")]
 mod ll_property_tests {
     use super::*;
-    use sipha::backend::ll::{LlConfig, LlParser};
     use sipha::backend::ParserBackend;
+    use sipha::backend::ll::{LlConfig, LlParser};
 
     proptest! {
         #[test]
@@ -173,8 +173,8 @@ mod ll_property_tests {
 #[cfg(feature = "backend-lr")]
 mod lr_property_tests {
     use super::*;
-    use sipha::backend::lr::{LrConfig, LrParser};
     use sipha::backend::ParserBackend;
+    use sipha::backend::lr::{LrConfig, LrParser};
 
     proptest! {
         #[test]
@@ -192,8 +192,8 @@ mod lr_property_tests {
 #[cfg(feature = "backend-peg")]
 mod peg_property_tests {
     use super::*;
-    use sipha::backend::peg::{PegConfig, PegParser};
     use sipha::backend::ParserBackend;
+    use sipha::backend::peg::{PegConfig, PegParser};
 
     proptest! {
         #[test]
@@ -212,9 +212,9 @@ mod peg_property_tests {
 mod error_recovery_property_tests {
     use super::*;
     #[cfg(feature = "backend-ll")]
-    use sipha::backend::ll::{LlConfig, LlParser};
-    #[cfg(feature = "backend-ll")]
     use sipha::backend::ParserBackend;
+    #[cfg(feature = "backend-ll")]
+    use sipha::backend::ll::{LlConfig, LlParser};
     use sipha::lexer::{CharSet, LexerBuilder, Pattern};
 
     /// Generate random arithmetic expressions with potential errors
@@ -256,13 +256,13 @@ mod error_recovery_property_tests {
 
             // Tokenize - may have errors
             let tokens_result = lexer.tokenize(&input);
-            
+
             // If tokenization succeeds, try parsing
             if let Ok(tokens) = tokens_result {
                 let grammar = build_arithmetic_grammar();
                 let mut parser = LlParser::new(&grammar, LlConfig::default())
                     .expect("Failed to create parser");
-                
+
                 // Parse should not panic even with errors
                 let _result = parser.parse(&tokens, PropTestNonTerminal::Expr);
                 // We don't assert on success, just that it doesn't crash
@@ -274,17 +274,16 @@ mod error_recovery_property_tests {
             let grammar = build_arithmetic_grammar();
             let mut parser = LlParser::new(&grammar, LlConfig::default())
                 .expect("Failed to create parser");
-            
+
             // Create tokens but remove some to simulate errors
             let mut tokens = numbers_to_tokens(&numbers);
             if tokens.len() > 2 {
                 // Remove a token to create an error
                 tokens.remove(1);
             }
-            
+
             // Parse should handle missing tokens gracefully
             let _result = parser.parse(&tokens, PropTestNonTerminal::Expr);
         }
     }
 }
-

@@ -286,22 +286,22 @@ mod peg_incremental {
         // First parse - should populate memoization cache
         let tokens = vec![TestToken::Number];
         let result1 = incremental_parser.parse_incremental(
-        &tokens,
-        None,
-        &[],
-        TestNonTerminal::Expr,
-        Some(&grammar),
-    );
+            &tokens,
+            None,
+            &[],
+            TestNonTerminal::Expr,
+            Some(&grammar),
+        );
         assert!(result1.errors.is_empty());
 
         // Second parse - should benefit from memoization
         let result2 = incremental_parser.parse_incremental(
-        &tokens,
-        Some(&result1.root),
-        &[],
-        TestNonTerminal::Expr,
-        Some(&grammar),
-    );
+            &tokens,
+            Some(&result1.root),
+            &[],
+            TestNonTerminal::Expr,
+            Some(&grammar),
+        );
         assert!(result2.errors.is_empty());
         assert_eq!(result1.root, result2.root);
     }

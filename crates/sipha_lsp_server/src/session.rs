@@ -1,9 +1,9 @@
 //! LSP session management with incremental parsing
 
-use sipha::grammar::{NonTerminal, Token};
-use sipha::incremental::{IncrementalSession, IncrementalCache};
-use sipha::syntax::SyntaxKind;
 use lsp_types::InitializeParams;
+use sipha::grammar::{NonTerminal, Token};
+use sipha::incremental::{IncrementalCache, IncrementalSession};
+use sipha::syntax::SyntaxKind;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -55,14 +55,17 @@ where
     }
 
     /// Get or create document state
-    pub fn get_or_create_document(&mut self, uri: &lsp_types::Uri) -> &mut DocumentState<'static, T::Kind> {
-        self.documents.entry(uri.clone()).or_insert_with(|| {
-            DocumentState {
+    pub fn get_or_create_document(
+        &mut self,
+        uri: &lsp_types::Uri,
+    ) -> &mut DocumentState<'static, T::Kind> {
+        self.documents
+            .entry(uri.clone())
+            .or_insert_with(|| DocumentState {
                 tree: None,
                 text: String::new(),
                 session: None,
-            }
-        })
+            })
     }
 
     /// Get document state
@@ -71,7 +74,10 @@ where
     }
 
     /// Get document state mutably
-    pub fn get_document_mut(&mut self, uri: &lsp_types::Uri) -> Option<&mut DocumentState<'static, T::Kind>> {
+    pub fn get_document_mut(
+        &mut self,
+        uri: &lsp_types::Uri,
+    ) -> Option<&mut DocumentState<'static, T::Kind>> {
         self.documents.get_mut(uri)
     }
 
@@ -85,4 +91,3 @@ where
         &mut self.cache
     }
 }
-

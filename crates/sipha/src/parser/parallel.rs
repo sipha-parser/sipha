@@ -343,7 +343,7 @@ where
                     Err(lex_errors) => {
                         let errors = lex_errors
                             .iter()
-                            .map(|e| ParseError::from_lexer_error(e))
+                            .map(ParseError::from_lexer_error)
                             .collect();
                         FileParseResult::failure(file_id.clone(), errors, start.elapsed())
                     }

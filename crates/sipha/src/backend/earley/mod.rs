@@ -1,7 +1,7 @@
+mod chart;
 mod config;
 mod parser;
 mod state;
-mod chart;
 
 pub use config::EarleyConfig;
 pub use parser::EarleyParser;
@@ -41,7 +41,7 @@ where
 pub enum EarleyError {
     #[error("Grammar validation failed: {0}")]
     GrammarValidationFailed(String),
-    
+
     #[error("Failed to build parser: {0}")]
     ParserConstructionFailed(String),
 }
@@ -76,13 +76,7 @@ where
     }
 
     fn parse(&mut self, input: &[T], entry: N) -> ParseResult<T, N> {
-        parser::parse(
-            &self.grammar,
-            input,
-            &entry,
-            &self.config,
-            &mut self.state,
-        )
+        parser::parse(&self.grammar, input, &entry, &self.config, &mut self.state)
     }
 
     fn parse_with_session(
@@ -104,8 +98,10 @@ where
         let expected_kind = entry
             .to_syntax_kind()
             .or_else(|| entry.default_syntax_kind());
-        
-        if let Some(cached_root) = session.find_cached_node(entry.name(), entry_text_pos, expected_kind) {
+
+        if let Some(cached_root) =
+            session.find_cached_node(entry.name(), entry_text_pos, expected_kind)
+        {
             // Verify the cached root matches the input length (simple validation)
             let errors = Vec::new();
             let warnings = Vec::new();
@@ -165,4 +161,3 @@ where
         &self.state
     }
 }
-

@@ -1,17 +1,19 @@
 //! LSP Server implementation
 
-use crate::handlers::*;
+use crate::handlers::{
+    handle_completion, handle_did_change_full, handle_did_change_incremental, handle_did_close,
+    handle_did_open, handle_document_symbol, handle_hover, handle_semantic_tokens_full,
+};
 use crate::session::LspSession;
 use lsp_server::{Connection, Message, Notification, Request};
-use lsp_types::{
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
-};
+use lsp_types::{ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind};
 use sipha::backend::ParserBackend;
 use sipha::grammar::{Grammar, NonTerminal, Token};
 use std::sync::Arc;
 
 /// Configuration for the LSP server
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ServerConfig {
     /// Enable incremental parsing (default: true)
     pub incremental_parsing: bool,
@@ -87,10 +89,12 @@ where
 
         // Wait for initialization
         let server_capabilities = self.get_server_capabilities();
-        let initialization_params = connection.initialize(serde_json::to_value(server_capabilities)?)?;
+        let initialization_params =
+            connection.initialize(serde_json::to_value(server_capabilities)?)?;
 
         // Initialize the session
-        let init_params: lsp_types::InitializeParams = serde_json::from_value(initialization_params)?;
+        let init_params: lsp_types::InitializeParams =
+            serde_json::from_value(initialization_params)?;
         self.session.initialize(init_params);
 
         // Main event loop
@@ -129,43 +133,51 @@ where
                 trigger_characters: Some(vec![".".to_string(), "(".to_string(), "[".to_string()]),
                 all_commit_characters: None,
                 resolve_provider: Some(false),
-                work_done_progress_options: Default::default(),
+                work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
                 completion_item: None,
             }),
             document_symbol_provider: if self.config.document_symbols {
                 Some(lsp_types::OneOf::Right(lsp_types::DocumentSymbolOptions {
-                    work_done_progress_options: Default::default(),
+                    work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
                     label: None,
                 }))
             } else {
                 None
             },
             semantic_tokens_provider: if self.config.semantic_tokens {
-                Some(lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
-                    lsp_types::SemanticTokensOptions {
-                        work_done_progress_options: Default::default(),
-                        legend: lsp_types::SemanticTokensLegend {
-                            token_types: sipha_lsp::StandardSemanticType::standard_types()
-                                .into_iter()
-                                .map(|s| lsp_types::SemanticTokenType::from(s))
-                                .collect(),
-                            token_modifiers: sipha_lsp::StandardSemanticModifier::standard_modifiers()
-                                .into_iter()
-                                .map(|s| lsp_types::SemanticTokenModifier::from(s))
-                                .collect(),
+                Some(
+                    lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        lsp_types::SemanticTokensOptions {
+                            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(
+                            ),
+                            legend: lsp_types::SemanticTokensLegend {
+                                token_types: sipha_lsp::StandardSemanticType::standard_types()
+                                    .into_iter()
+                                    .map(lsp_types::SemanticTokenType::from)
+                                    .collect(),
+                                token_modifiers:
+                                    sipha_lsp::StandardSemanticModifier::standard_modifiers()
+                                        .into_iter()
+                                        .map(lsp_types::SemanticTokenModifier::from)
+                                        .collect(),
+                            },
+                            range: Some(true),
+                            full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
                         },
-                        range: Some(true),
-                        full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
-                    },
-                ))
+                    ),
+                )
             } else {
                 None
             },
-            ..Default::default()
+            ..lsp_types::ServerCapabilities::default()
         }
     }
 
-    fn handle_request(&mut self, req: Request, connection: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    fn handle_request(
+        &mut self,
+        req: Request,
+        connection: &Connection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         match req.method.as_str() {
             "textDocument/hover" => {
                 handle_hover(&self.grammar, &mut self.session, req, connection)?;
@@ -189,7 +201,11 @@ where
         Ok(())
     }
 
-    fn handle_notification(&mut self, not: Notification, connection: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    fn handle_notification(
+        &mut self,
+        not: Notification,
+        connection: &Connection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         match not.method.as_str() {
             "textDocument/didOpen" => {
                 handle_did_open(
@@ -230,4 +246,3 @@ where
         Ok(())
     }
 }
-

@@ -24,10 +24,10 @@ enum SqlSyntaxKind {
     Number,
     String,
     // Operators
-    Eq,      // =
-    Ne,      // !=
-    Lt,      // <
-    Gt,      // >
+    Eq, // =
+    Ne, // !=
+    Lt, // <
+    Gt, // >
     And,
     Or,
     // Punctuation
@@ -115,7 +115,8 @@ fn create_token(kind: SqlSyntaxKind, text: &str) -> SqlToken {
     }
 }
 
-fn build_sql_lexer() -> Result<sipha::lexer::CompiledLexer<SqlSyntaxKind>, Box<dyn std::error::Error>> {
+fn build_sql_lexer()
+-> Result<sipha::lexer::CompiledLexer<SqlSyntaxKind>, Box<dyn std::error::Error>> {
     let lexer = LexerBuilder::new()
         // Keywords (must come before Ident to match first)
         .token(SqlSyntaxKind::Select, Pattern::Literal("SELECT".into()))
@@ -128,7 +129,9 @@ fn build_sql_lexer() -> Result<sipha::lexer::CompiledLexer<SqlSyntaxKind>, Box<d
             SqlSyntaxKind::Ident,
             Pattern::Repeat {
                 pattern: Box::new(Pattern::CharClass(
-                    CharSet::letters().union(&CharSet::digits()).union(&CharSet::new(['_'])),
+                    CharSet::letters()
+                        .union(&CharSet::digits())
+                        .union(&CharSet::new(['_'])),
                 )),
                 min: 1,
                 max: None,
@@ -148,7 +151,9 @@ fn build_sql_lexer() -> Result<sipha::lexer::CompiledLexer<SqlSyntaxKind>, Box<d
             Pattern::Seq(vec![
                 Pattern::Literal("\"".into()),
                 Pattern::Repeat {
-                    pattern: Box::new(Pattern::CharClass(CharSet::all().difference(&CharSet::new(['"'])))),
+                    pattern: Box::new(Pattern::CharClass(
+                        CharSet::all().difference(&CharSet::new(['"'])),
+                    )),
                     min: 0,
                     max: None,
                 },
@@ -179,7 +184,8 @@ fn build_sql_lexer() -> Result<sipha::lexer::CompiledLexer<SqlSyntaxKind>, Box<d
     Ok(lexer)
 }
 
-fn build_sql_grammar() -> Result<sipha::grammar::Grammar<SqlToken, SqlNonTerminal>, Box<dyn std::error::Error>> {
+fn build_sql_grammar()
+-> Result<sipha::grammar::Grammar<SqlToken, SqlNonTerminal>, Box<dyn std::error::Error>> {
     let grammar = GrammarBuilder::new()
         .entry_point(SqlNonTerminal::SelectStmt)
         // SELECT column_list FROM table_name [WHERE condition]
@@ -290,4 +296,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

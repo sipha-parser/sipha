@@ -380,7 +380,7 @@ fn test_peg_incremental_reuses_nodes() {
     // Verify parsing completes successfully
     assert!(updated_result.errors.is_empty());
     assert_eq!(updated_result.root.kind(), TestSyntaxKind::Expr);
-    
+
     // The test verifies that incremental parsing works correctly.
     // Node reuse may occur depending on the implementation, but the primary
     // goal is to ensure parsing completes without errors.

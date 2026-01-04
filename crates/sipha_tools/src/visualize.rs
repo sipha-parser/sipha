@@ -16,16 +16,13 @@ use std::fmt::Write;
 /// let dot = generate_dot(&grammar, |t| format!("{:?}", t));
 /// println!("{}", dot);
 /// ```
-pub fn generate_dot<T, N>(
-    grammar: &Grammar<T, N>,
-    token_name: impl Fn(&T) -> String,
-) -> String
+pub fn generate_dot<T, N>(grammar: &Grammar<T, N>, token_name: impl Fn(&T) -> String) -> String
 where
     T: Token,
     N: NonTerminal,
 {
     let mut output = String::new();
-    
+
     writeln!(output, "digraph Grammar {{").unwrap();
     writeln!(output, "  rankdir=LR;").unwrap();
     writeln!(output, "  node [shape=box];").unwrap();
@@ -34,25 +31,25 @@ where
     // Add nodes for all rules
     for (nt, _rule) in grammar.rules() {
         let name = nt.name();
-        writeln!(output, "  \"{}\" [label=\"{}\", shape=ellipse];", name, name).unwrap();
+        writeln!(output, "  \"{name}\" [label=\"{name}\", shape=ellipse];").unwrap();
     }
 
     writeln!(output).unwrap();
 
     // Add edges for rule dependencies
     let mut token_nodes = std::collections::HashSet::new();
-    
+
     for (nt, rule) in grammar.rules() {
         let from_name = nt.name();
         let expr = &rule.rhs;
-        
+
         // Find all rule references in the expression
         let refs = find_rule_refs(expr, grammar);
-        
+
         for ref_name in refs {
-            writeln!(output, "  \"{}\" -> \"{}\";", from_name, ref_name).unwrap();
+            writeln!(output, "  \"{from_name}\" -> \"{ref_name}\";").unwrap();
         }
-        
+
         // Collect tokens
         let tokens = find_token_refs(expr, grammar, &token_name);
         for token in tokens {
@@ -66,18 +63,18 @@ where
     for token in &token_nodes {
         writeln!(
             output,
-            "  \"{}\" [label=\"{}\", shape=box, style=filled, fillcolor=lightblue];",
-            token, token
-        ).unwrap();
+            "  \"{token}\" [label=\"{token}\", shape=box, style=filled, fillcolor=lightblue];"
+        )
+        .unwrap();
     }
-    
+
     // Add edges from rules to tokens
     for (nt, rule) in grammar.rules() {
         let rule_name = nt.name();
         let tokens = find_token_refs(&rule.rhs, grammar, &token_name);
-        
+
         for token in tokens {
-            writeln!(output, "  \"{}\" -> \"{}\" [style=dashed];", rule_name, token).unwrap();
+            writeln!(output, "  \"{rule_name}\" -> \"{token}\" [style=dashed];").unwrap();
         }
     }
 
@@ -104,6 +101,7 @@ where
 ///
 /// This creates an interactive HTML page with the grammar structure,
 /// optionally highlighting conflicts and issues.
+#[allow(clippy::too_many_lines)]
 pub fn generate_html_with_conflicts<T, N>(
     grammar: &Grammar<T, N>,
     token_name: impl Fn(&T) -> String,
@@ -115,21 +113,21 @@ where
     N: NonTerminal,
 {
     use sipha::grammar::analyzer::GrammarAnalyzer;
-    
+
     let title = title.unwrap_or("Grammar Visualization");
     let dot = if show_conflicts {
         generate_dot_with_conflicts(grammar, token_name)
     } else {
         generate_dot(grammar, token_name)
     };
-    
+
     // Get statistics for display
     let analyzer = GrammarAnalyzer::new(grammar);
     let stats = analyzer.statistics();
-    let left_recursion = analyzer.find_left_recursion();
+    let _left_recursion = analyzer.find_left_recursion();
     let ll_conflicts = analyzer.ll1_conflicts();
-    let unreachable = analyzer.find_unreachable_rules();
-    
+    let _unreachable = analyzer.find_unreachable_rules();
+
     let stats_html = if show_conflicts {
         format!(
             r#"
@@ -171,12 +169,12 @@ where
             stats.nullable_rules
         )
     };
-    
+
     format!(
         r#"<!DOCTYPE html>
 <html>
 <head>
-    <title>{}</title>
+    <title>{title}</title>
     <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/viz.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/full.render.js"></script>
     <style>
@@ -247,13 +245,13 @@ where
 </head>
 <body>
     <div class="container">
-        <h1>{}</h1>
-        {}
+        <h1>{title}</h1>
+        {stats_html}
         <div id="graph"></div>
     </div>
     <script>
         var viz = new Viz();
-        var dot = `{}`;
+        var dot = `{dot}`;
         viz.renderSVGElement(dot)
             .then(function(element) {{
                 element.style.maxWidth = '100%';
@@ -272,8 +270,7 @@ where
             }});
     </script>
 </body>
-</html>"#,
-        title, title, stats_html, dot
+</html>"#
     )
 }
 
@@ -290,6 +287,7 @@ where
     refs
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn find_rule_refs_recursive<T, N>(
     expr: &Expr<T, N>,
     grammar: &Grammar<T, N>,
@@ -313,11 +311,18 @@ fn find_rule_refs_recursive<T, N>(
         Expr::Repeat { expr: inner, .. } => {
             find_rule_refs_recursive(inner, grammar, refs);
         }
-        Expr::Separated { item, separator, .. } => {
+        Expr::Separated {
+            item, separator, ..
+        } => {
             find_rule_refs_recursive(item, grammar, refs);
             find_rule_refs_recursive(separator, grammar, refs);
         }
-        Expr::Delimited { open, content, close, .. } => {
+        Expr::Delimited {
+            open,
+            content,
+            close,
+            ..
+        } => {
             find_rule_refs_recursive(open, grammar, refs);
             find_rule_refs_recursive(content, grammar, refs);
             find_rule_refs_recursive(close, grammar, refs);
@@ -325,7 +330,11 @@ fn find_rule_refs_recursive<T, N>(
         Expr::Lookahead(inner) | Expr::NotLookahead(inner) | Expr::Cut(inner) => {
             find_rule_refs_recursive(inner, grammar, refs);
         }
-        Expr::Conditional { condition, then_expr, else_expr } => {
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
             find_rule_refs_recursive(condition, grammar, refs);
             find_rule_refs_recursive(then_expr, grammar, refs);
             if let Some(else_expr) = else_expr {
@@ -335,8 +344,10 @@ fn find_rule_refs_recursive<T, N>(
         Expr::SemanticPredicate { expr: inner, .. } => {
             find_rule_refs_recursive(inner, grammar, refs);
         }
-        Expr::Label { expr: inner, .. } | Expr::Node { expr: inner, .. } 
-        | Expr::Flatten(inner) | Expr::Prune(inner) => {
+        Expr::Label { expr: inner, .. }
+        | Expr::Node { expr: inner, .. }
+        | Expr::Flatten(inner)
+        | Expr::Prune(inner) => {
             find_rule_refs_recursive(inner, grammar, refs);
         }
         Expr::RecoveryPoint { expr: inner, .. } => {
@@ -345,8 +356,12 @@ fn find_rule_refs_recursive<T, N>(
         Expr::Capture { expr: inner, .. } => {
             find_rule_refs_recursive(inner, grammar, refs);
         }
-        Expr::Token(_) | Expr::Any | Expr::Eof | Expr::Empty 
-        | Expr::TokenClass { .. } | Expr::Backreference { .. } => {
+        Expr::Token(_)
+        | Expr::Any
+        | Expr::Eof
+        | Expr::Empty
+        | Expr::TokenClass { .. }
+        | Expr::Backreference { .. } => {
             // No rule references
         }
     }
@@ -369,6 +384,7 @@ where
     tokens
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn find_token_refs_recursive<T, N>(
     expr: &Expr<T, N>,
     grammar: &Grammar<T, N>,
@@ -393,11 +409,18 @@ fn find_token_refs_recursive<T, N>(
         Expr::Repeat { expr: inner, .. } => {
             find_token_refs_recursive(inner, grammar, token_name, tokens);
         }
-        Expr::Separated { item, separator, .. } => {
+        Expr::Separated {
+            item, separator, ..
+        } => {
             find_token_refs_recursive(item, grammar, token_name, tokens);
             find_token_refs_recursive(separator, grammar, token_name, tokens);
         }
-        Expr::Delimited { open, content, close, .. } => {
+        Expr::Delimited {
+            open,
+            content,
+            close,
+            ..
+        } => {
             find_token_refs_recursive(open, grammar, token_name, tokens);
             find_token_refs_recursive(content, grammar, token_name, tokens);
             find_token_refs_recursive(close, grammar, token_name, tokens);
@@ -405,7 +428,11 @@ fn find_token_refs_recursive<T, N>(
         Expr::Lookahead(inner) | Expr::NotLookahead(inner) | Expr::Cut(inner) => {
             find_token_refs_recursive(inner, grammar, token_name, tokens);
         }
-        Expr::Conditional { condition, then_expr, else_expr } => {
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
             find_token_refs_recursive(condition, grammar, token_name, tokens);
             find_token_refs_recursive(then_expr, grammar, token_name, tokens);
             if let Some(else_expr) = else_expr {
@@ -415,8 +442,10 @@ fn find_token_refs_recursive<T, N>(
         Expr::SemanticPredicate { expr: inner, .. } => {
             find_token_refs_recursive(inner, grammar, token_name, tokens);
         }
-        Expr::Label { expr: inner, .. } | Expr::Node { expr: inner, .. } 
-        | Expr::Flatten(inner) | Expr::Prune(inner) => {
+        Expr::Label { expr: inner, .. }
+        | Expr::Node { expr: inner, .. }
+        | Expr::Flatten(inner)
+        | Expr::Prune(inner) => {
             find_token_refs_recursive(inner, grammar, token_name, tokens);
         }
         Expr::RecoveryPoint { expr: inner, .. } => {
@@ -425,8 +454,12 @@ fn find_token_refs_recursive<T, N>(
         Expr::Capture { expr: inner, .. } => {
             find_token_refs_recursive(inner, grammar, token_name, tokens);
         }
-        Expr::Rule(_) | Expr::Any | Expr::Eof | Expr::Empty 
-        | Expr::TokenClass { .. } | Expr::Backreference { .. } => {
+        Expr::Rule(_)
+        | Expr::Any
+        | Expr::Eof
+        | Expr::Empty
+        | Expr::TokenClass { .. }
+        | Expr::Backreference { .. } => {
             // No token references at this level (or handled separately)
         }
     }
@@ -442,12 +475,12 @@ where
     N: NonTerminal,
 {
     use sipha::grammar::analyzer::GrammarAnalyzer;
-    
+
     let analyzer = GrammarAnalyzer::new(grammar);
     let left_recursion = analyzer.find_left_recursion();
     let ll_conflicts = analyzer.ll1_conflicts();
     let unreachable = analyzer.find_unreachable_rules();
-    
+
     // Build sets for quick lookup
     let mut left_recursive_set = std::collections::HashSet::new();
     for cycle in &left_recursion {
@@ -455,20 +488,20 @@ where
             left_recursive_set.insert(nt.name().to_string());
         }
     }
-    
+
     let mut conflict_set = std::collections::HashSet::new();
     for conflict in &ll_conflicts {
         conflict_set.insert(conflict.non_terminal.name().to_string());
     }
-    
+
     let mut unreachable_set = std::collections::HashSet::new();
     for nt in &unreachable {
         unreachable_set.insert(nt.name().to_string());
     }
-    
+
     // Generate base DOT
     let mut output = String::new();
-    
+
     writeln!(output, "digraph Grammar {{").unwrap();
     writeln!(output, "  rankdir=LR;").unwrap();
     writeln!(output, "  node [shape=box];").unwrap();
@@ -478,7 +511,7 @@ where
     for (nt, _rule) in grammar.rules() {
         let name = nt.name();
         let mut style = "shape=ellipse";
-        
+
         if left_recursive_set.contains(name) {
             style = "shape=ellipse, style=filled, fillcolor=red, fontcolor=white";
         } else if conflict_set.contains(name) {
@@ -486,34 +519,38 @@ where
         } else if unreachable_set.contains(name) {
             style = "shape=ellipse, style=filled, fillcolor=gray, fontcolor=white";
         }
-        
-        writeln!(output, "  \"{}\" [label=\"{}\", {}];", name, name, style).unwrap();
+
+        writeln!(output, "  \"{name}\" [label=\"{name}\", {style}];").unwrap();
     }
 
     writeln!(output).unwrap();
 
     // Add edges for rule dependencies
     let mut token_nodes = std::collections::HashSet::new();
-    
+
     for (nt, rule) in grammar.rules() {
         let from_name = nt.name();
         let expr = &rule.rhs;
-        
+
         // Find all rule references in the expression
         let refs = find_rule_refs(expr, grammar);
-        
+
         for ref_name in refs {
             // Highlight edges that are part of left recursion cycles
-            let is_recursive_edge = left_recursive_set.contains(from_name) 
-                && left_recursive_set.contains(&ref_name);
-            
+            let is_recursive_edge =
+                left_recursive_set.contains(from_name) && left_recursive_set.contains(&ref_name);
+
             if is_recursive_edge {
-                writeln!(output, "  \"{}\" -> \"{}\" [color=red, penwidth=2];", from_name, ref_name).unwrap();
+                writeln!(
+                    output,
+                    "  \"{from_name}\" -> \"{ref_name}\" [color=red, penwidth=2];"
+                )
+                .unwrap();
             } else {
-                writeln!(output, "  \"{}\" -> \"{}\";", from_name, ref_name).unwrap();
+                writeln!(output, "  \"{from_name}\" -> \"{ref_name}\";").unwrap();
             }
         }
-        
+
         // Collect tokens
         let tokens = find_token_refs(expr, grammar, &token_name);
         for token in tokens {
@@ -527,21 +564,21 @@ where
     for token in &token_nodes {
         writeln!(
             output,
-            "  \"{}\" [label=\"{}\", shape=box, style=filled, fillcolor=lightblue];",
-            token, token
-        ).unwrap();
+            "  \"{token}\" [label=\"{token}\", shape=box, style=filled, fillcolor=lightblue];"
+        )
+        .unwrap();
     }
-    
+
     // Add edges from rules to tokens
     for (nt, rule) in grammar.rules() {
         let rule_name = nt.name();
         let tokens = find_token_refs(&rule.rhs, grammar, &token_name);
-        
+
         for token in tokens {
-            writeln!(output, "  \"{}\" -> \"{}\" [style=dashed];", rule_name, token).unwrap();
+            writeln!(output, "  \"{rule_name}\" -> \"{token}\" [style=dashed];").unwrap();
         }
     }
-    
+
     // Add legend for conflict types
     if !left_recursive_set.is_empty() || !conflict_set.is_empty() || !unreachable_set.is_empty() {
         writeln!(output).unwrap();
@@ -549,7 +586,7 @@ where
         writeln!(output, "  subgraph cluster_legend {{").unwrap();
         writeln!(output, "    label=\"Legend\";").unwrap();
         writeln!(output, "    style=dashed;").unwrap();
-        
+
         if !left_recursive_set.is_empty() {
             writeln!(output, "    legend_left_rec [label=\"Left Recursive\", shape=ellipse, style=filled, fillcolor=red, fontcolor=white];").unwrap();
         }
@@ -559,11 +596,10 @@ where
         if !unreachable_set.is_empty() {
             writeln!(output, "    legend_unreachable [label=\"Unreachable\", shape=ellipse, style=filled, fillcolor=gray, fontcolor=white];").unwrap();
         }
-        
+
         writeln!(output, "  }}").unwrap();
     }
 
     writeln!(output, "}}").unwrap();
     output
 }
-

@@ -64,7 +64,10 @@ fn create_token(kind: PerfSyntaxKind, text: &str) -> Token<PerfSyntaxKind> {
     Token::new(
         kind,
         text,
-        TextRange::at(TextSize::zero(), TextSize::from(u32::try_from(text.len()).unwrap_or(0))),
+        TextRange::at(
+            TextSize::zero(),
+            TextSize::from(u32::try_from(text.len()).unwrap_or(0)),
+        ),
     )
 }
 
@@ -144,11 +147,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grammar = build_grammar();
 
     // Generate a large expression for benchmarking
-    let large_expr: String = (1..=100)
-        .map(|i| format!("{i} + "))
-        .collect::<String>()
-        + "0";
-    
+    let large_expr: String = (1..=100).map(|i| format!("{i} + ")).collect::<String>() + "0";
+
     println!("1. Backend Selection");
     println!("   Testing different backends on expression with 100 terms...\n");
 
@@ -159,7 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use sipha::backend::ll::{LlConfig, LlParser};
         let config = LlConfig::default();
         let mut parser = LlParser::new(&grammar, config)?;
-        
+
         let start = Instant::now();
         let _result = parser.parse(&tokens, PerfNonTerminal::Expr);
         let elapsed = start.elapsed();
@@ -171,7 +171,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use sipha::backend::lr::{LrConfig, LrParser};
         let config = LrConfig::default();
         let mut parser = LrParser::new(&grammar, config)?;
-        
+
         let start = Instant::now();
         let _result = parser.parse(&tokens, PerfNonTerminal::Expr);
         let elapsed = start.elapsed();
@@ -183,7 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use sipha::backend::peg::{PegConfig, PegParser};
         let config = PegConfig::default();
         let mut parser = PegParser::new(&grammar, config)?;
-        
+
         let start = Instant::now();
         let _result = parser.parse(&tokens, PerfNonTerminal::Expr);
         let elapsed = start.elapsed();
@@ -262,4 +262,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

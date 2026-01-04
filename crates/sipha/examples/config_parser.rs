@@ -17,10 +17,10 @@ use sipha::syntax::{SyntaxKind, TextSize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ConfigSyntaxKind {
     // Punctuation
-    LBracket,  // [
-    RBracket,  // ]
-    Equals,    // =
-    Dot,       // .
+    LBracket, // [
+    RBracket, // ]
+    Equals,   // =
+    Dot,      // .
     Newline,
     // Values
     String,
@@ -102,7 +102,8 @@ fn create_token(kind: ConfigSyntaxKind, text: &str) -> ConfigToken {
     }
 }
 
-fn build_config_lexer() -> Result<sipha::lexer::CompiledLexer<ConfigSyntaxKind>, Box<dyn std::error::Error>> {
+fn build_config_lexer()
+-> Result<sipha::lexer::CompiledLexer<ConfigSyntaxKind>, Box<dyn std::error::Error>> {
     let lexer = LexerBuilder::new()
         // Punctuation
         .token(ConfigSyntaxKind::LBracket, Pattern::Literal("[".into()))
@@ -118,7 +119,9 @@ fn build_config_lexer() -> Result<sipha::lexer::CompiledLexer<ConfigSyntaxKind>,
             ConfigSyntaxKind::Ident,
             Pattern::Repeat {
                 pattern: Box::new(Pattern::CharClass(
-                    CharSet::letters().union(&CharSet::digits()).union(&CharSet::new(['_', '-'])),
+                    CharSet::letters()
+                        .union(&CharSet::digits())
+                        .union(&CharSet::new(['_', '-'])),
                 )),
                 min: 1,
                 max: None,
@@ -138,7 +141,9 @@ fn build_config_lexer() -> Result<sipha::lexer::CompiledLexer<ConfigSyntaxKind>,
             Pattern::Seq(vec![
                 Pattern::Literal("\"".into()),
                 Pattern::Repeat {
-                    pattern: Box::new(Pattern::CharClass(CharSet::all().difference(&CharSet::new(['"'])))),
+                    pattern: Box::new(Pattern::CharClass(
+                        CharSet::all().difference(&CharSet::new(['"'])),
+                    )),
                     min: 0,
                     max: None,
                 },
@@ -149,7 +154,9 @@ fn build_config_lexer() -> Result<sipha::lexer::CompiledLexer<ConfigSyntaxKind>,
         .token(
             ConfigSyntaxKind::Whitespace,
             Pattern::Repeat {
-                pattern: Box::new(Pattern::CharClass(CharSet::whitespace().difference(&CharSet::new(['\n'])))),
+                pattern: Box::new(Pattern::CharClass(
+                    CharSet::whitespace().difference(&CharSet::new(['\n'])),
+                )),
                 min: 1,
                 max: None,
             },
@@ -160,7 +167,8 @@ fn build_config_lexer() -> Result<sipha::lexer::CompiledLexer<ConfigSyntaxKind>,
     Ok(lexer)
 }
 
-fn build_config_grammar() -> Result<sipha::grammar::Grammar<ConfigToken, ConfigNonTerminal>, Box<dyn std::error::Error>> {
+fn build_config_grammar()
+-> Result<sipha::grammar::Grammar<ConfigToken, ConfigNonTerminal>, Box<dyn std::error::Error>> {
     let grammar = GrammarBuilder::new()
         .entry_point(ConfigNonTerminal::Config)
         // config = (section | key_value)*
@@ -242,7 +250,8 @@ timeout = 30
         Ok(tokens) => {
             println!("  Tokens found: {}", tokens.len());
             for (i, token) in tokens.iter().enumerate() {
-                if token.kind != ConfigSyntaxKind::Eof && token.kind != ConfigSyntaxKind::Whitespace {
+                if token.kind != ConfigSyntaxKind::Eof && token.kind != ConfigSyntaxKind::Whitespace
+                {
                     println!("    [{}] {:?}: \"{}\"", i, token.kind, token.text);
                 }
             }
@@ -254,9 +263,10 @@ timeout = 30
     }
 
     println!("\n=== Example Complete ===");
-    println!("\nNote: This is a simplified config parser demonstrating key-value and section parsing.");
+    println!(
+        "\nNote: This is a simplified config parser demonstrating key-value and section parsing."
+    );
     println!("A full TOML parser would need to handle arrays, tables, and more value types.");
 
     Ok(())
 }
-

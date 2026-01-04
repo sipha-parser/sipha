@@ -1,15 +1,19 @@
 //! LSP request and notification handlers
 
-use crate::session::LspSession;
 use crate::server::ServerConfig;
+use crate::session::LspSession;
 use lsp_server::{Connection, Notification, Request, Response};
-use lsp_types::*;
+use lsp_types::{
+    CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
+    HoverParams, Range, SemanticTokens, SemanticTokensParams, SemanticTokensResult,
+    TextDocumentContentChangeEvent,
+};
 use sipha::error::{LexerError, ParseError};
 use sipha::grammar::{Grammar, NonTerminal, Token};
 use sipha::incremental::TextEdit;
-use sipha::syntax::red::SyntaxNode;
-use sipha::syntax::{SyntaxKind, TextRange, TextSize};
-use sipha_lsp::{ToDiagnostic, ToDocumentSymbol, ToRangeWithSource, create_hover};
+use sipha::syntax::{SyntaxKind, TextRange};
+use sipha_lsp::{create_hover, ToDiagnostic, ToDocumentSymbol, ToRangeWithSource};
 use std::sync::Arc;
 
 /// Trait for lexers that can tokenize text
@@ -18,7 +22,9 @@ pub trait Lexer<T: Token> {
 }
 
 // Implement for CompiledLexer when T::Kind matches the lexer's kind
-impl<K: sipha::syntax::SyntaxKind> Lexer<sipha::lexer::Token<K>> for sipha::lexer::CompiledLexer<K> {
+impl<K: sipha::syntax::SyntaxKind> Lexer<sipha::lexer::Token<K>>
+    for sipha::lexer::CompiledLexer<K>
+{
     fn tokenize(&self, input: &str) -> Result<Vec<sipha::lexer::Token<K>>, Vec<LexerError>> {
         self.tokenize(input)
     }
@@ -35,17 +41,15 @@ fn send_diagnostics(
         diagnostics: diagnostics.to_vec(),
         version: None,
     };
-    let notification = Notification::new(
-        "textDocument/publishDiagnostics".into(),
-        params,
-    );
+    let notification = Notification::new("textDocument/publishDiagnostics".into(), params);
     connection.sender.send(notification.into())?;
     Ok(())
 }
 
 /// Handle textDocument/didOpen notification
+#[allow(clippy::too_many_arguments)]
 pub fn handle_did_open<T, N, P, L>(
-    grammar: &Arc<Grammar<T, N>>,
+    _grammar: &Arc<Grammar<T, N>>,
     session: &mut LspSession<T, N>,
     parser: &mut P,
     lexer: &L,
@@ -62,8 +66,8 @@ where
 {
     let params: DidOpenTextDocumentParams = serde_json::from_value(not.params)?;
     let doc = session.get_or_create_document(&params.text_document.uri);
-    doc.text = params.text_document.text.clone();
-    
+    doc.text.clone_from(&params.text_document.text);
+
     // Tokenize the document
     let tokens = match lexer.tokenize(&doc.text) {
         Ok(tokens) => tokens,
@@ -82,34 +86,38 @@ where
             return Ok(());
         }
     };
-    
+
     // Parse the document
     let result = parser.parse(&tokens, entry_point.clone());
     doc.tree = Some(result.root.clone());
-    
+
     // Send diagnostics if configured
     if config.diagnostics {
         let diagnostics: Vec<lsp_types::Diagnostic> = result
             .errors
             .iter()
-            .map(|e| e.to_diagnostic())
+            .map(sipha_lsp::ToDiagnostic::to_diagnostic)
             .collect::<Vec<_>>();
         send_diagnostics(connection, &params.text_document.uri, &diagnostics)?;
     }
-    
+
     Ok(())
 }
 
 /// Convert LSP range to TextRange
-fn lsp_range_to_text_range(range: &Range, line_index: &sipha::syntax::line_col::LineIndex) -> TextRange {
+fn lsp_range_to_text_range(
+    range: &Range,
+    line_index: &sipha::syntax::line_col::LineIndex,
+) -> TextRange {
     let start = line_index.offset(range.start.line, range.start.character);
     let end = line_index.offset(range.end.line, range.end.character);
     TextRange::new(start, end)
 }
 
 /// Handle textDocument/didChange notification with incremental parsing
+#[allow(clippy::too_many_arguments)]
 pub fn handle_did_change_incremental<T, N, P, L>(
-    grammar: &Arc<Grammar<T, N>>,
+    _grammar: &Arc<Grammar<T, N>>,
     session: &mut LspSession<T, N>,
     parser: &mut P,
     lexer: &L,
@@ -126,11 +134,11 @@ where
 {
     let params: DidChangeTextDocumentParams = serde_json::from_value(not.params)?;
     let doc = session.get_document_mut(&params.text_document.uri);
-    
+
     if let Some(doc) = doc {
         let line_index = sipha::syntax::line_col::LineIndex::new(&doc.text);
         let mut edits = Vec::new();
-        
+
         // Apply incremental changes
         for change in &params.content_changes {
             match change {
@@ -152,21 +160,20 @@ where
                     text,
                 } => {
                     // Full document replacement
-                    doc.text = text.clone();
+                    doc.text.clone_from(text);
                     doc.tree = None; // Invalidate tree
-                    // Re-parse the entire document
-                    let tokens = match lexer.tokenize(&doc.text) {
-                        Ok(tokens) => tokens,
-                        Err(_) => return Ok(()),
+                                     // Re-parse the entire document
+                    let Ok(tokens) = lexer.tokenize(&doc.text) else {
+                        return Ok(());
                     };
                     let result = parser.parse(&tokens, entry_point.clone());
                     doc.tree = Some(result.root.clone());
-                    
+
                     if config.diagnostics {
                         let diagnostics: Vec<lsp_types::Diagnostic> = result
                             .errors
                             .iter()
-                            .map(|e| e.to_diagnostic())
+                            .map(sipha_lsp::ToDiagnostic::to_diagnostic)
                             .collect::<Vec<_>>();
                         send_diagnostics(connection, &params.text_document.uri, &diagnostics)?;
                     }
@@ -174,7 +181,7 @@ where
                 }
             }
         }
-        
+
         // Apply edits to text
         for edit in &edits {
             // Simple text replacement - in a real implementation, use a proper text editor
@@ -184,35 +191,33 @@ where
                 doc.text.replace_range(start..end, &edit.new_text);
             }
         }
-        
+
         // Update parse tree incrementally
-        let old_tree: Option<&sipha::syntax::GreenNode<T::Kind>> = doc.tree.as_ref().map(|t| t.as_ref());
+        let old_tree: Option<&sipha::syntax::GreenNode<T::Kind>> =
+            doc.tree.as_ref().map(std::convert::AsRef::as_ref);
         let incremental_session = sipha::incremental::IncrementalSession::new(old_tree, &edits);
-        
+
         // Tokenize the updated text
-        let tokens = match lexer.tokenize(&doc.text) {
-            Ok(tokens) => tokens,
-            Err(_) => {
-                doc.tree = None;
-                return Ok(());
-            }
+        let Ok(tokens) = lexer.tokenize(&doc.text) else {
+            doc.tree = None;
+            return Ok(());
         };
-        
+
         // Parse with incremental session
         let result = parser.parse_with_session(&tokens, entry_point.clone(), &incremental_session);
         doc.tree = Some(result.root.clone());
-        
+
         // Send diagnostics if configured
         if config.diagnostics {
             let diagnostics: Vec<lsp_types::Diagnostic> = result
                 .errors
                 .iter()
-                .map(|e| e.to_diagnostic())
+                .map(sipha_lsp::ToDiagnostic::to_diagnostic)
                 .collect();
             send_diagnostics(connection, &params.text_document.uri, &diagnostics)?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -229,7 +234,7 @@ where
 {
     let params: DidChangeTextDocumentParams = serde_json::from_value(not.params)?;
     let doc = session.get_document_mut(&params.text_document.uri);
-    
+
     if let Some(doc) = doc {
         // Apply changes to text
         for change in &params.content_changes {
@@ -253,13 +258,13 @@ where
                     range_length: _,
                     text,
                 } => {
-                    doc.text = text.clone();
+                    doc.text.clone_from(text);
                 }
             }
         }
         doc.tree = None; // Invalidate tree for full re-parse
     }
-    
+
     Ok(())
 }
 
@@ -291,17 +296,17 @@ where
     let params: HoverParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document_position_params.text_document.uri;
     let position = &params.text_document_position_params.position;
-    
+
     // Get hover information from parse tree
     let hover = if let Some(doc) = session.get_document(uri) {
         if let Some(tree) = &doc.tree {
             // Convert tree to red tree for navigation
             let root = sipha::syntax::red::SyntaxNode::new_root(tree.clone());
-            
+
             // Find node at cursor position
             let line_index = sipha::syntax::line_col::LineIndex::new(&doc.text);
             let offset = line_index.offset(position.line, position.character);
-            
+
             // Find the smallest node containing this offset
             let mut node_at_cursor = root.clone();
             for child in root.descendants() {
@@ -310,12 +315,12 @@ where
                     node_at_cursor = child;
                 }
             }
-            
+
             // Generate hover content from node
             let kind_str = format!("{:?}", node_at_cursor.kind());
             let text = node_at_cursor.text();
-            let content = format!("**Kind**: {}\n\n**Text**: `{}`", kind_str, text);
-            
+            let content = format!("**Kind**: {kind_str}\n\n**Text**: `{text}`");
+
             let range = node_at_cursor.text_range().to_range_with_source(&doc.text);
             create_hover(&content, Some(range))
         } else {
@@ -325,17 +330,17 @@ where
     } else {
         create_hover("Document not found", None)
     };
-    
+
     let response = Response::new_ok(req.id, hover);
     connection.sender.send(response.into())?;
-    
+
     Ok(())
 }
 
 /// Handle textDocument/completion request
 pub fn handle_completion<T, N>(
     grammar: &Arc<Grammar<T, N>>,
-    session: &mut LspSession<T, N>,
+    _session: &mut LspSession<T, N>,
     req: Request,
     connection: &Connection,
 ) -> Result<(), Box<dyn std::error::Error>>
@@ -343,11 +348,11 @@ where
     T: Token,
     N: NonTerminal,
 {
-    let params: CompletionParams = serde_json::from_value(req.params)?;
-    
+    let _params: CompletionParams = serde_json::from_value(req.params)?;
+
     // Generate completion items based on grammar and context
     let mut items = Vec::new();
-    
+
     // Add completions from grammar rules
     for (nt, _rule) in grammar.rules() {
         items.push(sipha_lsp::function_completion(
@@ -355,14 +360,14 @@ where
             Some(&format!("Rule: {}", nt.name())),
         ));
     }
-    
+
     // Add keyword completions if available
     // Note: This would require access to token definitions
     // For now, we provide a basic set
-    
+
     let response = Response::new_ok(req.id, CompletionResponse::Array(items));
     connection.sender.send(response.into())?;
-    
+
     Ok(())
 }
 
@@ -379,12 +384,12 @@ where
 {
     let params: DocumentSymbolParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document.uri;
-    
+
     let symbols: Vec<DocumentSymbol> = if let Some(doc) = session.get_document(uri) {
         if let Some(tree) = &doc.tree {
             // Convert tree to document symbols using ToDocumentSymbol trait
             let root = sipha::syntax::red::SyntaxNode::new_root(tree.clone());
-            
+
             // Collect all symbols from the tree
             let mut symbols = Vec::new();
             for node in root.descendants() {
@@ -401,10 +406,10 @@ where
     } else {
         vec![]
     };
-    
+
     let response = Response::new_ok(req.id, Some(DocumentSymbolResponse::Nested(symbols)));
     connection.sender.send(response.into())?;
-    
+
     Ok(())
 }
 
@@ -421,40 +426,40 @@ where
 {
     let params: SemanticTokensParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document.uri;
-    
+
     // Generate semantic tokens from parse tree
     let tokens = if let Some(doc) = session.get_document(uri) {
         if let Some(tree) = &doc.tree {
             let root = sipha::syntax::red::SyntaxNode::new_root(tree.clone());
             let line_index = sipha::syntax::line_col::LineIndex::new(&doc.text);
-            
+
             // Collect semantic tokens from the tree
             let mut semantic_tokens = Vec::new();
             let mut prev_line = 0u32;
             let mut prev_char = 0u32;
-            
+
             for node in root.descendants() {
                 // Only include terminal nodes (actual tokens)
                 if node.kind().is_terminal() && !node.kind().is_trivia() {
                     let range = node.text_range();
                     let start = line_index.line_col(range.start());
                     let end = line_index.line_col(range.end());
-                    
+
                     // Calculate delta encoding
-                    let delta_line = (start.line as u32).saturating_sub(prev_line);
+                    let delta_line = start.line.saturating_sub(prev_line);
                     let delta_start = if delta_line == 0 {
-                        (start.column as u32).saturating_sub(prev_char)
+                        start.column.saturating_sub(prev_char)
                     } else {
-                        start.column as u32
+                        start.column
                     };
-                    
+
                     // Token type and modifiers (simplified - would use SyntaxKindToSemanticType trait)
                     let token_type = 0u32; // Default to variable
                     let token_modifiers_bitset = 0u32;
-                    
+
                     // Length of token
                     let length = u32::try_from(u64::from(range.len().into())).unwrap_or(0);
-                    
+
                     semantic_tokens.push(lsp_types::SemanticToken {
                         delta_line,
                         delta_start,
@@ -462,12 +467,12 @@ where
                         token_type,
                         token_modifiers_bitset,
                     });
-                    
-                    prev_line = end.line as u32;
-                    prev_char = end.column as u32;
+
+                    prev_line = end.line;
+                    prev_char = end.column;
                 }
             }
-            
+
             SemanticTokens {
                 result_id: None,
                 data: semantic_tokens,
@@ -484,10 +489,9 @@ where
             data: vec![],
         }
     };
-    
+
     let response = Response::new_ok(req.id, Some(SemanticTokensResult::Tokens(tokens)));
     connection.sender.send(response.into())?;
-    
+
     Ok(())
 }
-

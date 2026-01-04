@@ -65,13 +65,13 @@ impl ContentCacheKey {
     pub fn from_tokens<T: Token>(rule: Spur, tokens: &[T], context: u64) -> Self {
         use std::hash::Hasher;
         let mut hasher = ahash::AHasher::default();
-        
+
         // Hash token kinds (more efficient than hashing full token data)
         for token in tokens {
             use std::hash::Hash;
             token.kind().hash(&mut hasher);
         }
-        
+
         let input_hash = hasher.finish();
         Self::new(rule, input_hash, context)
     }
@@ -392,11 +392,7 @@ mod tests {
     }
 
     fn make_key(rule_index: u32) -> ContentCacheKey {
-        ContentCacheKey::new(
-            Spur::try_from_usize(rule_index as usize).unwrap(),
-            123,
-            456,
-        )
+        ContentCacheKey::new(Spur::try_from_usize(rule_index as usize).unwrap(), 123, 456)
     }
 
     #[test]

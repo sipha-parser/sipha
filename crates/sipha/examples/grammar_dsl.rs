@@ -85,14 +85,14 @@ fn create_token(kind: ArithSyntaxKind, text: &str) -> ArithToken {
 }
 
 /// Build grammar using the Builder API
-fn build_grammar_with_builder_api() -> Result<sipha::grammar::Grammar<ArithToken, ArithNonTerminal>, Box<dyn std::error::Error>> {
+fn build_grammar_with_builder_api()
+-> Result<sipha::grammar::Grammar<ArithToken, ArithNonTerminal>, Box<dyn std::error::Error>> {
     println!("=== Building Grammar with Builder API ===\n");
-    
+
     // This is the programmatic approach - you build the grammar step by step
     let grammar = GrammarBuilder::new()
         .allow_left_recursion() // Allow left recursion for this example
         .entry_point(ArithNonTerminal::Expr)
-        
         // Expr -> Term | Expr + Term | Expr - Term
         .rule(
             ArithNonTerminal::Expr,
@@ -110,7 +110,6 @@ fn build_grammar_with_builder_api() -> Result<sipha::grammar::Grammar<ArithToken
                 Expr::rule(ArithNonTerminal::Term),
             ]),
         )
-        
         // Term -> Factor | Term * Factor | Term / Factor
         .rule(
             ArithNonTerminal::Term,
@@ -128,7 +127,6 @@ fn build_grammar_with_builder_api() -> Result<sipha::grammar::Grammar<ArithToken
                 Expr::rule(ArithNonTerminal::Factor),
             ]),
         )
-        
         // Factor -> Number | ( Expr )
         .rule(
             ArithNonTerminal::Factor,
@@ -141,21 +139,20 @@ fn build_grammar_with_builder_api() -> Result<sipha::grammar::Grammar<ArithToken
                 ]),
             ]),
         )
-        
         .build()?;
-    
+
     println!("✓ Grammar built successfully with Builder API");
     println!("  Rules defined: {}", grammar.rules().count());
     println!();
-    
+
     Ok(grammar)
 }
 
 /// Note: The Grammar DSL macro would be used like this:
-/// 
+///
 /// ```rust,ignore
 /// use sipha::grammar;
-/// 
+///
 /// grammar! {
 ///     #[entry]
 ///     Expr = Term ((Plus | Minus) Term)*;
@@ -177,20 +174,20 @@ fn build_grammar_with_builder_api() -> Result<sipha::grammar::Grammar<ArithToken
 ///     @RParen = ")";
 /// }
 /// ```
-/// 
+///
 /// The Grammar DSL is more concise and readable, but requires compile-time
 /// grammar definition. The Builder API allows dynamic grammar construction.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Grammar DSL vs Builder API Comparison ===\n");
-    
+
     println!("This example shows how to define the same grammar using two different approaches:\n");
     println!("1. Builder API (programmatic, dynamic)");
     println!("2. Grammar DSL (declarative, compile-time)\n");
     println!("Both produce equivalent grammars!\n");
     println!("{}", "=".repeat(60));
     println!();
-    
+
     // Build lexer (same for both approaches)
     println!("Building lexer (shared by both approaches)...");
     let lexer = LexerBuilder::new()
@@ -218,17 +215,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .trivia(ArithSyntaxKind::Whitespace)
         .build(ArithSyntaxKind::Eof, ArithSyntaxKind::Number)?;
-    
+
     println!("✓ Lexer built\n");
-    
+
     // Demonstrate Builder API approach
     let grammar = build_grammar_with_builder_api()?;
-    
+
     println!("{}", "=".repeat(60));
     println!();
     println!("=== Grammar DSL Approach (commented code) ===\n");
     println!("The Grammar DSL would look like this:\n");
-    println!(r#"grammar! {{
+    println!(
+        r#"grammar! {{
     #[entry]
     Expr = Term ((Plus | Minus) Term)*;
     
@@ -247,9 +245,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     @Slash = "/";
     @LParen = "(";
     @RParen = ")";
-}}"#);
+}}"#
+    );
     println!();
-    
+
     println!("{}", "=".repeat(60));
     println!();
     println!("=== Comparison ===\n");
@@ -259,7 +258,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  ✓ Programmatic control");
     println!("  ✗ More verbose");
     println!("  ✗ More boilerplate\n");
-    
+
     println!("Grammar DSL:");
     println!("  ✓ Concise and readable");
     println!("  ✓ EBNF-like syntax");
@@ -267,24 +266,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  ✓ Less boilerplate");
     println!("  ✗ Requires compile-time definition");
     println!("  ✗ Less flexible for dynamic grammars\n");
-    
+
     println!("Both approaches:");
     println!("  ✓ Generate equivalent grammars");
     println!("  ✓ Compatible with all parser backends");
     println!("  ✓ Support the same features\n");
-    
+
     // Test the grammar
     println!("{}", "=".repeat(60));
     println!();
     println!("Testing grammar with input: \"42 + 10 * 2\"");
     let input = "42 + 10 * 2";
-    let tokens = lexer.tokenize(input).map_err(|e| format!("Tokenization failed: {e:?}"))?;
+    let tokens = lexer
+        .tokenize(input)
+        .map_err(|e| format!("Tokenization failed: {e:?}"))?;
     println!("✓ Tokenized successfully ({} tokens)", tokens.len());
     println!("✓ Grammar is ready to use with any parser backend");
     println!();
-    
+
     println!("=== Example completed successfully! ===");
-    
+
     Ok(())
 }
-

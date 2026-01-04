@@ -9,7 +9,7 @@
 //! They are marked as optional dependencies to avoid forcing users to install
 //! libraries they don't need.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sipha::backend::ParserBackend;
 use sipha::grammar::{Expr, Grammar, GrammarBuilder, NonTerminal};
 use sipha::incremental::{IncrementalParser, TextEdit};
@@ -72,7 +72,10 @@ fn create_token(kind: BenchSyntaxKind, text: &str) -> Token<BenchSyntaxKind> {
     Token::new(
         kind,
         text,
-        TextRange::at(TextSize::zero(), TextSize::from(u32::try_from(text.len()).unwrap_or(0))),
+        TextRange::at(
+            TextSize::zero(),
+            TextSize::from(u32::try_from(text.len()).unwrap_or(0)),
+        ),
     )
 }
 
@@ -172,49 +175,37 @@ fn bench_arithmetic_expression(c: &mut Criterion) {
         #[cfg(feature = "backend-ll")]
         {
             let config = LlConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("sipha_ll", input),
-                &tokens,
-                |b, t| {
-                    b.iter(|| {
-                        let mut parser = LlParser::new(&grammar, config.clone())
-                            .expect("Failed to create LL parser");
-                        black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("sipha_ll", input), &tokens, |b, t| {
+                b.iter(|| {
+                    let mut parser = LlParser::new(&grammar, config.clone())
+                        .expect("Failed to create LL parser");
+                    black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
+                });
+            });
         }
 
         #[cfg(feature = "backend-lr")]
         {
             let config = LrConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("sipha_lr", input),
-                &tokens,
-                |b, t| {
-                    b.iter(|| {
-                        let mut parser = LrParser::new(&grammar, config.clone())
-                            .expect("Failed to create LR parser");
-                        black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("sipha_lr", input), &tokens, |b, t| {
+                b.iter(|| {
+                    let mut parser = LrParser::new(&grammar, config.clone())
+                        .expect("Failed to create LR parser");
+                    black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
+                });
+            });
         }
 
         #[cfg(feature = "backend-peg")]
         {
             let config = PegConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("sipha_peg", input),
-                &tokens,
-                |b, t| {
-                    b.iter(|| {
-                        let mut parser = PegParser::new(&grammar, config.clone())
-                            .expect("Failed to create PEG parser");
-                        black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("sipha_peg", input), &tokens, |b, t| {
+                b.iter(|| {
+                    let mut parser = PegParser::new(&grammar, config.clone())
+                        .expect("Failed to create PEG parser");
+                    black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
+                });
+            });
         }
 
         // Uncomment when comparison libraries are available:
@@ -265,19 +256,28 @@ fn bench_incremental_parsing(c: &mut Criterion) {
     let scenarios = vec![
         ("small_edit", "1 + 2", "1 + 3", 4, 5, "3"),
         ("medium_edit", "1 + 2 * 3", "1 + 2 * 4", 8, 9, "4"),
-        ("large_edit", "1 + 2 * 3 - 4", "10 + 20 * 30 - 40", 0, 13, "10 + 20 * 30 - 40"),
+        (
+            "large_edit",
+            "1 + 2 * 3 - 4",
+            "10 + 20 * 30 - 40",
+            0,
+            13,
+            "10 + 20 * 30 - 40",
+        ),
     ];
 
     for (name, original, edited, edit_start, edit_end, new_text) in scenarios {
-        let original_tokens = lexer.tokenize(original).expect("Failed to tokenize original");
+        let original_tokens = lexer
+            .tokenize(original)
+            .expect("Failed to tokenize original");
         let edited_tokens = lexer.tokenize(edited).expect("Failed to tokenize edited");
 
         // Initial parse (done once, not in benchmark loop)
         #[cfg(feature = "backend-ll")]
         {
             let config = LlConfig::default();
-            let parser = LlParser::new(&grammar, config.clone())
-                .expect("Failed to create LL parser");
+            let parser =
+                LlParser::new(&grammar, config.clone()).expect("Failed to create LL parser");
             let mut incremental_parser = IncrementalParser::new(parser);
             let initial_result = incremental_parser.parse_incremental(
                 &original_tokens,
@@ -288,16 +288,17 @@ fn bench_incremental_parsing(c: &mut Criterion) {
             );
 
             let edit = TextEdit {
-                range: TextRange::new(
-                    TextSize::from(edit_start),
-                    TextSize::from(edit_end),
-                ),
+                range: TextRange::new(TextSize::from(edit_start), TextSize::from(edit_end)),
                 new_text: new_text.into(),
             };
 
             group.bench_with_input(
                 BenchmarkId::new("incremental_ll", name),
-                &(original_tokens.clone(), edited_tokens.clone(), initial_result.root.clone()),
+                &(
+                    original_tokens.clone(),
+                    edited_tokens.clone(),
+                    initial_result.root.clone(),
+                ),
                 |b, (orig_tokens, edit_tokens, old_tree)| {
                     b.iter(|| {
                         let parser = LlParser::new(&grammar, config.clone())
@@ -350,11 +351,7 @@ fn bench_memory_usage(c: &mut Criterion) {
     let lexer = setup_lexer();
     let grammar = setup_grammar();
 
-    let sizes = vec![
-        ("small", 10),
-        ("medium", 50),
-        ("large", 100),
-    ];
+    let sizes = vec![("small", 10), ("medium", 50), ("large", 100)];
 
     for (size_name, expr_count) in sizes {
         // Generate input: "1 + 2 + 3 + ... + N"
@@ -362,23 +359,19 @@ fn bench_memory_usage(c: &mut Criterion) {
             .map(|i| format!("{i} + "))
             .collect::<String>()
             + &expr_count.to_string();
-        
+
         let tokens = lexer.tokenize(&input).expect("Failed to tokenize");
 
         #[cfg(feature = "backend-ll")]
         {
             let config = LlConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("sipha_ll", size_name),
-                &tokens,
-                |b, t| {
-                    b.iter(|| {
-                        let mut parser = LlParser::new(&grammar, config.clone())
-                            .expect("Failed to create LL parser");
-                        black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("sipha_ll", size_name), &tokens, |b, t| {
+                b.iter(|| {
+                    let mut parser = LlParser::new(&grammar, config.clone())
+                        .expect("Failed to create LL parser");
+                    black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
+                });
+            });
         }
     }
 
@@ -396,11 +389,7 @@ fn bench_backend_comparison(c: &mut Criterion) {
     let lexer = setup_lexer();
     let grammar = setup_grammar();
 
-    let inputs = vec![
-        "1 + 2",
-        "1 + 2 * 3",
-        "(1 + 2) * (3 - 4)",
-    ];
+    let inputs = vec!["1 + 2", "1 + 2 * 3", "(1 + 2) * (3 - 4)"];
 
     for input in &inputs {
         let tokens = lexer.tokenize(input).expect("Failed to tokenize");
@@ -408,49 +397,37 @@ fn bench_backend_comparison(c: &mut Criterion) {
         #[cfg(feature = "backend-ll")]
         {
             let config = LlConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("ll", input),
-                &tokens,
-                |b, t| {
-                    b.iter(|| {
-                        let mut parser = LlParser::new(&grammar, config.clone())
-                            .expect("Failed to create LL parser");
-                        black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("ll", input), &tokens, |b, t| {
+                b.iter(|| {
+                    let mut parser = LlParser::new(&grammar, config.clone())
+                        .expect("Failed to create LL parser");
+                    black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
+                });
+            });
         }
 
         #[cfg(feature = "backend-lr")]
         {
             let config = LrConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("lr", input),
-                &tokens,
-                |b, t| {
-                    b.iter(|| {
-                        let mut parser = LrParser::new(&grammar, config.clone())
-                            .expect("Failed to create LR parser");
-                        black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("lr", input), &tokens, |b, t| {
+                b.iter(|| {
+                    let mut parser = LrParser::new(&grammar, config.clone())
+                        .expect("Failed to create LR parser");
+                    black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
+                });
+            });
         }
 
         #[cfg(feature = "backend-peg")]
         {
             let config = PegConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("peg", input),
-                &tokens,
-                |b, t| {
-                    b.iter(|| {
-                        let mut parser = PegParser::new(&grammar, config.clone())
-                            .expect("Failed to create PEG parser");
-                        black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("peg", input), &tokens, |b, t| {
+                b.iter(|| {
+                    let mut parser = PegParser::new(&grammar, config.clone())
+                        .expect("Failed to create PEG parser");
+                    black_box(parser.parse(black_box(t), BenchNonTerminal::Expr));
+                });
+            });
         }
     }
 
@@ -465,4 +442,3 @@ criterion_group!(
     bench_backend_comparison
 );
 criterion_main!(benches);
-

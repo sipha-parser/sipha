@@ -5,10 +5,10 @@
 pub struct EarleyConfig {
     /// Enable error recovery
     pub error_recovery: bool,
-    
+
     /// Maximum parse depth (for cycle detection)
     pub max_depth: Option<usize>,
-    
+
     /// Enable ambiguity detection
     pub detect_ambiguity: bool,
 }
@@ -29,21 +29,21 @@ impl EarleyConfig {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Enable or disable error recovery
     #[must_use]
     pub fn with_error_recovery(mut self, enabled: bool) -> Self {
         self.error_recovery = enabled;
         self
     }
-    
+
     /// Set maximum parse depth
     #[must_use]
     pub fn with_max_depth(mut self, depth: Option<usize>) -> Self {
         self.max_depth = depth;
         self
     }
-    
+
     /// Enable or disable ambiguity detection
     #[must_use]
     pub fn with_ambiguity_detection(mut self, enabled: bool) -> Self {
@@ -51,4 +51,3 @@ impl EarleyConfig {
         self
     }
 }
-

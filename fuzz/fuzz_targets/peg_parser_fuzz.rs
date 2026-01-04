@@ -1,9 +1,9 @@
 #![no_main]
+#![allow(unexpected_cfgs)] // Allow custom feature flags
 use libfuzzer_sys::fuzz_target;
-use sipha::backend::ParserBackend;
 #[cfg(feature = "backend-peg")]
 use sipha::backend::peg::{PegConfig, PegParser};
-use sipha::grammar::{Expr, GrammarBuilder, NonTerminal, Token};
+use sipha::grammar::{NonTerminal, Token};
 use sipha::syntax::SyntaxKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,6 +25,7 @@ impl SyntaxKind for FuzzSyntaxKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 struct FuzzToken {
     kind: FuzzSyntaxKind,
     text: compact_str::CompactString,
@@ -47,6 +48,7 @@ impl Token for FuzzToken {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 enum FuzzNonTerminal {
     Root,
 }
@@ -96,4 +98,3 @@ fuzz_target!(|data: &[u8]| {
 fuzz_target!(|_data: &[u8]| {
     // No-op when PEG backend is not available
 });
-

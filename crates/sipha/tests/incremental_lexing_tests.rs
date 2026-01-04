@@ -29,7 +29,11 @@ fn build_test_lexer() -> sipha::lexer::CompiledLexer<TestSyntaxKind> {
         .token(
             TestSyntaxKind::Ident,
             Pattern::Repeat {
-                pattern: Box::new(Pattern::CharClass(CharSet::new(vec!['a'..='z', 'A'..='Z', '_'..='_']))),
+                pattern: Box::new(Pattern::CharClass(CharSet::new(vec![
+                    'a'..='z',
+                    'A'..='Z',
+                    '_'..='_',
+                ]))),
                 min: 1,
                 max: None,
             },
@@ -131,11 +135,11 @@ fn test_incremental_lexer_token_reuse() {
     let delta = incr.update(&edit, "foo + qux + baz");
 
     assert!(delta.has_changes());
-    
+
     // Tokens before the edit should be unchanged
     let before_edit_count = 3; // "foo", "+", " "
     assert!(delta.changed_range.start >= before_edit_count);
-    
+
     // Tokens after the edit should be preserved (just positions updated)
     let final_tokens = incr.tokens();
     assert!(final_tokens.len() >= initial_tokens.len() - 1);
@@ -209,4 +213,3 @@ fn test_incremental_lexer_set_input() {
     assert!(delta.has_changes());
     assert_eq!(delta.changed_range.start, 0);
 }
-

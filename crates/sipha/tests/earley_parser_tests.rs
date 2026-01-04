@@ -163,7 +163,7 @@ fn test_earley_parser_basic_parse() {
     ];
 
     let result = parser.parse(&tokens, TestNonTerminal::Expr);
-    
+
     // Earley parser should be able to parse this
     // Note: The current implementation may have limitations, so we check for either success or reasonable errors
     assert!(!result.errors.is_empty() || result.root.text_len() > TextSize::zero());
@@ -186,7 +186,7 @@ fn test_earley_parser_config() {
 #[test]
 fn test_earley_parser_capabilities() {
     let capabilities = EarleyParser::<TestToken, TestNonTerminal>::capabilities();
-    
+
     assert_eq!(capabilities.name, "Earley");
     assert!(capabilities.supports_left_recursion);
     assert!(capabilities.supports_ambiguity);
@@ -222,7 +222,7 @@ fn test_earley_parser_incremental() {
     ];
 
     let result2 = parser.parse_with_session(&tokens2, TestNonTerminal::Expr, &session);
-    
+
     // Should succeed (either with reuse or full parse)
     assert!(!result2.errors.is_empty() || result2.root.text_len() > TextSize::zero());
 }
@@ -232,10 +232,9 @@ fn test_earley_parser_incremental() {
 fn test_earley_parser_validate() {
     let grammar = create_test_grammar();
     let errors = EarleyParser::<TestToken, TestNonTerminal>::validate(&grammar);
-    
+
     // Earley parser can handle any context-free grammar, so validation should pass
     // (unless there are undefined references)
     // For a valid grammar, errors should be empty or minimal
     assert!(errors.is_empty() || errors.iter().all(|e| e.to_string().contains("undefined")));
 }
-
