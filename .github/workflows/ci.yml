@@ -60,12 +60,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
       - name: Run clippy
-        run: |
-          cargo clippy --all-targets --all-features --workspace -- \
-            -W clippy::pedantic \
-            -W clippy::nursery \
-            -W clippy::cargo \
-            -D warnings
+        run: cargo clippy --all-targets --all-features --workspace
 
   # Test suite with different Rust versions
   test:

@@ -10,6 +10,8 @@ where
     T: Token,
     N: NonTerminal,
 {
+    #[allow(dead_code)] // Reserved for future use
+    _phantom: std::marker::PhantomData<T>,
     /// The non-terminal being parsed
     pub lhs: N,
     /// The production rule index
@@ -32,6 +34,7 @@ where
             rule_index,
             dot,
             start,
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -137,6 +140,7 @@ where
         Expr::Backreference { .. } => {
             panic!("Expr::Backreference not supported in Earley parser");
         }
+        Expr::Capture { expr: inner, .. } => expr_to_symbol(inner),
     }
 }
 
@@ -146,6 +150,8 @@ where
     T: Token,
     N: NonTerminal,
 {
+    #[allow(dead_code)] // Reserved for future use
+    _phantom: std::marker::PhantomData<T>,
     /// Sets of items for each position
     /// chart[i] contains items that have been recognized up to position i
     chart: Vec<HashSet<EarleyItem<T, N>>>,
@@ -162,7 +168,10 @@ where
         for _ in 0..=input_len {
             chart.push(HashSet::new());
         }
-        Self { chart }
+        Self {
+            _phantom: std::marker::PhantomData,
+            chart,
+        }
     }
 
     /// Get the set of items at a given position

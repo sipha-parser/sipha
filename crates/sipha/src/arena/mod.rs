@@ -41,6 +41,8 @@ mod tree_arena;
 
 pub use tree_arena::*;
 
+use std::cell::Cell;
+
 /// Statistics about arena usage
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ArenaStats {

@@ -11,6 +11,8 @@ where
 {
     /// Cache for parse results (for incremental parsing)
     parse_cache: HashMap<(N, usize), Option<usize>>,
+    #[allow(dead_code)] // Reserved for future use
+    _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T, N> EarleyParserState<T, N>
@@ -22,6 +24,7 @@ where
     pub fn new() -> Self {
         Self {
             parse_cache: HashMap::new(),
+            _phantom: std::marker::PhantomData,
         }
     }
 

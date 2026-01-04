@@ -70,6 +70,7 @@ pub mod cache;
 
 pub use cache::{CacheEntry, CacheStats, ContentCacheKey, IncrementalCache, LazyNode};
 
+#[cfg(feature = "tree-utils")]
 use crate::syntax::utils::{GreenNodeSpan, visit_green_spans};
 use crate::syntax::{GreenNode, TextRange, TextSize};
 use std::sync::Arc;
@@ -182,6 +183,7 @@ impl<'a, K: crate::syntax::SyntaxKind> IncrementalSession<'a, K> {
 
     /// Create a new incremental session with a custom reuse budget.
     #[must_use]
+    #[cfg(feature = "tree-utils")]
     pub fn new_with_budget(
         old_tree: Option<&'a GreenNode<K>>,
         edits: &'a [TextEdit],
@@ -583,6 +585,7 @@ impl<K: crate::syntax::SyntaxKind> ParseCache<K> {
     }
 
     /// Populate cache from a parse tree by extracting nodes and matching them to rules
+    #[cfg(feature = "tree-utils")]
     pub(crate) fn populate_from_tree<T, N>(
         &mut self,
         root: &GreenNode<K>,
@@ -626,6 +629,7 @@ impl<K: crate::syntax::SyntaxKind> ParseCache<K> {
 }
 
 /// Calculate the maximum depth of a green tree.
+#[cfg(feature = "tree-utils")]
 fn calculate_tree_depth<K: crate::syntax::SyntaxKind>(root: &GreenNode<K>) -> usize {
     let mut max_depth = 0;
     crate::syntax::utils::visit_green_spans(
@@ -637,6 +641,7 @@ fn calculate_tree_depth<K: crate::syntax::SyntaxKind>(root: &GreenNode<K>) -> us
     max_depth
 }
 
+#[cfg(feature = "tree-utils")]
 fn find_reusable_nodes<K: crate::syntax::SyntaxKind>(
     root: &GreenNode<K>,
     affected: TextRange,

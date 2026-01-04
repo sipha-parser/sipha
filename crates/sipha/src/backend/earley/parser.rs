@@ -60,7 +60,7 @@ where
             });
 
         return ParseResult {
-            root: Arc::new(GreenNode::new(error_kind, vec![], TextSize::zero())),
+            root: GreenNode::new(error_kind, vec![], TextSize::zero()),
             errors,
             warnings,
             metrics: ParseMetrics::default(),
@@ -200,6 +200,7 @@ where
                     item.is_complete(rhs_len(rhs))
                 })
         })
+        .cloned()
         .collect();
 
     if complete_items.is_empty() {
@@ -229,9 +230,9 @@ where
     // Extract parse tree from chart
     let root = if let Some(complete_item) = complete_items.first() {
         extract_tree(grammar, &chart, complete_item, input, 0, input.len())
-            .unwrap_or_else(|| Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero())))
+            .unwrap_or_else(|| GreenNode::new(root_kind, vec![], TextSize::zero()))
     } else {
-        Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero()))
+        GreenNode::new(root_kind, vec![], TextSize::zero())
     };
 
     let metrics = ParseMetrics {
@@ -240,7 +241,6 @@ where
         nodes_created: 1,
         errors_recovered: 0,
         cache_hits: 0,
-        cache_misses: 0,
     };
 
     ParseResult {
@@ -306,7 +306,7 @@ where
             });
 
         return ParseResult {
-            root: Arc::new(GreenNode::new(error_kind, vec![], TextSize::zero())),
+            root: GreenNode::new(error_kind, vec![], TextSize::zero()),
             errors,
             warnings,
             metrics: ParseMetrics::default(),
@@ -447,6 +447,7 @@ where
                     false
                 }
         })
+        .cloned()
         .collect();
 
     if complete_items.is_empty() {
@@ -484,9 +485,9 @@ where
             input.len(),
             session,
         )
-        .unwrap_or_else(|| Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero())))
+        .unwrap_or_else(|| GreenNode::new(root_kind, vec![], TextSize::zero()))
     } else {
-        Arc::new(GreenNode::new(root_kind, vec![], TextSize::zero()))
+        GreenNode::new(root_kind, vec![], TextSize::zero())
     };
 
     let metrics = ParseMetrics {
@@ -495,7 +496,6 @@ where
         nodes_created: 1,
         errors_recovered: 0,
         cache_hits: 0,
-        cache_misses: 0,
     };
 
     ParseResult {
@@ -562,7 +562,7 @@ where
         let node_text_len = cached_node.text_len();
         let expected_text_len: TextSize = (start..end.min(input.len()))
             .map(|i| input[i].text_len())
-            .sum();
+            .fold(TextSize::zero(), |acc, len| acc + len);
 
         // If the cached node's text length matches, we can reuse it
         if node_text_len == expected_text_len {

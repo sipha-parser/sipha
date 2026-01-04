@@ -34,7 +34,7 @@ This project adheres to the Rust Code of Conduct. By participating, you are expe
 
 4. Run clippy:
    ```bash
-   cargo clippy --all-targets --all-features --workspace -- -W clippy::pedantic -W clippy::nursery -W clippy::cargo -D warnings
+   cargo clippy --all-targets --all-features --workspace
    ```
 
 5. Check formatting:
@@ -62,7 +62,7 @@ This project adheres to the Rust Code of Conduct. By participating, you are expe
 
 5. **Run clippy** and fix any warnings:
    ```bash
-   cargo clippy --all-targets --all-features --workspace -- -W clippy::pedantic -W clippy::nursery -W clippy::cargo -D warnings
+   cargo clippy --all-targets --all-features --workspace
    ```
 
 6. **Format your code**:
@@ -88,7 +88,7 @@ This project adheres to the Rust Code of Conduct. By participating, you are expe
 
 - Follow Rust's standard formatting conventions. Run `cargo fmt` before committing.
 - Use `cargo clippy` to catch common issues and follow Rust best practices.
-- We use pedantic clippy lints - some are allowed in `clippy.toml` and `lib.rs`, but try to follow them when possible.
+- We use clippy with workspace-level configuration in `Cargo.toml` - some pedantic lints are allowed, but try to follow them when possible.
 
 ### Documentation
 

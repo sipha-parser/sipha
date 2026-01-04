@@ -1,6 +1,6 @@
 //! Tests for parallel parsing functionality
 
-use sipha::grammar::{Grammar, GrammarBuilder, NonTerminal, Token};
+use sipha::grammar::{Expr, Grammar, GrammarBuilder, NonTerminal, Token};
 use sipha::parser::parallel::{FileParseResult, ParallelParser, ParseBatch, aggregate_results};
 use sipha::syntax::{GreenElement, GreenNode, GreenToken, SyntaxKind, TextSize};
 use std::sync::Arc;
@@ -53,17 +53,18 @@ impl NonTerminal for TestNonTerminal {
 fn create_test_grammar() -> Grammar<TestToken, TestNonTerminal> {
     GrammarBuilder::new()
         .entry_point(TestNonTerminal::Root)
+        .rule(TestNonTerminal::Root, Expr::Empty)
         .build()
         .expect("Failed to build test grammar")
 }
 
 fn create_test_tree() -> Arc<GreenNode<TestKind>> {
     let token = GreenToken::new(TestKind::Ident, "test");
-    Arc::new(GreenNode::new(
+    GreenNode::new(
         TestKind::Root,
         vec![GreenElement::Token(token)],
         TextSize::from(4),
-    ))
+    )
 }
 
 #[test]
@@ -100,7 +101,7 @@ fn test_file_parse_result_success() {
 
 #[test]
 fn test_file_parse_result_failure() {
-    let result = FileParseResult::failure(
+    let result: FileParseResult<TestKind> = FileParseResult::failure(
         "test.txt".to_string(),
         vec![],
         std::time::Duration::from_millis(5),
@@ -146,7 +147,7 @@ fn test_aggregate_results() {
 #[test]
 fn test_parallel_parser_new() {
     let grammar = create_test_grammar();
-    let parser = ParallelParser::new(Arc::new(grammar));
+    let parser: ParallelParser<TestToken, TestNonTerminal, TestKind> = ParallelParser::new(Arc::new(grammar));
     assert!(parser.grammar().rules().next().is_some());
 }
 
@@ -200,7 +201,7 @@ fn test_parse_batch_with_errors() {
         if content == "content2" {
             Err(vec![sipha::error::LexerError {
                 span: sipha::syntax::TextRange::at(TextSize::zero(), TextSize::from(1)),
-                message: "Lexer error".to_string(),
+                kind: sipha::error::LexerErrorKind::UnexpectedChar { char: 'x' },
             }])
         } else {
             Ok(vec![])
@@ -228,6 +229,7 @@ fn test_parse_batch_with_errors() {
 }
 
 #[test]
+#[cfg(feature = "parallel")]
 fn test_parse_batch_with_progress() {
     let grammar = create_test_grammar();
     let parser = ParallelParser::new(Arc::new(grammar));

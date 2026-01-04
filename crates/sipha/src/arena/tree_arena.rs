@@ -281,7 +281,7 @@ impl TreeArena {
 
     /// Create a new tree arena with pre-allocated capacity
     #[must_use]
-    pub fn with_capacity(_capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
             #[cfg(feature = "arena")]
             bump: BumpArena::with_capacity(capacity),

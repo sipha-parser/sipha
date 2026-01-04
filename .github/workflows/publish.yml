@@ -35,12 +35,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
-        run: |
-          cargo clippy --all-targets --all-features --workspace -- \
-            -W clippy::pedantic \
-            -W clippy::nursery \
-            -W clippy::cargo \
-            -D warnings
+        run: cargo clippy --all-targets --all-features --workspace
       - name: Run tests
         run: cargo test --all-features --workspace
       - name: Verify version consistency

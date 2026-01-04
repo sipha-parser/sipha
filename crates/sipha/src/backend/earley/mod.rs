@@ -4,8 +4,9 @@ mod parser;
 mod state;
 
 pub use config::EarleyConfig;
-pub use parser::EarleyParser;
 pub use state::EarleyParserState;
+
+// EarleyParser is defined in this module, not in parser.rs
 
 use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};
 use crate::error::ParseResult;
@@ -119,7 +120,7 @@ where
         }
 
         // Invalidate cache for affected region
-        let affected = session.affected();
+        let _affected = session.affected();
         // For Earley parser, we invalidate the entire cache when there are edits
         // A more sophisticated implementation would track positions in cache keys
         self.state.clear_cache();
