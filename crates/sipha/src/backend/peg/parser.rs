@@ -1,7 +1,8 @@
 use crate::backend::peg::{config::PegConfig, state::ParseMemo};
 use crate::error::{ParseError, ParseMetrics, ParseResult, ParseWarning};
 use crate::grammar::{Expr, Grammar, NonTerminal, Token};
-use crate::syntax::{GreenNode, GreenNodeBuilder, TextSize};
+use crate::syntax::{GreenNode, GreenNodeBuilder, TextRange, TextSize};
+use hashbrown::HashMap;
 
 /// Default error span length when position is unknown
 const DEFAULT_ERROR_SPAN_LEN: TextSize = TextSize::from(1);
@@ -122,6 +123,8 @@ where
     session: Option<&'a crate::incremental::IncrementalSession<'a, T::Kind>>,
     /// Track visited rules in current parse path to detect left recursion
     visited_rules: Vec<N>,
+    /// Track captured content for backreferences: (capture_id, tokens, text)
+    captures: HashMap<crate::grammar::capture::CaptureId, (Vec<&'a T>, String), ahash::RandomState>,
 }
 
 impl<'a, T, N> ParseContext<'a, T, N>
@@ -146,6 +149,7 @@ where
             backtrack_depth: 0,
             session,
             visited_rules: Vec::new(),
+            captures: HashMap::with_hasher(ahash::RandomState::new()),
         }
     }
 }
@@ -467,7 +471,9 @@ where
                     ctx.visited_rules.pop(); // Remove from visited path
                     // Convert error to owned by creating a new one with the same message
                     Err(ParseError::InvalidSyntax {
-                        span: e.span(),
+                        span: e
+                            .span()
+                            .unwrap_or_else(|| TextRange::at(TextSize::zero(), TextSize::zero())),
                         message: e.to_string(),
                     })
                 }
@@ -884,7 +890,9 @@ where
                 Err(e) => {
                     // Convert error to owned by creating a new one with the same message
                     Err(ParseError::InvalidSyntax {
-                        span: e.span(),
+                        span: e
+                            .span()
+                            .unwrap_or_else(|| TextRange::at(TextSize::zero(), TextSize::zero())),
                         message: e.to_string(),
                     })
                 }
@@ -1075,15 +1083,101 @@ where
             }
         }
 
+        Expr::Capture { id, expr } => {
+            // Capture the matched content for later use in backreferences
+            let start_pos = *pos;
+            let start_text_pos = *text_pos;
+            
+            // Parse the inner expression
+            match parse_expr(ctx, expr, pos, text_pos, builder, errors, warnings) {
+                Ok(ParseExprResult::Success { text_len, .. }) => {
+                    // Extract the captured tokens and text
+                    let captured_tokens: Vec<&T> = ctx.input[start_pos..*pos].iter().collect();
+                    let captured_text: String = captured_tokens.iter().map(|t| t.text()).collect();
+                    
+                    // Store the capture
+                    ctx.captures.insert(id.clone(), (captured_tokens, captured_text));
+                    
+                    Ok(ParseExprResult::Success {
+                        end_pos: *pos,
+                        text_len,
+                    })
+                }
+                Ok(ParseExprResult::Failure) | Err(_) => {
+                    // Expression didn't match - restore and fail
+                    *pos = start_pos;
+                    *text_pos = start_text_pos;
+                    Ok(ParseExprResult::Failure)
+                }
+            }
+        }
+
         Expr::Backreference { capture_id } => {
             // Match previously captured content
-            // For now, this is a stub - full implementation would require
-            // tracking captures in the parse context
-            warnings.push(ParseWarning::warning(
-                crate::syntax::TextRange::at(*text_pos, DEFAULT_ERROR_SPAN_LEN),
-                format!("Backreference {capture_id:?} not yet fully implemented in PEG backend"),
-            ));
-            Ok(ParseExprResult::Failure)
+            if let Some((captured_tokens, _captured_text)) = ctx.captures.get(capture_id) {
+                // Check if we have enough tokens remaining
+                if *pos + captured_tokens.len() > ctx.input.len() {
+                    Ok(ParseExprResult::Failure)
+                } else {
+                    // Match tokens one by one
+                    let mut matched = true;
+                    let mut total_text_len = TextSize::zero();
+                    
+                    for (i, captured_token) in captured_tokens.iter().enumerate() {
+                        if *pos + i >= ctx.input.len() {
+                            matched = false;
+                            break;
+                        }
+                        
+                        let input_token = &ctx.input[*pos + i];
+                        
+                        // Compare tokens (they should match exactly)
+                        if input_token != *captured_token {
+                            matched = false;
+                            break;
+                        }
+                        
+                        // Also verify text matches (for safety)
+                        if input_token.text() != captured_token.text() {
+                            matched = false;
+                            break;
+                        }
+                        
+                        total_text_len += input_token.text_len();
+                    }
+                    
+                    if matched {
+                        // All tokens matched - add them to builder and advance position
+                        for i in 0..captured_tokens.len() {
+                            let token = &ctx.input[*pos + i];
+                            let text = token.text();
+                            builder
+                                .token(token.kind(), text)
+                                .map_err(|e| ParseError::InvalidSyntax {
+                                    span: crate::syntax::TextRange::at(*text_pos, total_text_len),
+                                    message: format!("Builder error: {e}"),
+                                })?;
+                        }
+                        
+                        *pos += captured_tokens.len();
+                        *text_pos += total_text_len;
+                        
+                        Ok(ParseExprResult::Success {
+                            end_pos: *pos,
+                            text_len: total_text_len,
+                        })
+                    } else {
+                        Ok(ParseExprResult::Failure)
+                    }
+                }
+            } else {
+                // Capture not found - this is an error
+                warnings.push(ParseWarning::warning(
+                    crate::syntax::TextRange::at(*text_pos, DEFAULT_ERROR_SPAN_LEN),
+                    format!("Backreference {capture_id:?} references a capture that was not found"),
+                ));
+                Ok(ParseExprResult::Failure)
+            }
         }
 
         Expr::RecoveryPoint { expr, sync_tokens } => {

@@ -135,6 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // This grammar demonstrates precedence through ordering
     println!("2. Building grammar with ordered choice (PEG semantics)...");
     let grammar = GrammarBuilder::<Token<PegSyntaxKind>, PegNonTerminal>::new()
+        .allow_left_recursion() // PEG can handle left recursion
         .entry_point(PegNonTerminal::Expr)
         .rule(
             PegNonTerminal::Expr,

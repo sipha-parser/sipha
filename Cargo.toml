@@ -1,3 +1,38 @@
 [workspace]
-members = ["crates/sipha", "crates/sipha_derive", "crates/sipha_lsp", "fuzz"]
+members = ["crates/sipha", "crates/sipha_derive", "crates/sipha_lsp", "crates/sipha_lsp_server", "crates/sipha_tools", "fuzz"]
 resolver = "3"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Allow common pedantic lints that are too noisy
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+# Allow intentional casts in parser code
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+# Allow passing by value for small Copy types
+trivially_copy_pass_by_ref = "allow"
+needless_pass_by_value = "allow"
+# Allow similar names in match arms
+similar_names = "allow"
+# Allow return_self_not_must_use in builder patterns
+return_self_not_must_use = "allow"
+# Allow doc without backticks (too noisy for parser code)
+doc_markdown = "allow"
+# Allow match arm patterns
+match_same_arms = "allow"
+# Allow map_unwrap_or (often clearer)
+map_unwrap_or = "allow"
+# Allow missing_fields_in_debug (often intentional)
+missing_fields_in_debug = "allow"
+# Allow complex types in parser code
+type_complexity = "allow"
+# Allow unnecessary wraps (Result/Option) for API consistency  
+unnecessary_wraps = "allow"
+
+[workspace.lints.rust]
+unsafe_code = "warn"

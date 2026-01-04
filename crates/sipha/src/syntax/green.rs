@@ -2,6 +2,7 @@ use crate::syntax::{SyntaxKind, TextSize};
 use compact_str::CompactString;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use std::sync::Arc;
 
 /// Immutable, shareable green tree node
@@ -13,12 +14,127 @@ pub struct GreenNode<K: SyntaxKind> {
     children: GreenChildren<K>,
 }
 
+/// Children storage optimized for different sizes
+///
+/// This enum provides specialized storage for common cases:
+/// - Empty: No allocation needed
+/// - One: Single child stored inline
+/// - Inline: Small number of children stored inline (no heap allocation)
+/// - Many: Large number of children stored in Arc for sharing
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 enum GreenChildren<K: SyntaxKind> {
+    /// No children
     Empty,
+    /// Single child (common for wrapper nodes)
     One(GreenElement<K>),
+    /// 2-8 children stored inline without heap allocation
+    Inline(SmallVec<[GreenElement<K>; 8]>),
+    /// Many children stored in Arc for sharing
     Many(Arc<[GreenElement<K>]>),
+}
+
+/// Structure of Arrays (SoA) layout for cache-friendly child iteration
+///
+/// This structure stores child metadata in parallel arrays for better
+/// cache locality when iterating over kinds or text lengths.
+#[derive(Debug, Clone)]
+pub struct CompactChildren<K: SyntaxKind> {
+    /// Kinds of all children (cache-friendly for kind-based filtering)
+    pub kinds: SmallVec<[K; 8]>,
+    /// Text lengths of all children
+    pub text_lens: SmallVec<[TextSize; 8]>,
+    /// The full elements (for when you need the actual data)
+    elements: SmallVec<[GreenElement<K>; 8]>,
+}
+
+impl<K: SyntaxKind> CompactChildren<K> {
+    /// Create empty compact children
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            kinds: SmallVec::new(),
+            text_lens: SmallVec::new(),
+            elements: SmallVec::new(),
+        }
+    }
+
+    /// Create from a slice of elements
+    #[must_use]
+    pub fn from_elements(elements: &[GreenElement<K>]) -> Self {
+        let kinds: SmallVec<[K; 8]> = elements.iter().map(GreenElement::kind).collect();
+        let text_lens: SmallVec<[TextSize; 8]> =
+            elements.iter().map(GreenElement::text_len).collect();
+        let elements: SmallVec<[GreenElement<K>; 8]> = elements.iter().cloned().collect();
+
+        Self {
+            kinds,
+            text_lens,
+            elements,
+        }
+    }
+
+    /// Add an element
+    pub fn push(&mut self, element: GreenElement<K>) {
+        self.kinds.push(element.kind());
+        self.text_lens.push(element.text_len());
+        self.elements.push(element);
+    }
+
+    /// Get the number of children
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    /// Check if empty
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
+    /// Get an element by index
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<&GreenElement<K>> {
+        self.elements.get(index)
+    }
+
+    /// Get all elements
+    #[must_use]
+    pub fn elements(&self) -> &[GreenElement<K>] {
+        &self.elements
+    }
+
+    /// Iterate over (kind, text_len) pairs efficiently
+    pub fn iter_metadata(&self) -> impl Iterator<Item = (K, TextSize)> + '_ {
+        self.kinds
+            .iter()
+            .copied()
+            .zip(self.text_lens.iter().copied())
+    }
+
+    /// Find children with a specific kind efficiently
+    pub fn find_by_kind(&self, kind: K) -> impl Iterator<Item = (usize, &GreenElement<K>)> {
+        self.kinds
+            .iter()
+            .enumerate()
+            .filter(move |(_, k)| **k == kind)
+            .map(|(i, _)| (i, &self.elements[i]))
+    }
+
+    /// Compute total text length
+    #[must_use]
+    pub fn total_text_len(&self) -> TextSize {
+        self.text_lens.iter().fold(TextSize::zero(), |acc, &len| {
+            TextSize::from(u32::from(acc) + u32::from(len))
+        })
+    }
+}
+
+impl<K: SyntaxKind> Default for CompactChildren<K> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -33,6 +149,9 @@ pub struct GreenToken<K: SyntaxKind> {
     kind: K,
     text: CompactString, // Stack-allocated for short tokens
 }
+
+/// Threshold for switching from inline to Arc storage
+const INLINE_CHILDREN_THRESHOLD: usize = 8;
 
 impl<K: SyntaxKind> GreenNode<K> {
     /// Create a new green node.
@@ -51,6 +170,7 @@ impl<K: SyntaxKind> GreenNode<K> {
         let children = match len {
             0 => GreenChildren::Empty,
             1 => GreenChildren::One(iter.next().unwrap()),
+            2..=INLINE_CHILDREN_THRESHOLD => GreenChildren::Inline(iter.collect()),
             _ => GreenChildren::Many(Arc::from(iter.collect::<Vec<_>>())),
         };
 
@@ -79,6 +199,7 @@ impl<K: SyntaxKind> GreenNode<K> {
         match &self.children {
             GreenChildren::Empty => &[],
             GreenChildren::One(child) => std::slice::from_ref(child),
+            GreenChildren::Inline(children) => children,
             GreenChildren::Many(children) => children,
         }
     }
@@ -86,6 +207,39 @@ impl<K: SyntaxKind> GreenNode<K> {
     #[must_use]
     pub const fn is_leaf(&self) -> bool {
         matches!(self.children, GreenChildren::Empty)
+    }
+
+    /// Get the number of children
+    #[must_use]
+    pub fn child_count(&self) -> usize {
+        match &self.children {
+            GreenChildren::Empty => 0,
+            GreenChildren::One(_) => 1,
+            GreenChildren::Inline(children) => children.len(),
+            GreenChildren::Many(children) => children.len(),
+        }
+    }
+
+    /// Get a compact view of children for cache-friendly iteration
+    #[must_use]
+    pub fn compact_children(&self) -> CompactChildren<K> {
+        CompactChildren::from_elements(self.children())
+    }
+
+    /// Iterate over child kinds without accessing full elements
+    pub fn child_kinds(&self) -> impl Iterator<Item = K> + '_ {
+        self.children().iter().map(GreenElement::kind)
+    }
+
+    /// Find the first child with the given kind
+    #[must_use]
+    pub fn first_child_by_kind(&self, kind: K) -> Option<&GreenElement<K>> {
+        self.children().iter().find(|c| c.kind() == kind)
+    }
+
+    /// Find all children with the given kind
+    pub fn children_by_kind(&self, kind: K) -> impl Iterator<Item = &GreenElement<K>> {
+        self.children().iter().filter(move |c| c.kind() == kind)
     }
 }
 

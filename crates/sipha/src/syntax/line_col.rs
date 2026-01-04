@@ -150,6 +150,35 @@ impl LineIndex {
     pub fn line_start(&self, line: u32) -> Option<TextSize> {
         self.line_starts.get(line as usize).copied()
     }
+
+    /// Convert a line/column position to a byte offset
+    ///
+    /// This is the inverse of `line_col()`. It converts a line number and column
+    /// (character offset) to a byte offset in the text.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the line number is out of bounds.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sipha::syntax::line_col::LineIndex;
+    /// use sipha::syntax::TextSize;
+    ///
+    /// let text = "line 1\nline 2";
+    /// let index = LineIndex::new(text);
+    /// let offset = index.offset(1, 3); // Line 1, column 3
+    /// assert_eq!(offset, TextSize::from(10)); // 7 (line 0) + 3 (column)
+    /// ```
+    #[must_use]
+    pub fn offset(&self, line: u32, character: u32) -> TextSize {
+        let line_start = self
+            .line_start(line)
+            .unwrap_or_else(|| panic!("Line {} is out of bounds (max: {})", line, self.line_count().saturating_sub(1)));
+        let offset_u32 = u32::from(line_start.into()).saturating_add(character);
+        TextSize::from(offset_u32.min(u32::from(self.text_len.into())))
+    }
 }
 
 /// Convert a byte offset to line/column position without building an index

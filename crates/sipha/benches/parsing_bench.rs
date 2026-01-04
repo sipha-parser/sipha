@@ -205,12 +205,12 @@ fn bench_incremental_parse(c: &mut Criterion) {
     // Initial parse
     let parser1 = LlParser::new(&grammar, config.clone()).unwrap();
     let mut incremental_parser1 = IncrementalParser::new(parser1);
-    let result1 = incremental_parser1.parse_incremental_with_grammar(
+    let result1 = incremental_parser1.parse_incremental(
         &tokens1,
         None,
         &[],
         BenchNonTerminal::Expr,
-        &grammar,
+        Some(&grammar),
     );
 
     c.bench_function("incremental_parse_small_edit", |b| {
@@ -218,12 +218,12 @@ fn bench_incremental_parse(c: &mut Criterion) {
             let parser = LlParser::new(&grammar, config.clone()).unwrap();
             let mut incremental_parser = IncrementalParser::new(parser);
             // Re-parse initial to get fresh state
-            let _ = incremental_parser.parse_incremental_with_grammar(
+            let _ = incremental_parser.parse_incremental(
                 &tokens1,
                 None,
                 &[],
                 BenchNonTerminal::Expr,
-                &grammar,
+                Some(&grammar),
             );
             let edits = vec![TextEdit {
                 range: TextRange::new(TextSize::from(4), TextSize::from(5)),
@@ -294,12 +294,151 @@ fn bench_glr_stack_sharing(c: &mut Criterion) {
     });
 }
 
+// ==================== Additional Benchmarks ====================
+
+fn bench_syntax_tree_construction(c: &mut Criterion) {
+    use sipha::syntax::{GreenNode, GreenNodeBuilder, TextSize};
+
+    c.bench_function("green_node_builder_small", |b| {
+        b.iter(|| {
+            let mut builder = GreenNodeBuilder::<BenchSyntaxKind>::new();
+            builder.start_node(BenchSyntaxKind::Expr);
+            builder.token(BenchSyntaxKind::Number, "42");
+            builder.token(BenchSyntaxKind::Plus, "+");
+            builder.token(BenchSyntaxKind::Number, "1");
+            builder.finish_node();
+            black_box(builder.finish());
+        });
+    });
+
+    c.bench_function("green_node_builder_deep", |b| {
+        b.iter(|| {
+            let mut builder = GreenNodeBuilder::<BenchSyntaxKind>::new();
+            for _ in 0..10 {
+                builder.start_node(BenchSyntaxKind::Expr);
+            }
+            builder.token(BenchSyntaxKind::Number, "1");
+            for _ in 0..10 {
+                builder.finish_node();
+            }
+            black_box(builder.finish());
+        });
+    });
+}
+
+fn bench_tree_traversal(c: &mut Criterion) {
+    use sipha::syntax::{GreenNode, GreenNodeBuilder, SyntaxNode};
+
+    // Build a moderately complex tree
+    let mut builder = GreenNodeBuilder::<BenchSyntaxKind>::new();
+    builder.start_node(BenchSyntaxKind::Expr);
+    for _ in 0..20 {
+        builder.start_node(BenchSyntaxKind::Term);
+        builder.token(BenchSyntaxKind::Number, "42");
+        builder.token(BenchSyntaxKind::Plus, "+");
+        builder.finish_node();
+    }
+    builder.finish_node();
+    let root = builder.finish();
+
+    c.bench_function("tree_traversal_preorder", |b| {
+        b.iter(|| {
+            let red = SyntaxNode::new_root(root.clone());
+            let mut count = 0;
+            fn count_nodes<K: SyntaxKind>(node: &SyntaxNode<K>, count: &mut usize) {
+                *count += 1;
+                for child in node.children() {
+                    match child {
+                        sipha::syntax::SyntaxElement::Node(n) => count_nodes(&n, count),
+                        sipha::syntax::SyntaxElement::Token(_) => *count += 1,
+                    }
+                }
+            }
+            count_nodes(&red, &mut count);
+            black_box(count);
+        });
+    });
+}
+
+fn bench_lexer(c: &mut Criterion) {
+    use sipha::lexer::{CharSet, LexerBuilder, Pattern};
+
+    let lexer = LexerBuilder::new()
+        .token(
+            BenchSyntaxKind::Number,
+            Pattern::Repeat {
+                pattern: Box::new(Pattern::CharClass(CharSet::digits())),
+                min: 1,
+                max: None,
+            },
+        )
+        .token(BenchSyntaxKind::Plus, Pattern::Literal("+".into()))
+        .token(BenchSyntaxKind::Minus, Pattern::Literal("-".into()))
+        .token(BenchSyntaxKind::Multiply, Pattern::Literal("*".into()))
+        .token(BenchSyntaxKind::Divide, Pattern::Literal("/".into()))
+        .token(BenchSyntaxKind::LParen, Pattern::Literal("(".into()))
+        .token(BenchSyntaxKind::RParen, Pattern::Literal(")".into()))
+        .token(
+            BenchSyntaxKind::Whitespace,
+            Pattern::Repeat {
+                pattern: Box::new(Pattern::CharClass(CharSet::whitespace())),
+                min: 1,
+                max: None,
+            },
+        )
+        .trivia(BenchSyntaxKind::Whitespace)
+        .build(BenchSyntaxKind::Eof, BenchSyntaxKind::Number)
+        .unwrap();
+
+    let small_input = "1 + 2 * 3";
+    let medium_input = (0..100).map(|i| format!("{i} + ")).collect::<String>() + "0";
+    let large_input = (0..1000).map(|i| format!("{i} + ")).collect::<String>() + "0";
+
+    c.bench_function("lexer_small_input", |b| {
+        b.iter(|| {
+            black_box(lexer.tokenize(black_box(small_input)).unwrap());
+        });
+    });
+
+    c.bench_function("lexer_medium_input", |b| {
+        b.iter(|| {
+            black_box(lexer.tokenize(black_box(&medium_input)).unwrap());
+        });
+    });
+
+    c.bench_function("lexer_large_input", |b| {
+        b.iter(|| {
+            black_box(lexer.tokenize(black_box(&large_input)).unwrap());
+        });
+    });
+}
+
+fn bench_large_parse(c: &mut Criterion) {
+    let grammar = setup_grammar();
+    let config = LlConfig::default();
+
+    // Generate a large expression
+    let large_expr = (0..100).map(|i| format!("{i}+")).collect::<String>() + "0";
+    let tokens = create_tokens(&large_expr);
+
+    c.bench_function("full_parse_large", |b| {
+        b.iter(|| {
+            let mut parser = LlParser::new(&grammar, config.clone()).unwrap();
+            black_box(parser.parse(black_box(&tokens), BenchNonTerminal::Expr));
+        });
+    });
+}
+
 #[cfg(not(feature = "backend-glr"))]
 criterion_group!(
     benches,
     bench_full_parse,
     bench_incremental_parse,
-    bench_grammar_analysis
+    bench_grammar_analysis,
+    bench_syntax_tree_construction,
+    bench_tree_traversal,
+    bench_lexer,
+    bench_large_parse
 );
 
 #[cfg(feature = "backend-glr")]
@@ -308,6 +447,10 @@ criterion_group!(
     bench_full_parse,
     bench_incremental_parse,
     bench_grammar_analysis,
-    bench_glr_stack_sharing
+    bench_glr_stack_sharing,
+    bench_syntax_tree_construction,
+    bench_tree_traversal,
+    bench_lexer,
+    bench_large_parse
 );
 criterion_main!(benches);

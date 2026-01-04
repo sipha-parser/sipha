@@ -1,8 +1,10 @@
 mod config;
+mod driver;
 mod parser;
 mod state;
 
 pub use config::PegConfig;
+pub use driver::{PegDecision, PegDriver, PegDriverState};
 pub use state::PegParserState;
 
 use crate::backend::{Algorithm, BackendCapabilities, ParserBackend};

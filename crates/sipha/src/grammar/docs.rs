@@ -180,6 +180,15 @@ where
             };
             format!("{wrapped}?") // ? for semantic predicate
         }
+        Expr::Capture { id, expr } => {
+            let inner = format_expr_ebnf(expr, grammar, token_name);
+            let wrapped = if needs_parentheses(expr.as_ref()) {
+                format!("({inner})")
+            } else {
+                inner
+            };
+            format!("({wrapped}){{{}}}", id.as_str())
+        }
         Expr::Backreference { capture_id } => {
             format!("\\{}", capture_id.as_str())
         }
@@ -623,7 +632,7 @@ where
                             .collect::<Vec<_>>()
                             .join(", ")
                     })
-                    .map_or_else(|| String::from("—"), |s| s);
+                    .unwrap_or_else(|| String::from("—"));
 
                 // Escape pipe characters in markdown table
                 let desc_escaped = desc_str.replace('|', "\\|");
@@ -698,7 +707,7 @@ where
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         })
-                        .map_or_else(|| String::from("—"), |s| s);
+                        .unwrap_or_else(|| String::from("—"));
 
                     let purpose = desc.as_ref().map_or("—", std::string::String::as_str);
                     let purpose_escaped = purpose.replace('|', "\\|");

@@ -1,6 +1,6 @@
 # Grammars
 
-Grammars define the structure of your language. Sipha uses a builder API to define grammar rules declaratively.
+Grammars define the structure of your language. Sipha provides two ways to define grammars: a **Grammar DSL** macro for declarative definitions, and a **Builder API** for programmatic construction.
 
 ## Overview
 
@@ -10,7 +10,74 @@ A grammar in Sipha consists of:
 - **Production rules**: How non-terminals are expanded (e.g., `Expr -> Term + Expr`)
 - **Entry point**: The starting non-terminal for parsing
 
+## Grammar DSL
+
+The **Grammar DSL** is a declarative macro that lets you define grammars using an EBNF-like syntax. It's the recommended approach for most use cases as it's more concise and readable.
+
+### Basic Usage
+
+```rust,ignore
+use sipha::grammar;
+
+grammar! {
+    #[entry]
+    Expr = Term ((Plus | Minus) Term)*;
+    
+    Term = Factor ((Star | Slash) Factor)*;
+    
+    Factor = Number
+           | Ident
+           | LParen Expr RParen;
+    
+    // Token patterns
+    #[trivia]
+    @Whitespace = r"\s+";
+    
+    @Number = r"[0-9]+";
+    @Ident = r"[a-zA-Z_][a-zA-Z0-9_]*";
+    @Plus = "+";
+    @Minus = "-";
+    @Star = "*";
+    @Slash = "/";
+    @LParen = "(";
+    @RParen = ")";
+}
+```
+
+### Grammar DSL Syntax
+
+- **Rules**: `RuleName = Expression;`
+- **Entry point**: Mark a rule with `#[entry]` to make it the starting point
+- **Alternatives**: Use `|` to separate alternatives: `A | B | C`
+- **Sequences**: Space-separated expressions form sequences: `A B C`
+- **Repetition**: 
+  - `*` for zero or more: `A*`
+  - `+` for one or more: `A+`
+  - `?` for optional: `A?`
+- **Grouping**: Use parentheses: `(A | B) C`
+- **Token definitions**: Use `@TokenName = pattern;` to define tokens
+- **Trivia**: Mark tokens as trivia with `#[trivia]` attribute
+
+### Token Patterns
+
+Tokens can be defined with:
+- **Literal strings**: `@Plus = "+";`
+- **Raw string literals**: `@Number = r"[0-9]+";` (regex patterns)
+- **Trivia tokens**: `#[trivia] @Whitespace = r"\s+";`
+
+### When to Use Grammar DSL
+
+Use the Grammar DSL when:
+- You want a concise, readable grammar definition
+- You prefer declarative syntax similar to EBNF
+- Your grammar is relatively static
+- You want compile-time grammar validation
+
+The Grammar DSL generates the same grammar structure as the Builder API and is fully compatible with all parser backends.
+
 ## GrammarBuilder API
+
+The **Builder API** provides programmatic control over grammar construction. Use it when you need dynamic grammar building or runtime grammar generation.
 
 Use `GrammarBuilder` to construct grammars:
 
@@ -228,6 +295,22 @@ Sipha provides tools for analyzing grammars:
 
 See [Grammar Analysis](advanced/grammar-analysis.md) for more details.
 
+## Choosing Between Grammar DSL and Builder API
+
+### Use Grammar DSL when:
+- You want a concise, readable grammar definition
+- You prefer declarative syntax similar to EBNF
+- Your grammar is relatively static
+- You want compile-time grammar validation
+
+### Use Builder API when:
+- You need dynamic grammar construction
+- You want programmatic control over rule creation
+- You're building grammars at runtime
+- You need to conditionally add rules based on configuration
+
+Both approaches generate the same grammar structure and are fully compatible with all parser backends. You can even mix them if needed.
+
 ## Best Practices
 
 1. **Start simple**: Begin with a simple grammar and add complexity gradually
@@ -236,6 +319,7 @@ See [Grammar Analysis](advanced/grammar-analysis.md) for more details.
 4. **Handle precedence explicitly**: Use precedence hints or grammar structure
 5. **Test thoroughly**: Test with various inputs, including edge cases
 6. **Validate early**: Validate grammars before using them in parsers
+7. **Prefer Grammar DSL**: For most use cases, the Grammar DSL is more readable and maintainable
 
 ## Next Steps
 

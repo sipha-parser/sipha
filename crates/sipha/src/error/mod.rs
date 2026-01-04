@@ -81,6 +81,23 @@
 //!
 //! When the `diagnostics` feature is enabled, errors integrate with [`miette`]
 //! for rich error reporting with source code snippets and suggestions.
+//!
+//! ## Enhanced Diagnostics
+//!
+//! The [`diagnostics`] module provides utilities for:
+//! - "Did you mean?" suggestions
+//! - Context-aware error reporting
+//! - Error message formatting with surrounding code
+//!
+//! ```rust,no_run
+//! use sipha::error::diagnostics::did_you_mean;
+//!
+//! let actual = "identifer";
+//! let expected = vec!["identifier".to_string()];
+//! if let Some(suggestion) = did_you_mean(actual, &expected) {
+//!     println!("Did you mean: {}?", suggestion);
+//! }
+//! ```
 
 #[cfg(feature = "backend-glr")]
 use crate::backend::glr::ParseForest;
@@ -90,7 +107,8 @@ use thiserror::Error;
 #[cfg(feature = "diagnostics")]
 use miette::Diagnostic;
 
-#[derive(Debug, Error)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Clone, Error)]
 #[cfg_attr(feature = "diagnostics", derive(Diagnostic))]
 pub enum ParseError {
     #[error("Unexpected token")]
@@ -123,6 +141,25 @@ pub enum ParseError {
         #[cfg_attr(feature = "diagnostics", label("Ambiguous here"))]
         span: TextRange,
         alternatives: Vec<String>,
+    },
+
+    #[error("Maximum parse depth exceeded: {max_depth}")]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(parser::depth_exceeded)))]
+    DepthExceeded { max_depth: usize },
+
+    #[error("Token limit exceeded: {max_tokens}")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(parser::token_limit_exceeded))
+    )]
+    TokenLimitExceeded { max_tokens: usize },
+
+    #[error("Lexer error: {message}")]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(parser::lexer_error)))]
+    LexerError {
+        #[cfg_attr(feature = "diagnostics", label)]
+        span: TextRange,
+        message: String,
     },
 }
 
@@ -195,14 +232,16 @@ impl LexerErrorKind {
 }
 
 impl ParseError {
-    /// Get the span (location) of this error
+    /// Get the span (location) of this error, if available
     #[must_use]
-    pub const fn span(&self) -> TextRange {
+    pub fn span(&self) -> Option<TextRange> {
         match self {
             Self::UnexpectedToken { span, .. }
             | Self::InvalidSyntax { span, .. }
             | Self::UnexpectedEof { span, .. }
-            | Self::Ambiguity { span, .. } => *span,
+            | Self::Ambiguity { span, .. }
+            | Self::LexerError { span, .. } => Some(*span),
+            Self::DepthExceeded { .. } | Self::TokenLimitExceeded { .. } => None,
         }
     }
 
@@ -259,6 +298,27 @@ impl ParseError {
     #[must_use]
     pub const fn ambiguity(span: TextRange, alternatives: Vec<String>) -> Self {
         Self::Ambiguity { span, alternatives }
+    }
+
+    /// Create a depth exceeded error
+    #[must_use]
+    pub const fn depth_exceeded(max_depth: usize) -> Self {
+        Self::DepthExceeded { max_depth }
+    }
+
+    /// Create a token limit exceeded error
+    #[must_use]
+    pub const fn token_limit_exceeded(max_tokens: usize) -> Self {
+        Self::TokenLimitExceeded { max_tokens }
+    }
+
+    /// Create a parse error from a lexer error
+    #[must_use]
+    pub fn from_lexer_error(error: &LexerError) -> Self {
+        Self::LexerError {
+            span: error.span,
+            message: error.kind.to_string(),
+        }
     }
 
     /// Format expected tokens as a human-readable string
@@ -328,9 +388,9 @@ impl ParseError {
     /// Returns a tuple of (`before_context`, `error_span`, `after_context`).
     #[must_use]
     pub fn get_context(&self, source: &str) -> Option<(String, String, String)> {
-        let span = self.span();
-        let start = span.start().into() as usize;
-        let end = span.end().into() as usize;
+        let span = self.span()?;
+        let start: usize = u32::from(span.start()) as usize;
+        let end: usize = u32::from(span.end()) as usize;
 
         if end > source.len() {
             return None;
@@ -348,6 +408,32 @@ impl ParseError {
         let after = source[end..after_end].to_string();
 
         Some((before, error_span, after))
+    }
+
+    /// Get a "Did you mean?" suggestion for this error
+    ///
+    /// Uses string similarity to suggest the most likely intended token.
+    #[must_use]
+    pub fn did_you_mean_suggestion(&self, actual_token: &str) -> Option<String> {
+        use crate::error::diagnostics::did_you_mean;
+        match self {
+            Self::UnexpectedToken { expected, .. } | Self::UnexpectedEof { expected, .. } => {
+                did_you_mean(actual_token, expected)
+            }
+            _ => None,
+        }
+    }
+
+    /// Get multiple suggestions for this error (up to max_suggestions)
+    #[must_use]
+    pub fn suggestions(&self, actual_token: &str, max_suggestions: usize) -> Vec<String> {
+        use crate::error::diagnostics::suggest_tokens;
+        match self {
+            Self::UnexpectedToken { expected, .. } | Self::UnexpectedEof { expected, .. } => {
+                suggest_tokens(actual_token, expected, max_suggestions)
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Format error with enhanced context and suggestions
@@ -581,6 +667,9 @@ where
         self.forest.as_ref()
     }
 }
+
+/// Enhanced diagnostic utilities
+pub mod diagnostics;
 
 #[cfg(test)]
 mod tests {

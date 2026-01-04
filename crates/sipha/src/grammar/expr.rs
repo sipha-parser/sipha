@@ -62,6 +62,11 @@ pub enum Expr<T, N> {
         expr: Box<Expr<T, N>>,
         predicate: std::sync::Arc<dyn SemanticPredicate<T, N>>,
     },
+    /// Capture: capture matched content for later use in backreferences
+    Capture {
+        id: CaptureId,
+        expr: Box<Expr<T, N>>,
+    },
     /// Backreference: match previously captured content
     Backreference {
         capture_id: CaptureId,
@@ -450,6 +455,31 @@ impl<T, N> Expr<T, N> {
         }
     }
 
+    /// Create a capture expression.
+    ///
+    /// Captures the matched content of the given expression for later use in
+    /// backreferences. This enables patterns like matching paired delimiters
+    /// or repeating previously matched content.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{Expr, capture::CaptureId};
+    /// # // Capture a delimiter for later matching
+    /// # // let capture: Expr<MyToken, MyNonTerminal> = Expr::capture(
+    /// # //     CaptureId::Named("delimiter".to_string()),
+    /// # //     Expr::token(MyToken::Quote)
+    /// # // );
+    /// ```
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // CaptureId::Named contains String, cannot be const
+    pub fn capture(id: CaptureId, expr: Self) -> Self {
+        Self::Capture {
+            id,
+            expr: Box::new(expr),
+        }
+    }
+
     /// Create a backreference expression.
     ///
     /// Matches the same content that was previously captured by a capture group
@@ -504,6 +534,8 @@ where
             // Cut doesn't affect nullability - depends on inner expression
             // SemanticPredicate: nullable if inner expression is nullable
             Self::Cut(expr) | Self::SemanticPredicate { expr, .. } => expr.is_nullable(grammar),
+            // Capture: nullable if inner expression is nullable
+            Self::Capture { expr, .. } => expr.is_nullable(grammar),
             // TokenClass matches a token, so not nullable
             // Conditional: nullable if condition is nullable and then_expr is nullable,
             // or if condition fails and else_expr is Some and nullable
@@ -573,10 +605,12 @@ where
 
             // Cut: first set is same as inner expression
             // SemanticPredicate: first set is same as inner expression
+            // Capture: first set is same as inner expression
             Self::Opt(expr)
             | Self::Repeat { expr, .. }
             | Self::Cut(expr)
-            | Self::SemanticPredicate { expr, .. } => {
+            | Self::SemanticPredicate { expr, .. }
+            | Self::Capture { expr, .. } => {
                 expr.first_set_impl(grammar, result, visited);
             }
             // TokenClass: can't determine specific tokens, skip
@@ -624,7 +658,8 @@ where
             | Self::NotLookahead(expr)
             | Self::Cut(expr)
             | Self::RecoveryPoint { expr, .. }
-            | Self::SemanticPredicate { expr, .. } => {
+            | Self::SemanticPredicate { expr, .. }
+            | Self::Capture { expr, .. } => {
                 expr.extract_nonterminals(result, depth);
             }
             Self::Conditional {

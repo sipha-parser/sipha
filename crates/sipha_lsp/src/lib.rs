@@ -42,6 +42,24 @@
 pub mod conversions;
 
 pub use conversions::{
-    SyntaxKindToSymbolKind, ToDiagnostic, ToDocumentSymbol, ToRange, ToRangeWithSource,
+    // Semantic tokens
+    SemanticTokenInfo,
+    StandardSemanticModifier,
+    StandardSemanticType,
+    SyntaxKindToSemanticType,
+    // Core traits
+    SyntaxKindToSymbolKind,
+    // Completion helpers
+    ToCompletionItem,
+    ToDiagnostic,
+    ToDocumentSymbol,
+    ToRange,
+    ToRangeWithSource,
+    // Hover helpers
+    code_block,
+    create_hover,
+    function_completion,
+    keyword_completion,
     map_common_symbol_kinds,
+    snippet_completion,
 };

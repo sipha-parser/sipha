@@ -1444,6 +1444,12 @@ where
             }
         }
 
+        Expr::Capture { expr, .. } => {
+            // Capture is not fully supported in LL parsers (no backreferences)
+            // Just parse the inner expression
+            parse_expr_inner(ctx, pos, expr, output, session)
+        }
+
         Expr::Backreference { capture_id } => {
             // Backreferences are not well-supported in LL parsers
             // Return an error indicating this is not supported

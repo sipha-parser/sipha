@@ -65,8 +65,17 @@
 
 pub mod builder;
 pub mod dfa;
+pub mod incremental;
+pub mod simd;
+pub mod stream;
 pub mod token;
 
 pub use builder::{CharSet, LexRule, LexerBuilder, Pattern};
-pub use dfa::*;
+pub use dfa::{CompiledLexer, LexerState, PerfectHashKeywords, StateId};
+pub use incremental::{IncrementalLexer, LexerDelta, TextEdit};
+pub use simd::SimdScanner;
+pub use stream::{
+    LazyTokenStream, NonTriviaStream, PeekableTokenStream, StreamCheckpoint, TokenStream,
+    VecTokenStream,
+};
 pub use token::*;

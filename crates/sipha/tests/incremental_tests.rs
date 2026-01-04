@@ -124,12 +124,12 @@ fn test_cache_population() {
     // Test cache population with grammar
     let parser2 = LlParser::new(&grammar, LlConfig::default()).expect("parser");
     let mut incremental_parser2 = IncrementalParser::new(parser2);
-    let result2 = incremental_parser2.parse_incremental_with_grammar(
+    let result2 = incremental_parser2.parse_incremental(
         &tokens,
         None,
         &[],
         TestNonTerminal::Expr,
-        &grammar,
+        Some(&grammar),
     );
     assert!(result2.errors.is_empty());
 }
@@ -149,24 +149,24 @@ fn test_cache_hit_behavior() {
 
     // First parse - populate cache
     let tokens1 = vec![TestToken::Number];
-    let result1 = incremental_parser.parse_incremental_with_grammar(
+    let result1 = incremental_parser.parse_incremental(
         &tokens1,
         None,
         &[],
         TestNonTerminal::Expr,
-        &grammar,
+        Some(&grammar),
     );
     assert!(result1.errors.is_empty());
 
     // Second parse with no edits - should potentially use cache
     // Note: Cache lookup happens during parsing, so we can't directly verify cache hits
     // but we can verify the parse succeeds and produces the same result
-    let result2 = incremental_parser.parse_incremental_with_grammar(
+    let result2 = incremental_parser.parse_incremental(
         &tokens1,
         Some(&result1.root),
         &[],
         TestNonTerminal::Expr,
-        &grammar,
+        Some(&grammar),
     );
     assert!(result2.errors.is_empty());
     assert_eq!(result1.root, result2.root);
@@ -195,12 +195,12 @@ fn test_cache_invalidation_on_edits() {
 
     // First parse - populate cache
     let tokens1 = vec![TestToken::Number];
-    let result1 = incremental_parser.parse_incremental_with_grammar(
+    let result1 = incremental_parser.parse_incremental(
         &tokens1,
         None,
         &[],
         TestNonTerminal::Expr,
-        &grammar,
+        Some(&grammar),
     );
     assert!(result1.errors.is_empty());
 
@@ -210,12 +210,12 @@ fn test_cache_invalidation_on_edits() {
         range: TextRange::new(TextSize::zero(), TextSize::from(1)),
         new_text: "a".into(),
     }];
-    let result2 = incremental_parser.parse_incremental_with_grammar(
+    let result2 = incremental_parser.parse_incremental(
         &tokens2,
         Some(&result1.root),
         &edits,
         TestNonTerminal::Expr,
-        &grammar,
+        Some(&grammar),
     );
     assert!(result2.errors.is_empty());
     // Result should be different due to edit
@@ -285,23 +285,23 @@ mod peg_incremental {
 
         // First parse - should populate memoization cache
         let tokens = vec![TestToken::Number];
-        let result1 = incremental_parser.parse_incremental_with_grammar(
-            &tokens,
-            None,
-            &[],
-            TestNonTerminal::Expr,
-            &grammar,
-        );
+        let result1 = incremental_parser.parse_incremental(
+        &tokens,
+        None,
+        &[],
+        TestNonTerminal::Expr,
+        Some(&grammar),
+    );
         assert!(result1.errors.is_empty());
 
         // Second parse - should benefit from memoization
-        let result2 = incremental_parser.parse_incremental_with_grammar(
-            &tokens,
-            Some(&result1.root),
-            &[],
-            TestNonTerminal::Expr,
-            &grammar,
-        );
+        let result2 = incremental_parser.parse_incremental(
+        &tokens,
+        Some(&result1.root),
+        &[],
+        TestNonTerminal::Expr,
+        Some(&grammar),
+    );
         assert!(result2.errors.is_empty());
         assert_eq!(result1.root, result2.root);
     }
@@ -329,12 +329,12 @@ mod peg_incremental {
 
         // Initial parse
         let tokens1 = vec![TestToken::Number];
-        let result1 = incremental_parser.parse_incremental_with_grammar(
+        let result1 = incremental_parser.parse_incremental(
             &tokens1,
             None,
             &[],
             TestNonTerminal::Expr,
-            &grammar,
+            Some(&grammar),
         );
         assert!(result1.errors.is_empty());
 
@@ -344,12 +344,12 @@ mod peg_incremental {
             range: TextRange::new(TextSize::from(1), TextSize::from(2)),
             new_text: "a".into(),
         }];
-        let result2 = incremental_parser.parse_incremental_with_grammar(
+        let result2 = incremental_parser.parse_incremental(
             &tokens2,
             Some(&result1.root),
             &edits,
             TestNonTerminal::Expr,
-            &grammar,
+            Some(&grammar),
         );
         // Should succeed, potentially reusing nodes from memoization
         assert!(result2.errors.is_empty() || !result2.errors.is_empty());

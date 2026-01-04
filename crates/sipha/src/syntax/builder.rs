@@ -34,6 +34,12 @@ impl<K: SyntaxKind> GreenNodeBuilder<K> {
         }
     }
 
+    /// Get the current depth of the builder (number of nodes on the stack)
+    #[must_use]
+    pub fn current_depth(&self) -> usize {
+        self.stack.len()
+    }
+
     pub fn start_node(&mut self, kind: K) {
         self.stack.push(NodeBuilder {
             kind,

@@ -78,6 +78,9 @@ pub mod glr;
 #[cfg(feature = "backend-peg")]
 pub mod peg;
 
+#[cfg(feature = "backend-earley")]
+pub mod earley;
+
 pub mod common;
 
 /// Main parser backend trait

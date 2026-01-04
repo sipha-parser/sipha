@@ -19,6 +19,7 @@
 //! 5. Return parse forest for ambiguous results
 
 mod disambiguation;
+mod driver;
 mod forest;
 mod parser;
 mod stack;
@@ -28,6 +29,7 @@ pub use disambiguation::{
     DisambiguationStrategy, Disambiguator, disambiguate_by_associativity,
     disambiguate_by_precedence, disambiguate_with_custom,
 };
+pub use driver::{GlrConfig as GlrDriverConfig, GlrDecision, GlrDriver, GlrDriverState};
 pub use forest::{ForestNode, ParseForest};
 pub use stack::GlrStack;
 pub use state::GlrParserState;

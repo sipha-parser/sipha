@@ -141,7 +141,7 @@ fn test_error_handling() {
 
     assert_eq!(
         parse_error.span(),
-        TextRange::new(TextSize::from(0), TextSize::from(5))
+        Some(TextRange::new(TextSize::from(0), TextSize::from(5)))
     );
 
     // Test LexerError creation

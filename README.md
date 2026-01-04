@@ -13,9 +13,20 @@ A flexible, incremental parsing library for Rust with support for multiple parsi
 
 📚 **[Read the Book](https://sipha-parser.github.io/sipha/)** - Comprehensive guide and documentation
 
-## Status: 0.5.0 Release
+## Status: 0.6.0 Release
 
-Sipha 0.5.0 provides a stable foundation for incremental parsing with multiple backends. The core API is stable, though some advanced features may continue to evolve. We welcome feedback and contributions!
+Sipha 0.6.0 brings significant performance improvements and new features:
+
+- **Arena-based allocation** for more efficient memory usage
+- **String interning** for reduced memory and faster comparisons
+- **Token stream abstraction** for flexible lexer integration
+- **Unified parser driver architecture** across all backends
+- **Grammar composition** for modular grammar definitions
+- **Pretty printing framework** for code formatting
+- **Source map generation** for tooling support
+- **Enhanced testing utilities** for property-based testing and fuzzing
+
+The core API remains stable and backward compatible. See the [migration guide](doc/src/reference/migration-guide.md) for upgrade instructions.
 
 ## Key Features
 
@@ -34,11 +45,17 @@ This makes Sipha perfect for building language servers, IDEs, and other tools th
 
 - **Multiple parsing backends**: Choose from LL(k), LR, GLR, and PEG (via feature flags)
 - **Immutable syntax trees**: Green/red tree representation for efficient manipulation
-- **Error recovery**: Configurable error recovery strategies for robust parsing
-- **Flexible grammar definition**: Builder API for defining your grammar
+- **Error recovery**: Pluggable error recovery strategies with panic-mode and minimal-cost options
+- **Flexible grammar definition**: Builder API and declarative Grammar DSL macro for defining grammars
+- **Grammar composition**: Extend and compose grammars for modular language design
+- **Grammar analysis**: Detect conflicts, left recursion, and get refactoring suggestions
 - **Unicode support**: Full Unicode support for identifiers and text (optional)
 - **Rich diagnostics**: Beautiful error messages with miette integration (optional)
-- **Tree traversal**: Visitor patterns and query APIs for working with syntax trees
+- **Tree traversal**: Cursor API, visitor patterns, and query APIs for working with syntax trees
+- **Pretty printing**: Framework for code formatting with configurable layout
+- **Source maps**: Generate source maps for debugging and tooling
+- **LSP integration**: Helpers for building Language Server Protocol implementations
+- **Testing utilities**: Property-based testing generators and snapshot testing
 
 ## Installation
 
@@ -46,14 +63,14 @@ Add Sipha to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sipha = "0.5.0"
+sipha = "0.6.0"
 ```
 
 Or with specific features:
 
 ```toml
 [dependencies]
-sipha = { version = "0.5.0", features = ["diagnostics", "unicode", "backend-ll", "backend-peg"] }
+sipha = { version = "0.6.0", features = ["diagnostics", "unicode", "backend-ll", "backend-peg"] }
 ```
 
 ## Quick Start
@@ -179,6 +196,68 @@ let result = parser.parse(&tokens, ArithNonTerminal::Expr);
 
 For a complete working example, see [`examples/basic_arithmetic.rs`](crates/sipha/examples/basic_arithmetic.rs).
 
+## Grammar DSL
+
+Sipha provides a declarative **Grammar DSL** macro that makes it easy to define grammars using an EBNF-like syntax. This is an alternative to the builder API that offers a more concise and readable way to define your grammar.
+
+### Using the Grammar DSL
+
+Instead of using `GrammarBuilder`, you can define your grammar declaratively:
+
+```rust
+use sipha::grammar;
+
+grammar! {
+    #[entry]
+    Expr = Term ((Plus | Minus) Term)*;
+    
+    Term = Factor ((Star | Slash) Factor)*;
+    
+    Factor = Number
+           | Ident
+           | LParen Expr RParen;
+    
+    // Token patterns with trivia annotation
+    #[trivia]
+    @Whitespace = r"\s+";
+    
+    @Number = r"[0-9]+";
+    @Ident = r"[a-zA-Z_][a-zA-Z0-9_]*";
+    @Plus = "+";
+    @Minus = "-";
+    @Star = "*";
+    @Slash = "/";
+    @LParen = "(";
+    @RParen = ")";
+}
+```
+
+### Grammar DSL Features
+
+- **EBNF-like syntax**: Familiar grammar notation similar to EBNF
+- **Token patterns**: Define tokens with regex patterns or literals
+- **Trivia support**: Mark tokens as trivia (whitespace, comments) with `#[trivia]`
+- **Entry point**: Mark the starting rule with `#[entry]`
+- **Repetition operators**: Use `*` (zero or more), `+` (one or more), `?` (optional)
+- **Grouping**: Use parentheses for grouping expressions
+- **Alternatives**: Use `|` for choice expressions
+
+### When to Use Grammar DSL vs Builder API
+
+- **Use Grammar DSL** when:
+  - You want a concise, readable grammar definition
+  - You prefer declarative syntax similar to EBNF
+  - Your grammar is relatively static
+
+- **Use Builder API** when:
+  - You need dynamic grammar construction
+  - You want programmatic control over rule creation
+  - You're building grammars at runtime
+
+Both approaches generate the same grammar structure and are fully compatible with all parser backends.
+
+For more details, see the [Grammar DSL documentation](doc/src/core-concepts/grammars.md#grammar-dsl) and the [Grammar DSL example](crates/sipha/examples/grammar_dsl.rs).
+
 ## Incremental Parsing
 
 Incremental parsing is Sipha's core strength. It allows you to efficiently update your parse tree when code changes, rather than re-parsing everything from scratch.
@@ -226,15 +305,27 @@ The parser automatically:
 
 ### Current Status
 
-Incremental parsing is fully implemented in version 0.5.0 with complete node reuse and cache management:
+Incremental parsing is fully implemented in version 1.0.0 with complete node reuse and cache management:
 
 - [X] **Node reuse**: Unchanged subtrees are automatically identified and reused from previous parses
 - [X] **Cache population**: Parse results are cached and can be reused for future parses
 - [X] **Affected range computation**: Only affected regions are re-parsed
 - [X] **Smart cache invalidation**: Cache entries are invalidated based on edit locations
 - [X] **Cross-session caching**: Persistent parse cache enables node reuse across multiple parse sessions
+- [X] **Incremental lexing**: Token reuse for efficient re-tokenization when source changes
 
 The parser automatically integrates reusable nodes from previous parses and queries the persistent cache during parsing, providing significant performance improvements for interactive editing scenarios.
+
+### Incremental Lexing
+
+Sipha also supports **incremental lexing**, which efficiently re-tokenizes source code when edits are made:
+
+- **Token reuse**: Unchanged tokens are preserved (only positions updated)
+- **Delta-based updates**: Only affected token regions are re-tokenized
+- **Line tracking**: Efficient line/column lookups for error reporting
+- **Version tracking**: Cache invalidation based on edit versions
+
+Incremental lexing works seamlessly with incremental parsing, providing end-to-end efficiency from tokenization to parse tree construction. See the [incremental lexing example](crates/sipha/examples/incremental_lexing.rs) for details.
 
 ## PEG Parsing
 
@@ -370,6 +461,9 @@ Sipha provides configurable error recovery strategies:
 The repository includes several examples to help you get started:
 
 - **[Basic Arithmetic](crates/sipha/examples/basic_arithmetic.rs)**: A step-by-step arithmetic expression parser
+- **[Grammar DSL](crates/sipha/examples/grammar_dsl.rs)**: Comparison of Grammar DSL vs Builder API approaches
+- **[JSON Parser](crates/sipha/examples/json_parser.rs)**: Complete JSON parser demonstrating real-world grammar definition
+- **[Incremental Lexing](crates/sipha/examples/incremental_lexing.rs)**: Demonstrates incremental lexing with token reuse
 - **[Simple Calculator](crates/sipha/examples/simple_calculator.rs)**: A more complete calculator with error handling
 - **[PEG Parsing](crates/sipha/examples/peg_parsing.rs)**: Demonstrates PEG parser features including memoization and incremental parsing
 
@@ -377,6 +471,9 @@ Run examples with:
 
 ```bash
 cargo run --example basic_arithmetic
+cargo run --example grammar_dsl
+cargo run --example json_parser
+cargo run --example incremental_lexing
 cargo run --example simple_calculator
 cargo run --example peg_parsing --features backend-peg
 ```
@@ -423,7 +520,7 @@ For batch parsing (non-interactive), Sipha is competitive with other Rust parsin
 | Multiple backends | ✅ | ❌ | ❌ | ❌ |
 | Syntax trees | ✅ | ✅ | ❌ | ✅ |
 | Error recovery | ✅ | ✅ | ✅ | ✅ |
-| Grammar DSL | ❌ | ✅ | ❌ | ✅ |
+| Grammar DSL | ✅ | ✅ | ❌ | ✅ |
 | Zero-copy | Partial | ✅ | ✅ | ❌ |
 
 **When to use Sipha:**
@@ -436,13 +533,12 @@ For batch parsing (non-interactive), Sipha is competitive with other Rust parsin
 **When to consider alternatives:**
 - Simple one-off parsers (pest or nom might be simpler)
 - Maximum performance for batch parsing (nom might be faster)
-- Prefer declarative grammar DSLs (pest or lalrpop)
 
 ## Future Features
 
 Sipha continues to evolve. Planned features for future releases include:
 
-### Short Term (Post-0.5.0)
+### Short Term (Post-1.0.0)
 - **Enhanced error recovery**: More sophisticated recovery strategies
 - **Better diagnostics**: Improved error messages and suggestions
 - **Performance optimizations**: Further speed improvements for large files
@@ -459,7 +555,7 @@ Sipha continues to evolve. Planned features for future releases include:
 
 ## Contributing
 
-Contributions are welcome! Sipha 0.5.0 provides a solid foundation, and there are many opportunities to help:
+Contributions are welcome! Sipha 1.0.0 provides a solid foundation, and there are many opportunities to help:
 
 - **Bug reports**: Found a bug? Please open an issue!
 - **Feature requests**: Have an idea? We'd love to hear it!
@@ -504,5 +600,5 @@ Sipha is inspired by:
 
 ---
 
-**Note**: Sipha 0.5.0 provides a complete incremental parsing solution. The core API is stable, and we continue to add features and improvements based on user feedback.
+**Note**: Sipha 1.0.0 provides a complete incremental parsing solution. The core API is stable, and we continue to add features and improvements based on user feedback.
 

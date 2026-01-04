@@ -105,6 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (1 + 2) - 3 or 1 + (2 - 3)
     println!("2. Building ambiguous grammar...");
     let grammar = GrammarBuilder::<Token<AmbiguousSyntaxKind>, AmbiguousNonTerminal>::new()
+        .allow_left_recursion() // GLR can handle left recursion
         .entry_point(AmbiguousNonTerminal::Expr)
         .rule(
             AmbiguousNonTerminal::Expr,

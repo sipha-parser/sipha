@@ -26,7 +26,7 @@
 //! #     // let mut parser = IncrementalParser::new(backend);
 //! #     
 //! #     // Initial parse - cache is populated automatically
-//! #     // let result1 = parser.parse_incremental_with_grammar(
+//! #     // let result1 = parser.parse_incremental(
 //! #     //     &tokens,
 //! #     //     None,
 //! #     //     &[],
@@ -51,7 +51,7 @@
 //!
 //! ## Cache Population
 //!
-//! For optimal performance, use `parse_incremental_with_grammar` which automatically
+//! For optimal performance, use `parse_incremental` with `Some(grammar)` which automatically
 //! populates the parse cache with nodes that can be reused in future parses. The cache
 //! is keyed by rule name and position, allowing efficient lookup during incremental parsing.
 //!
@@ -65,6 +65,10 @@
 //!
 //! The parser automatically identifies reusable nodes and integrates them into the parse,
 //! significantly improving performance for interactive editing scenarios.
+
+pub mod cache;
+
+pub use cache::{CacheEntry, CacheStats, ContentCacheKey, IncrementalCache, LazyNode};
 
 use crate::syntax::utils::{GreenNodeSpan, visit_green_spans};
 use crate::syntax::{GreenNode, TextRange, TextSize};
@@ -473,8 +477,7 @@ where
     /// If `grammar` is provided, the cache will be automatically populated with nodes from
     /// the parse result, enabling better performance for subsequent incremental parses.
     ///
-    /// This method combines the functionality of `parse_incremental` and
-    /// `parse_incremental_with_grammar` into a single method for convenience.
+    /// This method supports optional grammar parameter for cache population.
     pub fn parse_incremental(
         &mut self,
         input: &[T],
@@ -507,84 +510,6 @@ where
         result
     }
 
-    /// Parse with grammar access for cache population.
-    ///
-    /// This method is similar to `parse_incremental`, but it also populates the parse cache
-    /// with nodes from the parse result. This enables better performance for subsequent
-    /// incremental parses by allowing the parser to reuse cached nodes.
-    ///
-    /// # Performance
-    ///
-    /// Using this method is recommended when you have access to the grammar, as it enables
-    /// full cache population. The cache stores nodes keyed by rule name and position,
-    /// allowing efficient lookup during future incremental parses.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use sipha::incremental::IncrementalParser;
-    /// # use sipha::grammar::{Grammar, GrammarBuilder, Expr, NonTerminal, Token};
-    /// # use sipha::syntax::{SyntaxKind, TextSize};
-    /// # use sipha::backend::ParserBackend;
-    /// # // Setup example types
-    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    /// # enum MySyntaxKind { Number }
-    /// # impl SyntaxKind for MySyntaxKind {
-    /// #     fn is_terminal(self) -> bool { true }
-    /// #     fn is_trivia(self) -> bool { false }
-    /// # }
-    /// # #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    /// # struct MyToken;
-    /// # impl Token for MyToken {
-    /// #     type Kind = MySyntaxKind;
-    /// #     fn kind(&self) -> Self::Kind { MySyntaxKind::Number }
-    /// #     fn text_len(&self) -> TextSize { TextSize::from(1) }
-    /// #     fn text(&self) -> compact_str::CompactString { "1".into() }
-    /// # }
-    /// # #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    /// # enum MyNonTerminal { Expr }
-    /// # impl NonTerminal for MyNonTerminal {
-    /// #     fn name(&self) -> &str { "Expr" }
-    /// # }
-    /// # // Build grammar and parser
-    /// # let grammar = GrammarBuilder::new()
-    /// #     .entry_point(MyNonTerminal::Expr)
-    /// #     .rule(MyNonTerminal::Expr, Expr::token(MyToken))
-    /// #     .build()
-    /// #     .expect("Failed to build grammar");
-    /// # let backend = sipha::backend::ll::LlParser::new(&grammar, Default::default()).unwrap();
-    /// # let mut parser = IncrementalParser::new(backend);
-    /// # let tokens = vec![MyToken];
-    /// # let entry_point = MyNonTerminal::Expr;
-    /// // Parse with cache population
-    /// let result = parser.parse_incremental_with_grammar(
-    ///     &tokens,
-    ///     None,
-    ///     &[],
-    ///     entry_point,
-    ///     &grammar,
-    /// );
-    /// // Cache is now populated with reusable nodes
-    /// ```
-    ///
-    /// # Deprecated
-    ///
-    /// This method is now a convenience wrapper around `parse_incremental` with grammar.
-    /// Consider using `parse_incremental` with `Some(grammar)` instead.
-    pub fn parse_incremental_with_grammar(
-        &mut self,
-        input: &[T],
-        old_tree: Option<&GreenNode<T::Kind>>,
-        edits: &[TextEdit],
-        entry: N,
-        grammar: &crate::grammar::Grammar<T, N>,
-    ) -> crate::error::ParseResult<T, N>
-    where
-        T: crate::grammar::Token,
-        N: crate::grammar::NonTerminal,
-    {
-        self.parse_incremental(input, old_tree, edits, entry, Some(grammar))
-    }
 
     /// Update cache after parsing by populating it with nodes from the parse result.
     ///

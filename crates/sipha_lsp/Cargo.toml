@@ -1,6 +1,6 @@
 [package]
 name = "sipha_lsp"
-version = "0.5.0"
+version = "1.0.0"
 edition = "2024"
 authors = ["Chloe Magnier <contact@nyaleph.com>"]
 description = "LSP integration layer for Sipha parser library"
@@ -10,6 +10,9 @@ homepage = "https://github.com/nyaleph/sipha"
 readme = "README.md"
 keywords = ["parser", "parsing", "lsp", "language-server"]
 categories = ["parsing", "development-tools"]
+
+[lints]
+workspace = true
 
 [dependencies]
 sipha = { path = "../sipha" }

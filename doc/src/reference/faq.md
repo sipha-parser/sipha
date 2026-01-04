@@ -14,7 +14,7 @@ Sipha is designed for interactive applications like IDEs and language servers th
 
 ### Is Sipha production-ready?
 
-Sipha is currently in alpha and under active development. The API is subject to change.
+Sipha 1.0.0 provides a stable API suitable for production use. The core parsing infrastructure, incremental parsing, and all major backends (LL, LR, GLR, PEG) are stable and well-tested. We follow semantic versioning, so breaking changes will only occur in major version releases (2.0.0, 3.0.0, etc.). New features and improvements continue to be added in minor and patch releases.
 
 ## Parsing
 

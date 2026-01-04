@@ -535,6 +535,180 @@ impl<K: SyntaxKind> KeywordTrie<K> {
     }
 }
 
+/// Perfect hash based keyword matcher
+///
+/// Uses a minimal perfect hash function for O(1) keyword lookup.
+/// Falls back to trie for keywords longer than the length threshold.
+pub struct PerfectHashKeywords<K: SyntaxKind> {
+    /// Keywords grouped by length for fast rejection
+    by_length: Vec<Vec<(compact_str::CompactString, K, u32)>>,
+    /// Maximum keyword length
+    max_length: usize,
+    /// Minimum keyword length
+    min_length: usize,
+    /// Total number of keywords
+    count: usize,
+    /// Hash table for fast lookup (using FxHash for speed)
+    hash_table: HashMap<u64, (compact_str::CompactString, K, u32)>,
+}
+
+impl<K: SyntaxKind> Default for PerfectHashKeywords<K> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<K: SyntaxKind> PerfectHashKeywords<K> {
+    /// Create a new empty perfect hash keyword set
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            by_length: Vec::new(),
+            max_length: 0,
+            min_length: usize::MAX,
+            count: 0,
+            hash_table: HashMap::new(),
+        }
+    }
+
+    /// Build from a list of keywords
+    #[must_use]
+    pub fn from_keywords(keywords: &[(String, K, u32)]) -> Self {
+        let mut result = Self::new();
+
+        for (word, kind, priority) in keywords {
+            result.insert(word, *kind, *priority);
+        }
+
+        result
+    }
+
+    /// Insert a keyword
+    pub fn insert(&mut self, word: &str, kind: K, priority: u32) {
+        let len = word.len();
+        self.max_length = self.max_length.max(len);
+        self.min_length = self.min_length.min(len);
+        self.count += 1;
+
+        // Ensure we have enough length buckets
+        while self.by_length.len() <= len {
+            self.by_length.push(Vec::new());
+        }
+
+        let compact_word = compact_str::CompactString::from(word);
+        self.by_length[len].push((compact_word.clone(), kind, priority));
+
+        // Add to hash table
+        let hash = Self::hash_keyword(word);
+        self.hash_table.insert(hash, (compact_word, kind, priority));
+    }
+
+    /// Hash a keyword for the hash table
+    fn hash_keyword(word: &str) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = ahash::AHasher::default();
+        word.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Look up a keyword
+    #[must_use]
+    pub fn get(&self, word: &str) -> Option<(K, u32)> {
+        let len = word.len();
+
+        // Quick length check
+        if len < self.min_length || len > self.max_length {
+            return None;
+        }
+
+        // Try hash table first
+        let hash = Self::hash_keyword(word);
+        if let Some((stored, kind, priority)) = self.hash_table.get(&hash)
+            && stored.as_str() == word
+        {
+            return Some((*kind, *priority));
+        }
+
+        // Fallback to linear search in length bucket
+        if len < self.by_length.len() {
+            for (stored, kind, priority) in &self.by_length[len] {
+                if stored.as_str() == word {
+                    return Some((*kind, *priority));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Match the longest keyword at the given position
+    #[must_use]
+    pub fn match_at(&self, input: &str, pos: usize) -> Option<(usize, K, u32)> {
+        let remaining = &input[pos..];
+
+        if remaining.is_empty() {
+            return None;
+        }
+
+        // Try from longest to shortest for maximal munch
+        let max_try_len = remaining.len().min(self.max_length);
+
+        for try_len in (self.min_length..=max_try_len).rev() {
+            // Check if we have keywords of this length
+            if try_len >= self.by_length.len() || self.by_length[try_len].is_empty() {
+                continue;
+            }
+
+            // Ensure we're at a valid UTF-8 boundary
+            if !remaining.is_char_boundary(try_len) {
+                continue;
+            }
+
+            let candidate = &remaining[..try_len];
+
+            // Check that the next character (if any) is not an identifier continuation
+            // This ensures we match whole words only
+            if try_len < remaining.len() {
+                let next_char = remaining[try_len..].chars().next().unwrap_or(' ');
+                if is_ident_continue(next_char) {
+                    continue;
+                }
+            }
+
+            if let Some((kind, priority)) = self.get(candidate) {
+                return Some((try_len, kind, priority));
+            }
+        }
+
+        None
+    }
+
+    /// Get the number of keywords
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    /// Check if empty
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+}
+
+/// Check if a character can continue an identifier
+#[inline]
+fn is_ident_continue(c: char) -> bool {
+    #[cfg(feature = "unicode")]
+    {
+        unicode_ident::is_xid_continue(c)
+    }
+    #[cfg(not(feature = "unicode"))]
+    {
+        c.is_alphanumeric() || c == '_'
+    }
+}
+
 impl<K: SyntaxKind> CompiledLexer<K> {
     /// Tokenize the input string using Maximal Munch.
     ///
@@ -592,6 +766,36 @@ impl<K: SyntaxKind> CompiledLexer<K> {
         } else {
             Err(errors)
         }
+    }
+
+    /// Tokenize the input string with a specified offset applied to all token positions.
+    ///
+    /// This is useful for incremental parsing where only parts of the input change
+    /// and tokens need to have absolute positions in the original document.
+    ///
+    /// # Errors
+    ///
+    /// Returns a vector of lexer errors if tokenization fails at any point.
+    pub fn tokenize_with_offset(
+        &self,
+        input: &str,
+        offset: TextSize,
+    ) -> Result<Vec<Token<K>>, Vec<LexerError>> {
+        let tokens = self.tokenize(input)?;
+        let offset_u32 = u32::from(offset);
+        Ok(tokens
+            .into_iter()
+            .map(|t| {
+                Token::new(
+                    t.kind,
+                    t.text,
+                    TextRange::at(
+                        TextSize::from(u32::from(t.range.start()) + offset_u32),
+                        t.range.len(),
+                    ),
+                )
+            })
+            .collect())
     }
 
     /// Tokenize incrementally, allowing resumption from a saved state

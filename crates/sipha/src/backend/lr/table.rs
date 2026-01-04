@@ -470,6 +470,11 @@ where
                 // For table construction, process the inner expression
                 Self::expr_to_production_items(inner, productions, lhs)?;
             }
+            Expr::Capture { expr: inner, .. } => {
+                // Capture is not fully supported in LR parsers (no backreferences)
+                // Just process the inner expression
+                Self::expr_to_production_items(inner, productions, lhs)?;
+            }
             Expr::Backreference { .. } => {
                 // Backreferences are not well-supported in LR parsers
                 return Err("Backreference expressions are not supported in LR parser. \
@@ -598,6 +603,11 @@ where
             }
             Expr::SemanticPredicate { expr: inner, .. } => {
                 // Semantic predicates are checked during reduce - flatten the inner expression
+                Self::flatten_expr_to_items(inner, items)?;
+            }
+            Expr::Capture { expr: inner, .. } => {
+                // Capture is not fully supported in LR parsers (no backreferences)
+                // Just flatten the inner expression
                 Self::flatten_expr_to_items(inner, items)?;
             }
             Expr::Backreference { .. } => {

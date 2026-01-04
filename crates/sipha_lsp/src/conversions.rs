@@ -26,10 +26,24 @@ impl ToDiagnostic for ParseError {
                 let msg = format!("Ambiguous parse. Alternatives: {}", alternatives.join(", "));
                 (msg, DiagnosticSeverity::WARNING)
             }
+            Self::DepthExceeded { max_depth } => {
+                let msg = format!("Maximum parse depth exceeded: {max_depth}");
+                (msg, DiagnosticSeverity::ERROR)
+            }
+            Self::TokenLimitExceeded { max_tokens } => {
+                let msg = format!("Token limit exceeded: {max_tokens}");
+                (msg, DiagnosticSeverity::ERROR)
+            }
+            Self::LexerError { message, .. } => (message.clone(), DiagnosticSeverity::ERROR),
         };
 
+        let range = self.span().map_or_else(
+            || Range::new(Position::new(0, 0), Position::new(0, 0)),
+            |s| s.to_range(),
+        );
+
         Diagnostic {
-            range: self.span().to_range(),
+            range,
             severity: Some(severity),
             code: None,
             code_description: None,
@@ -197,4 +211,232 @@ pub fn map_common_symbol_kinds(name: &str) -> SymbolKind {
     } else {
         SymbolKind::VARIABLE // Default fallback
     }
+}
+
+// ==================== Semantic Tokens Support ====================
+
+/// Trait for mapping syntax kinds to semantic token types
+pub trait SyntaxKindToSemanticType<K: SyntaxKind> {
+    /// Convert a syntax kind to semantic token type and modifiers
+    fn to_semantic_type(kind: K) -> Option<SemanticTokenInfo>;
+}
+
+/// Information about a semantic token
+#[derive(Debug, Clone)]
+pub struct SemanticTokenInfo {
+    /// The token type index (into the legend)
+    pub token_type: u32,
+    /// Bitmask of token modifiers
+    pub token_modifiers: u32,
+}
+
+/// Standard semantic token types for common language constructs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StandardSemanticType {
+    Namespace,
+    Type,
+    Class,
+    Enum,
+    Interface,
+    Struct,
+    TypeParameter,
+    Parameter,
+    Variable,
+    Property,
+    EnumMember,
+    Event,
+    Function,
+    Method,
+    Macro,
+    Keyword,
+    Modifier,
+    Comment,
+    String,
+    Number,
+    Regexp,
+    Operator,
+}
+
+impl StandardSemanticType {
+    /// Get the standard token type name
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Namespace => "namespace",
+            Self::Type => "type",
+            Self::Class => "class",
+            Self::Enum => "enum",
+            Self::Interface => "interface",
+            Self::Struct => "struct",
+            Self::TypeParameter => "typeParameter",
+            Self::Parameter => "parameter",
+            Self::Variable => "variable",
+            Self::Property => "property",
+            Self::EnumMember => "enumMember",
+            Self::Event => "event",
+            Self::Function => "function",
+            Self::Method => "method",
+            Self::Macro => "macro",
+            Self::Keyword => "keyword",
+            Self::Modifier => "modifier",
+            Self::Comment => "comment",
+            Self::String => "string",
+            Self::Number => "number",
+            Self::Regexp => "regexp",
+            Self::Operator => "operator",
+        }
+    }
+
+    /// Get standard token types for semantic token legend
+    #[must_use]
+    pub fn standard_types() -> Vec<&'static str> {
+        vec![
+            "namespace",
+            "type",
+            "class",
+            "enum",
+            "interface",
+            "struct",
+            "typeParameter",
+            "parameter",
+            "variable",
+            "property",
+            "enumMember",
+            "event",
+            "function",
+            "method",
+            "macro",
+            "keyword",
+            "modifier",
+            "comment",
+            "string",
+            "number",
+            "regexp",
+            "operator",
+        ]
+    }
+}
+
+/// Standard semantic token modifiers
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StandardSemanticModifier {
+    Declaration,
+    Definition,
+    Readonly,
+    Static,
+    Deprecated,
+    Abstract,
+    Async,
+    Modification,
+    Documentation,
+    DefaultLibrary,
+}
+
+impl StandardSemanticModifier {
+    /// Get the modifier name
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Declaration => "declaration",
+            Self::Definition => "definition",
+            Self::Readonly => "readonly",
+            Self::Static => "static",
+            Self::Deprecated => "deprecated",
+            Self::Abstract => "abstract",
+            Self::Async => "async",
+            Self::Modification => "modification",
+            Self::Documentation => "documentation",
+            Self::DefaultLibrary => "defaultLibrary",
+        }
+    }
+
+    /// Get standard modifiers for semantic token legend
+    #[must_use]
+    pub fn standard_modifiers() -> Vec<&'static str> {
+        vec![
+            "declaration",
+            "definition",
+            "readonly",
+            "static",
+            "deprecated",
+            "abstract",
+            "async",
+            "modification",
+            "documentation",
+            "defaultLibrary",
+        ]
+    }
+
+    /// Get the bitmask value for this modifier
+    #[must_use]
+    pub const fn bitmask(&self) -> u32 {
+        1 << (*self as u32)
+    }
+}
+
+// ==================== Completion Helpers ====================
+
+/// Trait for generating completion items from grammar
+pub trait ToCompletionItem {
+    /// Convert to LSP completion item
+    fn to_completion_item(&self) -> lsp_types::CompletionItem;
+}
+
+/// Helper to create a completion item for a keyword
+#[must_use]
+pub fn keyword_completion(keyword: &str) -> lsp_types::CompletionItem {
+    lsp_types::CompletionItem {
+        label: keyword.into(),
+        kind: Some(lsp_types::CompletionItemKind::KEYWORD),
+        detail: Some("keyword".into()),
+        ..Default::default()
+    }
+}
+
+/// Helper to create a completion item for a snippet
+#[must_use]
+pub fn snippet_completion(
+    label: &str,
+    snippet: &str,
+    detail: Option<&str>,
+) -> lsp_types::CompletionItem {
+    lsp_types::CompletionItem {
+        label: label.into(),
+        kind: Some(lsp_types::CompletionItemKind::SNIPPET),
+        insert_text: Some(snippet.into()),
+        insert_text_format: Some(lsp_types::InsertTextFormat::SNIPPET),
+        detail: detail.map(Into::into),
+        ..Default::default()
+    }
+}
+
+/// Helper to create a completion item for a function
+#[must_use]
+pub fn function_completion(name: &str, signature: Option<&str>) -> lsp_types::CompletionItem {
+    lsp_types::CompletionItem {
+        label: name.into(),
+        kind: Some(lsp_types::CompletionItemKind::FUNCTION),
+        detail: signature.map(Into::into),
+        ..Default::default()
+    }
+}
+
+// ==================== Hover Helpers ====================
+
+/// Helper to create hover content
+#[must_use]
+pub fn create_hover(content: &str, range: Option<Range>) -> lsp_types::Hover {
+    lsp_types::Hover {
+        contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
+            kind: lsp_types::MarkupKind::Markdown,
+            value: content.into(),
+        }),
+        range,
+    }
+}
+
+/// Helper to create code block for hover
+#[must_use]
+pub fn code_block(language: &str, code: &str) -> String {
+    format!("```{language}\n{code}\n```")
 }

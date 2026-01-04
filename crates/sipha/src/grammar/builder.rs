@@ -505,7 +505,219 @@ where
             .cloned()
             .unwrap_or_else(|| hashbrown::HashSet::with_hasher(ahash::RandomState::new()))
     }
+
+    // ==================== Grammar Composition Methods ====================
+
+    /// Extend this grammar with rules from another grammar
+    ///
+    /// Rules from the extension grammar are added to this grammar.
+    /// If a rule already exists, it is NOT overwritten (use `override_rule` for that).
+    #[must_use]
+    pub fn extend(&self, extension: &Grammar<T, N>) -> Self {
+        let mut new_rules = self.rules.clone();
+        let mut new_interner = Rodeo::new();
+
+        // Copy existing interned strings
+        for (_, rule) in &self.rules {
+            new_interner.get_or_intern(rule.lhs.name());
+        }
+
+        // Add new rules from extension
+        for (nt, rule) in extension.rules() {
+            if !new_rules.contains_key(nt) {
+                new_rules.insert(nt.clone(), rule.clone());
+                new_interner.get_or_intern(nt.name());
+            }
+        }
+
+        Grammar {
+            rules: new_rules,
+            entry_point: self.entry_point.clone(),
+            interner: new_interner,
+            #[cfg(feature = "grammar-docs")]
+            token_descriptions: self.token_descriptions.clone(),
+        }
+    }
+
+    /// Override a rule in this grammar
+    ///
+    /// Replaces the rule for the given non-terminal with a new expression.
+    #[must_use]
+    pub fn override_rule(&self, nt: N, expr: Expr<T, N>) -> Self {
+        let mut new_rules = self.rules.clone();
+        let mut new_interner = Rodeo::new();
+
+        // Copy existing interned strings
+        for (_, rule) in &self.rules {
+            new_interner.get_or_intern(rule.lhs.name());
+        }
+
+        // Override the rule
+        new_rules.insert(
+            nt.clone(),
+            Rule {
+                lhs: nt,
+                rhs: expr,
+                metadata: RuleMetadata::default(),
+            },
+        );
+
+        Grammar {
+            rules: new_rules,
+            entry_point: self.entry_point.clone(),
+            interner: new_interner,
+            #[cfg(feature = "grammar-docs")]
+            token_descriptions: self.token_descriptions.clone(),
+        }
+    }
+
+    /// Remove rules matching a predicate
+    #[must_use]
+    pub fn remove_rules<F>(&self, predicate: F) -> Self
+    where
+        F: Fn(&N) -> bool,
+    {
+        let mut new_rules = self.rules.clone();
+        let mut new_interner = Rodeo::new();
+
+        new_rules.retain(|nt, _| !predicate(nt));
+
+        for (_, rule) in &new_rules {
+            new_interner.get_or_intern(rule.lhs.name());
+        }
+
+        Grammar {
+            rules: new_rules,
+            entry_point: self.entry_point.clone(),
+            interner: new_interner,
+            #[cfg(feature = "grammar-docs")]
+            token_descriptions: self.token_descriptions.clone(),
+        }
+    }
+
+    /// Merge two grammars, detecting conflicts
+    ///
+    /// Returns an error if there are conflicting rules (same non-terminal with different expressions).
+    ///
+    /// # Errors
+    /// Returns a `MergeConflict` error if grammars have conflicting rules.
+    pub fn merge(&self, other: &Grammar<T, N>) -> Result<Self, MergeConflict<N>>
+    where
+        Expr<T, N>: PartialEq,
+    {
+        let mut new_rules = self.rules.clone();
+        let mut new_interner = Rodeo::new();
+
+        // Copy existing interned strings
+        for (_, rule) in &self.rules {
+            new_interner.get_or_intern(rule.lhs.name());
+        }
+
+        // Check for conflicts and merge
+        for (nt, rule) in other.rules() {
+            if let Some(existing) = new_rules.get(nt) {
+                // Check if expressions are the same
+                if existing.rhs != rule.rhs {
+                    return Err(MergeConflict {
+                        non_terminal: nt.clone(),
+                    });
+                }
+                // Same rule, no conflict
+            } else {
+                new_rules.insert(nt.clone(), rule.clone());
+                new_interner.get_or_intern(nt.name());
+            }
+        }
+
+        Ok(Grammar {
+            rules: new_rules,
+            entry_point: self.entry_point.clone(),
+            interner: new_interner,
+            #[cfg(feature = "grammar-docs")]
+            token_descriptions: self.token_descriptions.clone(),
+        })
+    }
+
+    /// Create a subset grammar containing only rules reachable from a given non-terminal
+    #[must_use]
+    pub fn subset_from(&self, start: &N) -> Self {
+        use std::collections::VecDeque;
+
+        let mut reachable = hashbrown::HashSet::with_hasher(ahash::RandomState::new());
+        let mut worklist = VecDeque::new();
+
+        worklist.push_back(start.clone());
+        reachable.insert(start.clone());
+
+        // BFS to find all reachable non-terminals
+        while let Some(nt) = worklist.pop_front() {
+            if let Some(rule) = self.rules.get(&nt) {
+                let mut referenced = Vec::new();
+                collect_non_terminals_from_expr(&rule.rhs, &mut referenced);
+                for nt_ref in referenced {
+                    if reachable.insert(nt_ref.clone()) {
+                        worklist.push_back(nt_ref);
+                    }
+                }
+            }
+        }
+
+        // Build new grammar with only reachable rules
+        let mut new_rules = HashMap::with_hasher(ahash::RandomState::new());
+        let mut new_interner = Rodeo::new();
+
+        for (nt, rule) in &self.rules {
+            if reachable.contains(nt) {
+                new_rules.insert(nt.clone(), rule.clone());
+                new_interner.get_or_intern(nt.name());
+            }
+        }
+
+        Grammar {
+            rules: new_rules,
+            entry_point: start.clone(),
+            interner: new_interner,
+            #[cfg(feature = "grammar-docs")]
+            token_descriptions: self.token_descriptions.clone(),
+        }
+    }
+
+    /// Get the number of rules in the grammar
+    #[must_use]
+    pub fn rule_count(&self) -> usize {
+        self.rules.len()
+    }
+
+    /// Check if the grammar contains a rule for the given non-terminal
+    #[must_use]
+    pub fn has_rule(&self, nt: &N) -> bool {
+        self.rules.contains_key(nt)
+    }
+
+    /// Get all non-terminals in the grammar
+    pub fn non_terminals(&self) -> impl Iterator<Item = &N> {
+        self.rules.keys()
+    }
 }
+
+/// Error when merging grammars with conflicting rules
+#[derive(Debug, Clone)]
+pub struct MergeConflict<N> {
+    /// The non-terminal with conflicting rules
+    pub non_terminal: N,
+}
+
+impl<N: std::fmt::Debug> std::fmt::Display for MergeConflict<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Merge conflict: non-terminal {:?} has different definitions",
+            self.non_terminal
+        )
+    }
+}
+
+impl<N: std::fmt::Debug> std::error::Error for MergeConflict<N> {}
 
 /// Builder for constructing grammars
 pub struct GrammarBuilder<T, N> {
@@ -567,6 +779,38 @@ where
             rhs,
             metadata: RuleMetadata::new(),
         });
+        self
+    }
+
+    /// Add multiple rules at once
+    ///
+    /// This is a convenience method for adding multiple rules in a single call.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use sipha::grammar::{GrammarBuilder, Expr, NonTerminal, Token};
+    /// # #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    /// # enum MyNonTerminal { Expr, Term }
+    /// # impl NonTerminal for MyNonTerminal {
+    /// #     fn name(&self) -> &str { match self { Self::Expr => "Expr", Self::Term => "Term" } }
+    /// # }
+    /// # type MyToken = ();
+    /// # impl Token for MyToken { type Kind = (); fn kind(&self) -> Self::Kind { () } }
+    /// let grammar = GrammarBuilder::new()
+    ///     .entry_point(MyNonTerminal::Expr)
+    ///     .rules(vec![
+    ///         (MyNonTerminal::Expr, Expr::Empty),
+    ///         (MyNonTerminal::Term, Expr::Empty),
+    ///     ])
+    ///     .build()
+    ///     .expect("Failed to build grammar");
+    /// ```
+    #[must_use]
+    pub fn rules(mut self, rules: Vec<(N, Expr<T, N>)>) -> Self {
+        for (lhs, rhs) in rules {
+            self = self.rule(lhs, rhs);
+        }
         self
     }
 
@@ -710,6 +954,62 @@ pub enum GrammarError<T, N> {
 
     #[error("Undefined rule: {0:?}")]
     UndefinedRule(N),
+}
+
+/// Collect all non-terminals referenced in an expression
+fn collect_non_terminals_from_expr<T: Token, N: NonTerminal>(
+    expr: &Expr<T, N>,
+    result: &mut Vec<N>,
+) {
+    match expr {
+        Expr::Rule(nt) => result.push(nt.clone()),
+        Expr::Seq(items) | Expr::Choice(items) => {
+            for item in items {
+                collect_non_terminals_from_expr(item, result);
+            }
+        }
+        Expr::Opt(inner)
+        | Expr::Repeat { expr: inner, .. }
+        | Expr::Label { expr: inner, .. }
+        | Expr::Node { expr: inner, .. }
+        | Expr::Flatten(inner)
+        | Expr::Prune(inner)
+        | Expr::Lookahead(inner)
+        | Expr::NotLookahead(inner)
+        | Expr::Cut(inner)
+        | Expr::RecoveryPoint { expr: inner, .. }
+        | Expr::SemanticPredicate { expr: inner, .. } => {
+            collect_non_terminals_from_expr(inner, result);
+        }
+        Expr::Separated {
+            item, separator, ..
+        } => {
+            collect_non_terminals_from_expr(item, result);
+            collect_non_terminals_from_expr(separator, result);
+        }
+        Expr::Delimited {
+            open,
+            content,
+            close,
+            ..
+        } => {
+            collect_non_terminals_from_expr(open, result);
+            collect_non_terminals_from_expr(content, result);
+            collect_non_terminals_from_expr(close, result);
+        }
+        Expr::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_non_terminals_from_expr(condition, result);
+            collect_non_terminals_from_expr(then_expr, result);
+            if let Some(e) = else_expr {
+                collect_non_terminals_from_expr(e, result);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]

@@ -1,9 +1,11 @@
 mod config;
+mod driver;
 mod parser;
 mod state;
 mod table;
 
 pub use config::LrConfig;
+pub use driver::{LrDecision, LrDriver, LrDriverState};
 pub use state::LrParserState;
 pub use table::{Action, LrParsingTable, Production};
 

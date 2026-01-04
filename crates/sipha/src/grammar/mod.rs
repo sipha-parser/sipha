@@ -91,6 +91,7 @@
 //! - **Semantic Predicates**: [`predicate`] - Context-sensitive parsing predicates
 
 pub mod analysis;
+pub mod analyzer;
 pub mod builder;
 pub mod capture;
 pub mod expr;
@@ -103,6 +104,7 @@ pub mod validate;
 pub mod docs;
 
 pub use analysis::*;
+pub use analyzer::*;
 pub use builder::*;
 pub use capture::*;
 pub use expr::*;

@@ -1,8 +1,10 @@
 mod config;
+mod driver;
 mod parser;
 mod table;
 
 pub use config::LlConfig;
+pub use driver::{LlDecision, LlDriver, LlDriverState, LlStackItem};
 pub use parser::LlParserState;
 use table::ParsingTable;
 

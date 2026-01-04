@@ -85,6 +85,24 @@ impl std::ops::Sub<Self> for TextSize {
     }
 }
 
+impl From<u32> for TextSize {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<TextSize> for u32 {
+    fn from(value: TextSize) -> Self {
+        value.0
+    }
+}
+
+impl From<TextSize> for usize {
+    fn from(value: TextSize) -> Self {
+        value.0 as usize
+    }
+}
+
 impl TextRange {
     /// Create a new `TextRange` from start and end positions.
     ///

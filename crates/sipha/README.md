@@ -8,9 +8,9 @@ A flexible, incremental parsing library for Rust with support for multiple parsi
 
 📚 **[Read the Book](https://sipha-parser.github.io/sipha/)** - Comprehensive guide and documentation
 
-## Status: 0.5.0 Release
+## Status: 1.0.0 Release
 
-Sipha 0.5.0 provides a stable foundation for incremental parsing with multiple backends. The core API is stable, though some advanced features may continue to evolve. We welcome feedback and contributions!
+Sipha 1.0.0 provides a stable API for incremental parsing with multiple backends. The core parsing infrastructure, incremental parsing, and all major backends (LL, LR, GLR, PEG) are stable and production-ready. We follow semantic versioning, ensuring API stability going forward. We welcome feedback and contributions!
 
 ## Key Features
 
@@ -30,7 +30,7 @@ This makes Sipha perfect for building language servers, IDEs, and other tools th
 - **Multiple parsing backends**: Choose from LL(k), LR, and more (via feature flags)
 - **Immutable syntax trees**: Green/red tree representation for efficient manipulation
 - **Error recovery**: Configurable error recovery strategies for robust parsing
-- **Flexible grammar definition**: Builder API for defining your grammar
+- **Flexible grammar definition**: Builder API and declarative Grammar DSL macro for defining grammars
 - **Unicode support**: Full Unicode support for identifiers and text (optional)
 - **Rich diagnostics**: Beautiful error messages with miette integration (optional)
 - **Tree traversal**: Visitor patterns and query APIs for working with syntax trees
@@ -41,14 +41,14 @@ Add Sipha to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sipha = "0.5.0"
+sipha = "1.0.0"
 ```
 
 Or with specific features:
 
 ```toml
 [dependencies]
-sipha = { version = "0.5.0", features = ["diagnostics", "unicode", "backend-ll"] }
+sipha = { version = "1.0.0", features = ["diagnostics", "unicode", "backend-ll"] }
 ```
 
 ## Quick Start
@@ -173,6 +173,70 @@ let result = parser.parse(&tokens, ArithNonTerminal::Expr);
 
 For a complete working example, see [`examples/basic_arithmetic.rs`](crates/sipha/examples/basic_arithmetic.rs).
 
+## Grammar DSL
+
+Sipha provides a declarative **Grammar DSL** macro that makes it easy to define grammars using an EBNF-like syntax. This is an alternative to the builder API that offers a more concise and readable way to define your grammar.
+
+### Using the Grammar DSL
+
+Instead of using `GrammarBuilder`, you can define your grammar declaratively:
+
+```rust
+use sipha::grammar;
+
+grammar! {
+    #[entry]
+    Expr = Term ((Plus | Minus) Term)*;
+    
+    Term = Factor ((Star | Slash) Factor)*;
+    
+    Factor = Number
+           | Ident
+           | LParen Expr RParen;
+    
+    // Token patterns with trivia annotation
+    #[trivia]
+    @Whitespace = r"\s+";
+    
+    @Number = r"[0-9]+";
+    @Ident = r"[a-zA-Z_][a-zA-Z0-9_]*";
+    @Plus = "+";
+    @Minus = "-";
+    @Star = "*";
+    @Slash = "/";
+    @LParen = "(";
+    @RParen = ")";
+}
+```
+
+The `grammar!` macro generates the necessary types and grammar structure at compile time. You can then use the generated grammar with any parser backend.
+
+### Grammar DSL Features
+
+- **EBNF-like syntax**: Familiar grammar notation similar to EBNF
+- **Token patterns**: Define tokens with regex patterns or literals
+- **Trivia support**: Mark tokens as trivia (whitespace, comments) with `#[trivia]`
+- **Entry point**: Mark the starting rule with `#[entry]`
+- **Repetition operators**: Use `*` (zero or more), `+` (one or more), `?` (optional)
+- **Grouping**: Use parentheses for grouping expressions
+- **Alternatives**: Use `|` for choice expressions
+
+### When to Use Grammar DSL vs Builder API
+
+- **Use Grammar DSL** when:
+  - You want a concise, readable grammar definition
+  - You prefer declarative syntax similar to EBNF
+  - Your grammar is relatively static
+
+- **Use Builder API** when:
+  - You need dynamic grammar construction
+  - You want programmatic control over rule creation
+  - You're building grammars at runtime
+
+Both approaches generate the same grammar structure and are fully compatible with all parser backends.
+
+For more details, see the [Grammar DSL documentation](https://sipha-parser.github.io/sipha/core-concepts/grammars.html#grammar-dsl) and the [Grammar DSL example](crates/sipha/examples/grammar_dsl.rs).
+
 ## Incremental Parsing
 
 Incremental parsing is Sipha's core strength. It allows you to efficiently update your parse tree when code changes, rather than re-parsing everything from scratch.
@@ -220,7 +284,7 @@ The parser automatically:
 
 ### Current Status
 
-Incremental parsing is fully implemented in version 0.5.0 with complete node reuse and cache management:
+Incremental parsing is fully implemented in version 1.0.0 with complete node reuse and cache management:
 
 - [X] **Node reuse**: Unchanged subtrees are automatically identified and reused from previous parses
 - [X] **Cache population**: Parse results are cached and can be reused for future parses
@@ -372,7 +436,7 @@ For batch parsing (non-interactive), Sipha is competitive with other Rust parsin
 | Multiple backends | ✅ | ❌ | ❌ | ❌ |
 | Syntax trees | ✅ | ✅ | ❌ | ✅ |
 | Error recovery | ✅ | ✅ | ✅ | ✅ |
-| Grammar DSL | ❌ | ✅ | ❌ | ✅ |
+| Grammar DSL | ✅ | ✅ | ❌ | ✅ |
 | Zero-copy | Partial | ✅ | ✅ | ❌ |
 
 **When to use Sipha:**
@@ -385,13 +449,12 @@ For batch parsing (non-interactive), Sipha is competitive with other Rust parsin
 **When to consider alternatives:**
 - Simple one-off parsers (pest or nom might be simpler)
 - Maximum performance for batch parsing (nom might be faster)
-- Prefer declarative grammar DSLs (pest or lalrpop)
 
 ## Future Features
 
 Sipha continues to evolve. Planned features for future releases include:
 
-### Short Term (Post-0.5.0)
+### Short Term (Post-1.0.0)
 - **Enhanced error recovery**: More sophisticated recovery strategies
 - **Better diagnostics**: Improved error messages and suggestions
 - **Performance optimizations**: Further speed improvements for large files
@@ -408,7 +471,7 @@ Sipha continues to evolve. Planned features for future releases include:
 
 ## Contributing
 
-Contributions are welcome! Sipha 0.5.0 provides a solid foundation, and there are many opportunities to help:
+Contributions are welcome! Sipha 1.0.0 provides a solid foundation, and there are many opportunities to help:
 
 - **Bug reports**: Found a bug? Please open an issue!
 - **Feature requests**: Have an idea? We'd love to hear it!
@@ -453,5 +516,5 @@ Sipha is inspired by:
 
 ---
 
-**Note**: Sipha 0.5.0 provides a complete incremental parsing solution. The core API is stable, and we continue to add features and improvements based on user feedback.
+**Note**: Sipha 1.0.0 provides a complete incremental parsing solution. The core API is stable, and we continue to add features and improvements based on user feedback.
 

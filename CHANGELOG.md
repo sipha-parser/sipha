@@ -7,7 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-01-04
+
+### Major Release: API Stability
+
+Sipha 1.0.0 marks the transition to a stable API. All public APIs are now considered stable and will follow semantic versioning principles. This release includes important improvements, bug fixes, and the removal of deprecated APIs.
+
 ### Added
+
+- **Grammar DSL Documentation and Promotion**: Comprehensive documentation and promotion of the Grammar DSL macro
+  - Updated comparison table to show Grammar DSL as ✅
+  - Added prominent Grammar DSL section to main README
+  - Added Grammar DSL documentation to the book
+  - Created `grammar_dsl.rs` example comparing Grammar DSL vs Builder API
+  - Updated all README files with Grammar DSL examples
+
+- **Feature Stabilization**: Stabilized experimental features
+  - Moved `serialize` feature from experimental to stable
+  - Moved `arena` feature from experimental to stable
+  - Added comprehensive documentation for both features
+  - Updated feature flags documentation with usage examples
+
+- **Real-World Examples**: Added comprehensive examples
+  - Created `json_parser.rs` example demonstrating JSON parsing
+  - Shows complete lexer and grammar setup for a real-world format
+
+- **Enhanced Error Recovery and Diagnostics**: Improved error handling and reporting
+  - Added `diagnostics` module with "Did you mean?" suggestions
+  - Implemented string similarity matching for token suggestions
+  - Added context-aware error reporting with surrounding code
+  - Created `SynchronizationSetRecovery` strategy for better error recovery
+  - Enhanced `ParseError` with `did_you_mean_suggestion()` and `suggestions()` methods
+  - Added error formatting utilities with line/column information
+
+- **Performance Benchmarking Suite**: Comprehensive benchmarking infrastructure
+  - Created `comparison_bench.rs` for comparing against other parsers
+  - Created `memory_bench.rs` for memory usage profiling
+  - Added benchmarks for incremental parsing performance
+  - Added backend comparison benchmarks
+  - Infrastructure for measuring zero-copy effectiveness
+
+- **Test Coverage Expansion**: Enhanced testing infrastructure
+  - Created `property_tests.rs` with property-based tests for all backends
+  - Added property tests for LL, LR, and PEG parsers
+  - Added error recovery property tests
+  - Expanded test coverage for edge cases
+
+- **API Ergonomics Improvements**: Better developer experience
+  - Added `GrammarBuilder::rules()` convenience method for adding multiple rules
+  - Improved builder patterns for common use cases
+  - Enhanced error messages with suggestions
+
+- **Incremental Lexing**: Enhanced incremental lexing support
+  - Created comprehensive test suite for incremental lexing
+  - Added `incremental_lexing.rs` example demonstrating token reuse
+  - Enhanced documentation for incremental lexing features
+  - Improved integration with incremental parsing
 
 - **PEG Parser Backend** (`backend-peg` feature): Parsing Expression Grammar parser with packrat memoization
   - Ordered choice semantics (first match wins)
@@ -19,9 +74,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configurable memoization cache size limits
   - Comprehensive test coverage
 
+- **Trivia Annotation Support in Grammar Macro**: The `grammar!` macro now supports `#[trivia]` attribute for token definitions
+  - Tokens marked with `#[trivia]` automatically have `is_trivia()` return `true`
+  - Enables proper trivia handling in generated syntax kinds
+  - Example: `#[trivia] @Whitespace = r"\s+";`
+
+- **API Stability Documentation**: Comprehensive stability policy documentation
+  - Semantic versioning guarantees
+  - Deprecation policy
+  - Feature flag stability classification
+  - MSRV policy
+
+- **Migration Guide**: Complete migration guide from 0.5.x to 1.0.0
+  - Breaking changes documentation
+  - Code migration examples
+  - Compatibility notes
+
+### Changed
+
+- **Incremental Parser API**: `parse_incremental` now accepts an optional grammar parameter
+  - Grammar parameter changed from separate method to `Option<&Grammar>` parameter
+  - Enables cache population when grammar is provided
+  - More consistent API design
+
+### Removed
+
+- **Deprecated `parse_incremental_with_grammar` Method**: Removed in favor of `parse_incremental` with `Some(grammar)`
+  - This was a convenience wrapper that is no longer needed
+  - Migration: Use `parse_incremental(..., Some(&grammar))` instead
+  - All internal usages have been updated
+
+### Fixed
+
+- **PEG Incremental Parsing**: Improved node reuse support in PEG backend
+  - Updated test `test_peg_incremental_reuses_nodes` to properly test node reuse scenarios
+  - Test re-enabled and passing
+  - Better handling of incremental parsing sessions
+
 ### Improved
 
-- **Documentation Coverage**: Significantly improved documentation coverage across the codebase
+- **Documentation**: Enhanced documentation across the board
+  - Grammar DSL prominently featured in all documentation
+  - Feature flags documentation expanded with examples
+  - Stability documentation updated
+  - Error handling documentation improved with diagnostics examples
+  - Significantly improved documentation coverage across the codebase
   - Added comprehensive documentation to `TrailingSeparator` enum with usage examples
   - Documented all `TextSize` and `TextRange` methods with examples
   - Enhanced documentation for parser backends (`LlParser`, `LrParser`, `GlrParser`) with usage examples
@@ -29,6 +126,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documented all `Expr` builder methods (`token`, `rule`, `any`, `eof`, `empty`, `opt`, `star`, `plus`, `separated`, `delimited`, `lookahead`, `not_lookahead`)
   - Improved configuration struct documentation (`LlConfig`, `LrConfig`) with examples
   - Fixed broken intra-doc link in lexer module
+  - Updated all documentation to reflect 1.0.0 status
+  - FAQ updated to indicate production-ready status
+  - README files updated with 1.0.0 information
+  - Migration guide aligned with actual release history
+  - API stability policy documented
+
+### Breaking Changes
+
+- **Removed `parse_incremental_with_grammar`**: Use `parse_incremental` with `Some(&grammar)` instead
+  - See migration guide for details
+  - All test and benchmark code has been updated
+
+### Migration Notes
+
+For users upgrading from 0.5.x:
+
+1. Replace `parse_incremental_with_grammar` calls:
+   ```rust
+   // Before
+   parser.parse_incremental_with_grammar(&tokens, old_tree, &edits, entry, &grammar)
+   
+   // After
+   parser.parse_incremental(&tokens, old_tree, &edits, entry, Some(&grammar))
+   ```
+
+2. Optional: Add trivia annotations to grammar macros:
+   ```rust
+   #[trivia]
+   @Whitespace = r"\s+";
+   ```
+
+See the [Migration Guide](doc/src/reference/migration-guide.md) for complete details.
 
 ## [0.5.0] - 2025-11-29
 
@@ -338,4 +467,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Collapsed multiple nested if statements
   - Fixed various other style and documentation issues
 
+[1.0.0]: https://github.com/nyaleph/sipha/releases/tag/v1.0.0
 [0.5.0]: https://github.com/nyaleph/sipha/releases/tag/v0.5.0

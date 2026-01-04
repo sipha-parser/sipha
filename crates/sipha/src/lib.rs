@@ -1,3 +1,5 @@
+// Allow false positive warnings from derive(Clone) on enums with named fields
+#![allow(unused_assignments)]
 //! # Sipha
 //!
 //! A flexible, incremental parsing library for Rust with support for multiple parsing algorithms.
@@ -153,17 +155,22 @@
 //! - [`error`] - Error types and diagnostics
 //! - [`incremental`] - Incremental parsing support
 
+pub mod arena;
 pub mod backend;
 pub mod error;
 pub mod grammar;
 pub mod incremental;
+pub mod intern;
 pub mod lexer;
 pub mod parser;
 pub mod syntax;
+pub mod testing;
 
 // Re-export commonly used types
+pub use arena::{GreenElementData, GreenNodeData, GreenTokenData, SharedGreenNode, TreeArena};
 pub use error::{LexerError, ParseError, ParseMetrics, ParseResult};
 pub use grammar::{Expr, Grammar, GrammarBuilder, NonTerminal, Rule, Token as GrammarToken};
+pub use intern::{InternedStr, InternedToken, Interner, ThreadSafeInterner};
 pub use lexer::{CompiledLexer, LexerBuilder, Token};
 pub use syntax::{
     GreenNode, GreenNodeBuilder, GreenToken, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken,

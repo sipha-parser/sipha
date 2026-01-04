@@ -1,18 +1,21 @@
 [package]
 name = "sipha_derive"
-version = "0.5.0"
+version = "1.0.0"
 edition = "2024"
 authors = ["Chloe Magnier <contact@nyaleph.com>"]
-description = "Procedural macros for Sipha AST generation"
+description = "Procedural macros for Sipha (AST generation and grammar DSL)"
 license = "MIT"
 repository = "https://github.com/nyaleph/sipha"
 homepage = "https://github.com/nyaleph/sipha"
 readme = "README.md"
-keywords = ["parser", "parsing", "macro", "derive", "ast"]
+keywords = ["parser", "parsing", "macro", "derive", "ast", "grammar", "dsl"]
 categories = ["parsing", "development-tools", "macros"]
 
 [lib]
 proc-macro = true
+
+[lints]
+workspace = true
 
 [dependencies]
 proc-macro2 = "1.0"

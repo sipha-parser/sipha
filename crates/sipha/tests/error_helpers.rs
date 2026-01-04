@@ -104,7 +104,7 @@ where
     result
         .errors
         .iter()
-        .filter(|e| e.span().intersect(span).is_some())
+        .filter(|e| e.span().map(|s| s.intersect(span)).flatten().is_some())
         .collect()
 }
 

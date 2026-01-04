@@ -1,0 +1,29 @@
+[package]
+name = "sipha-tools"
+version = "1.0.0"
+edition = "2021"
+description = "Developer tools for Sipha parser library"
+license = "MIT"
+repository = "https://github.com/nyaleph/sipha"
+readme = "README.md"
+keywords = ["parser", "grammar", "visualization", "tools"]
+categories = ["development-tools", "parsing"]
+
+[[bin]]
+name = "sipha-viz"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+sipha = { path = "../sipha", features = ["grammar-docs"] }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+syn = { version = "2.0", features = ["full", "visit", "visit-mut"] }
+quote = "1.0"
+
+[dev-dependencies]
+tempfile = "3.10"
+

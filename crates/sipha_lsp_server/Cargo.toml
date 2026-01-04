@@ -1,0 +1,27 @@
+[package]
+name = "sipha-lsp-server"
+version = "1.0.0"
+edition = "2021"
+description = "High-level LSP server framework for Sipha parsers"
+license = "MIT"
+repository = "https://github.com/nyaleph/sipha"
+readme = "README.md"
+keywords = ["lsp", "language-server", "parser", "incremental"]
+categories = ["development-tools", "parsing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+sipha = { path = "../sipha" }
+sipha_lsp = { path = "../sipha_lsp" }
+lsp-server = "0.7"
+lsp-types = "0.97"
+url = "2.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ahash = "0.8"
+
+[dev-dependencies]
+tempfile = "3.10"
+

@@ -75,6 +75,7 @@
 
 - [API Overview](reference/api-overview.md)
 - [Feature Flags](reference/feature-flags.md)
+- [Migration Guide](reference/migration-guide.md)
 - [FAQ](reference/faq.md)
 - [Glossary](reference/glossary.md)
 - [Cheat Sheet](reference/cheat-sheet.md)

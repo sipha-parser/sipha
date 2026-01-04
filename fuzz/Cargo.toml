@@ -1,6 +1,6 @@
 [package]
 name = "sipha-fuzz"
-version = "0.5.0"
+version = "1.0.0"
 edition = "2024"
 description = "Fuzzing targets for Sipha parser library"
 license = "MIT"
@@ -12,8 +12,11 @@ categories = ["parsing", "development-tools"]
 [package.metadata]
 cargo-fuzz = true
 
+[lints]
+workspace = true
+
 [dependencies]
-sipha = { path = "../crates/sipha", features = ["backend-ll", "backend-glr"] }
+sipha = { path = "../crates/sipha", features = ["backend-ll", "backend-lr", "backend-peg", "backend-glr"] }
 libfuzzer-sys = "0.4"
 compact_str = "0.9"
 
@@ -30,5 +33,15 @@ test = false
 [[bin]]
 name = "glr_parser_fuzz"
 path = "fuzz_targets/glr_parser_fuzz.rs"
+test = false
+
+[[bin]]
+name = "lr_parser_fuzz"
+path = "fuzz_targets/lr_parser_fuzz.rs"
+test = false
+
+[[bin]]
+name = "peg_parser_fuzz"
+path = "fuzz_targets/peg_parser_fuzz.rs"
 test = false
 

@@ -441,21 +441,18 @@ where
     }
 
     // Use the final root from the stack, or try to get it from the stack
-    let root = final_root.map_or_else(
-        || {
-            if let Some((_, nodes)) = stack.pop() {
-                // Fallback: try to get root from stack
-                nodes
-                    .into_iter()
-                    .next()
-                    .unwrap_or_else(|| GreenNode::new(root_kind, [], TextSize::zero()))
-            } else {
-                // If parsing failed, create an error node
-                GreenNode::new(root_kind, [], TextSize::zero())
-            }
-        },
-        |root_node| root_node,
-    );
+    let root = final_root.unwrap_or_else(|| {
+        if let Some((_, nodes)) = stack.pop() {
+            // Fallback: try to get root from stack
+            nodes
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| GreenNode::new(root_kind, [], TextSize::zero()))
+        } else {
+            // If parsing failed, create an error node
+            GreenNode::new(root_kind, [], TextSize::zero())
+        }
+    });
 
     // Cache the final result if parsing was successful (no errors)
     if errors.is_empty() {
