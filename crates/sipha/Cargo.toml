@@ -19,7 +19,7 @@ workspace = true
 # Core
 compact_str = "0.9"
 lasso = { version = "0.7", features = ["multi-threaded"] }
-lru = "0.12"
+lru = "0.16"
 smallvec = { version = "1.13", features = ["serde"] }
 hashbrown = "0.14.5"
 ahash = "0.8"
