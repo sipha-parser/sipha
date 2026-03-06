@@ -1,0 +1,23 @@
+[package]
+name = "sipha"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+miette = ["dep:miette"]
+
+[dependencies]
+sipha-macros = { path = "../sipha-macros" }
+miette = { version = "7", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[example]]
+name = "miette_errors"
+required-features = ["miette"]
+
+[[bench]]
+name = "parse"
+harness = false
