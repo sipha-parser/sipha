@@ -1,0 +1,8 @@
+[package]
+name = "sipha-display"
+version = "0.1.0"
+edition = "2021"
+description = "Utilities to display sipha grammars as PEG text or DOT graphs"
+
+[dependencies]
+sipha = { path = "../sipha" }
