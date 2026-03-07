@@ -373,6 +373,8 @@ pub enum Severity {
     Error,
     /// Warning: likely mistake or bad style (e.g. unused variable).
     Warning,
+    /// Deprecation: use of deprecated syntax or API (e.g. deprecated operators).
+    Deprecation,
     /// Informational note.
     Note,
 }
@@ -413,6 +415,7 @@ impl SemanticDiagnostic {
         let severity_label = match self.severity {
             Severity::Error => "error",
             Severity::Warning => "warning",
+            Severity::Deprecation => "deprecation",
             Severity::Note => "note",
         };
         let code_part = self
@@ -456,6 +459,17 @@ impl SemanticDiagnostic {
             span,
             message: message.into(),
             severity: Severity::Warning,
+            code: None,
+            file_id: None,
+        }
+    }
+
+    /// Build a diagnostic for use of deprecated syntax or API.
+    pub fn deprecation(span: Span, message: impl Into<String>) -> Self {
+        Self {
+            span,
+            message: message.into(),
+            severity: Severity::Deprecation,
             code: None,
             file_id: None,
         }

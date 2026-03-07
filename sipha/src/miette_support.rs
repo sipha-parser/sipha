@@ -165,6 +165,7 @@ impl MietteSemanticDiagnostic {
         let severity = match diagnostic.severity {
             crate::error::Severity::Error => miette::Severity::Error,
             crate::error::Severity::Warning => miette::Severity::Warning,
+            crate::error::Severity::Deprecation => miette::Severity::Warning,
             crate::error::Severity::Note => miette::Severity::Advice,
         };
         Self {
