@@ -262,7 +262,15 @@ pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenN
     for ev in events {
         match *ev {
             TreeEvent::NodeOpen { kind, field, .. } => {
-                stack.push((kind, field, Vec::new()));
+                // Move trailing trivia from the current top node into the new node as leading trivia.
+                // This makes doc comments (and other trivia) that precede a declaration appear as
+                // leading_trivia() on that declaration, so tools can associate them without walking siblings.
+                let leading = if let Some((_, _, children)) = stack.last_mut() {
+                    drain_trailing_trivia(children)
+                } else {
+                    Vec::new()
+                };
+                stack.push((kind, field, leading));
             }
 
             TreeEvent::NodeClose { .. } => {
@@ -307,6 +315,19 @@ pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenN
 type BuildElem = (Option<FieldId>, GreenElement);
 /// Stack entry for building: (kind, field, children).
 type BuildStackEntry = (SyntaxKind, Option<FieldId>, Vec<BuildElem>);
+
+/// Remove and return trailing trivia tokens from `children` (from the end, while elements are trivia).
+fn drain_trailing_trivia(children: &mut Vec<BuildElem>) -> Vec<BuildElem> {
+    let n = children
+        .iter()
+        .rev()
+        .take_while(|(_, el)| el.is_trivia())
+        .count();
+    if n == 0 {
+        return Vec::new();
+    }
+    children.drain(children.len() - n..).collect()
+}
 
 #[inline]
 #[allow(clippy::ptr_arg)] // need Vec for .push

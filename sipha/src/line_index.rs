@@ -149,6 +149,60 @@ impl LineIndex {
         let (line_0, utf16_col) = self.line_col_utf16(source, offset);
         (line_0 + 1, utf16_col + 1)
     }
+
+    /// Convert (line, character) in UTF-16 code units to byte offset.
+    ///
+    /// Returns `None` if the line is out of range or the position is past the end of the line.
+    /// Useful for LSP (client sends line/character; server needs byte offset).
+    #[cfg(feature = "utf16")]
+    #[must_use]
+    pub fn line_col_utf16_to_byte(
+        &self,
+        source: &str,
+        line: u32,
+        character: u32,
+    ) -> Option<Pos> {
+        let line_start = self.line_start(line) as usize;
+        let source_len = source.len();
+        let line_span = self.line_range(line, source_len);
+        let line_end = line_span.end as usize;
+        let line_src = source.get(line_start..line_end)?;
+        let mut utf16_col = 0u32;
+        for (i, c) in line_src.char_indices() {
+            if utf16_col >= character {
+                return Some(Pos::try_from(line_start + i).ok()?);
+            }
+            utf16_col += u32::try_from(c.len_utf16()).ok()?;
+        }
+        Some(Pos::try_from(line_start + line_src.len()).ok()?)
+    }
+
+    /// Prefix of the line up to (line, character) in UTF-16 code units.
+    ///
+    /// Returns `None` if the line is out of range. Useful for completion (prefix before cursor).
+    #[cfg(feature = "utf16")]
+    #[must_use]
+    pub fn line_prefix_utf16(
+        &self,
+        source: &str,
+        line: u32,
+        character: u32,
+    ) -> Option<String> {
+        let line_start = self.line_start(line) as usize;
+        let line_span = self.line_range(line, source.len());
+        let line_end = line_span.end as usize;
+        let line_src = source.get(line_start..line_end)?;
+        let mut utf16_count = 0u32;
+        let mut end = line_src.len();
+        for (i, c) in line_src.char_indices() {
+            if utf16_count >= character {
+                end = i;
+                break;
+            }
+            utf16_count += u32::try_from(c.len_utf16()).unwrap_or(0);
+        }
+        Some(line_src[..end].to_string())
+    }
 }
 
 #[cfg(test)]

@@ -81,6 +81,7 @@ pub mod utf16;
 pub mod expr;
 pub mod line_index;
 pub mod parsed_doc;
+pub mod tree_display;
 pub mod trivia;
 pub mod source_map;
 
@@ -110,6 +111,7 @@ pub mod prelude {
     pub use crate::line_index::LineIndex;
     pub use crate::memo::MemoTable;
     pub use crate::parsed_doc::ParsedDoc;
+    pub use crate::tree_display::{format_syntax_tree, TreeDisplayOptions};
     pub use crate::trivia::{newline, replace_leading_trivia, replace_trailing_trivia, space};
     pub use crate::source_map::{map_offset, SpanMap, SpanMapping};
 
