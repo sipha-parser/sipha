@@ -10,7 +10,7 @@ use crate::types::{CaptureEvent, Pos, Span, Tag};
 pub struct CaptureNode {
     pub tag: Tag,
     pub span: Span,
-    pub children: Vec<CaptureNode>,
+    pub children: Vec<Self>,
 }
 
 impl CaptureNode {
@@ -19,9 +19,15 @@ impl CaptureNode {
     /// Events form a well-nested sequence of `Open`/`Close` pairs.
     /// Returns the top-level nodes (may be multiple if the grammar emits
     /// sibling captures at the root level).
-    pub fn build_forest(events: &[CaptureEvent]) -> Vec<CaptureNode> {
-        let mut stack: Vec<(Tag, Pos, Vec<CaptureNode>)> = Vec::new();
-        let mut roots: Vec<CaptureNode> = Vec::new();
+    ///
+    /// # Panics
+    ///
+    /// Panics if `events` has a `Close` without a matching `Open`, or if
+    /// unclosed regions remain at the end (debug builds only for the latter).
+    #[must_use]
+    pub fn build_forest(events: &[CaptureEvent]) -> Vec<Self> {
+        let mut stack: Vec<(Tag, Pos, Vec<Self>)> = Vec::new();
+        let mut roots: Vec<Self> = Vec::new();
 
         for &ev in events {
             match ev {
@@ -33,7 +39,7 @@ impl CaptureNode {
                         .pop()
                         .expect("capture event mismatch: Close without Open");
                     debug_assert_eq!(open_tag, tag, "mismatched capture tags");
-                    let node = CaptureNode {
+                    let node = Self {
                         tag,
                         span: Span::new(start, pos),
                         children,
@@ -51,13 +57,14 @@ impl CaptureNode {
     }
 
     /// Convenience: extract the text of this node from the input buffer.
+    #[must_use]
     #[inline]
     pub fn text<'a>(&self, input: &'a [u8]) -> &'a [u8] {
         self.span.as_slice(input)
     }
 
     /// Depth-first traversal, calling `f` on every node.
-    pub fn walk(&self, f: &mut impl FnMut(&CaptureNode)) {
+    pub fn walk(&self, f: &mut impl FnMut(&Self)) {
         f(self);
         for child in &self.children {
             child.walk(f);
@@ -65,7 +72,8 @@ impl CaptureNode {
     }
 
     /// Find the first descendant (or self) with the given `tag`.
-    pub fn find(&self, tag: Tag) -> Option<&CaptureNode> {
+    #[must_use]
+    pub fn find(&self, tag: Tag) -> Option<&Self> {
         if self.tag == tag {
             return Some(self);
         }
@@ -73,13 +81,14 @@ impl CaptureNode {
     }
 
     /// Collect all descendants (including self) with the given `tag`.
-    pub fn find_all(&self, tag: Tag) -> Vec<&CaptureNode> {
+    #[must_use]
+    pub fn find_all(&self, tag: Tag) -> Vec<&Self> {
         let mut result = Vec::new();
         self.collect_all(tag, &mut result);
         result
     }
 
-    fn collect_all<'a>(&'a self, tag: Tag, out: &mut Vec<&'a CaptureNode>) {
+    fn collect_all<'a>(&'a self, tag: Tag, out: &mut Vec<&'a Self>) {
         if self.tag == tag {
             out.push(self);
         }

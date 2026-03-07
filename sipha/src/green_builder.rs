@@ -27,7 +27,8 @@ pub struct GreenBuilder {
 impl GreenBuilder {
     /// Start building a node with the given kind.
     #[inline]
-    pub fn new(kind: SyntaxKind) -> Self {
+    #[must_use] 
+    pub const fn new(kind: SyntaxKind) -> Self {
         Self {
             kind,
             children: Vec::new(),
@@ -51,21 +52,22 @@ impl GreenBuilder {
 
     /// Build a child node with a closure and add it.
     #[inline]
-    pub fn node(&mut self, kind: SyntaxKind, f: impl FnOnce(&mut GreenBuilder)) -> &mut Self {
-        let child = GreenBuilder::node_standalone(kind, f);
+    pub fn node(&mut self, kind: SyntaxKind, f: impl FnOnce(&mut Self)) -> &mut Self {
+        let child = Self::node_standalone(kind, f);
         self.children.push(GreenElement::Node(child));
         self
     }
 
     /// Finish and return the built node.
     #[inline]
+    #[must_use] 
     pub fn finish(mut self) -> Arc<GreenNode> {
         GreenNode::new(self.kind, std::mem::take(&mut self.children))
     }
 
     /// Build a node with the given kind and children (standalone, not as a child).
-    pub fn node_standalone(kind: SyntaxKind, f: impl FnOnce(&mut GreenBuilder)) -> Arc<GreenNode> {
-        let mut b = GreenBuilder::new(kind);
+    pub fn node_standalone(kind: SyntaxKind, f: impl FnOnce(&mut Self)) -> Arc<GreenNode> {
+        let mut b = Self::new(kind);
         f(&mut b);
         b.finish()
     }

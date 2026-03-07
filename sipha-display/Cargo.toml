@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "Utilities to display sipha grammars as PEG text or DOT graphs"
 
+[lints]
+workspace = true
+
 [dependencies]
 sipha = { path = "../sipha" }

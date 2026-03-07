@@ -4,7 +4,7 @@
 //!
 //! - Returns immediately if the input doesn't have enough bytes.
 //! - For literals ≥ 32 bytes on AVX2 machines, compares 32 bytes per cycle.
-//! - For literals ≥ 16 bytes on SSE2 machines (all x86_64), compares 16 bytes
+//! - For literals ≥ 16 bytes on SSE2 machines (all `x86_64`), compares 16 bytes
 //!   per cycle.
 //! - Falls back to a plain slice comparison on other platforms, which the
 //!   compiler already lowers to `memcmp` / SIMD via auto-vectorisation.
@@ -22,9 +22,10 @@ use crate::types::Pos;
 /// they are equal.  Never panics (bounds are checked before the comparison).
 ///
 /// # Platform notes
-/// * **x86_64**: uses AVX2 (32-byte chunks) or SSE2 (16-byte chunks).
-/// * **other**: delegates to `<[u8]>::eq` which the compiler may vectorise.
-#[inline(always)]
+/// * **`x86_64`**: uses AVX2 (32-byte chunks) or SSE2 (16-byte chunks).
+/// * **other**: delegates to `<[u8]>::eq` which the compiler may vectorize.
+#[must_use]
+#[inline]
 pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
     let n   = lit.len();
     let off = pos as usize;
@@ -64,6 +65,7 @@ pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
+#[allow(clippy::cast_ptr_alignment)] // required: _mm_loadu_si128 takes *const __m128i
 unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
     use std::arch::x86_64::{
         __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8,
@@ -73,8 +75,8 @@ unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
 
     // Compare 16 bytes per iteration.
     while i + 16 <= n {
-        let va = _mm_loadu_si128(a.add(i) as *const __m128i);
-        let vb = _mm_loadu_si128(b.add(i) as *const __m128i);
+        let va = _mm_loadu_si128(a.add(i).cast::<__m128i>());
+        let vb = _mm_loadu_si128(b.add(i).cast::<__m128i>());
         let eq = _mm_cmpeq_epi8(va, vb);
         if _mm_movemask_epi8(eq) != 0xFFFF {
             return false;
@@ -90,6 +92,7 @@ unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(clippy::cast_ptr_alignment)] // required: load intrinsics take *const __m256i/__m128i
 unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
     use std::arch::x86_64::{
         __m256i, _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8,
@@ -99,11 +102,11 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
 
     // Compare 32 bytes per iteration.
     while i + 32 <= n {
-        let va = _mm256_loadu_si256(a.add(i) as *const __m256i);
-        let vb = _mm256_loadu_si256(b.add(i) as *const __m256i);
+        let va = _mm256_loadu_si256(a.add(i).cast::<__m256i>());
+        let vb = _mm256_loadu_si256(b.add(i).cast::<__m256i>());
         let eq = _mm256_cmpeq_epi8(va, vb);
-        // movemask returns i32; cast to u32 so all-ones == 0xFFFF_FFFF.
-        if _mm256_movemask_epi8(eq) as u32 != 0xFFFF_FFFF {
+        // movemask returns i32; all 32 bits set is -1.
+        if _mm256_movemask_epi8(eq) != -1i32 {
             return false;
         }
         i += 32;
@@ -114,8 +117,8 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
         use std::arch::x86_64::{
             __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8,
         };
-        let va = _mm_loadu_si128(a.add(i) as *const __m128i);
-        let vb = _mm_loadu_si128(b.add(i) as *const __m128i);
+        let va = _mm_loadu_si128(a.add(i).cast::<__m128i>());
+        let vb = _mm_loadu_si128(b.add(i).cast::<__m128i>());
         let eq = _mm_cmpeq_epi8(va, vb);
         if _mm_movemask_epi8(eq) != 0xFFFF {
             return false;
@@ -131,7 +134,7 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
 
 /// Compare `n` bytes starting at `a` and `b` with a simple loop.
 /// Used for the tail portion that doesn't fill a full SIMD register.
-#[inline(always)]
+#[inline]
 unsafe fn byte_eq_tail(a: *const u8, b: *const u8, n: usize) -> bool {
     for i in 0..n {
         if *a.add(i) != *b.add(i) {

@@ -37,36 +37,36 @@ pub enum RuleAttr {
 }
 
 /// Expression node in the PEG (after parsing; no precedence).
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ExprNode {
     /// Choice: e1 | e2 | ...
-    Choice(Vec<ExprNode>),
+    Choice(Vec<Self>),
     /// Sequence: e1 e2 ...
-    Seq(Vec<ExprNode>),
+    Seq(Vec<Self>),
     /// e?
-    Optional(Box<ExprNode>),
+    Optional(Box<Self>),
     /// e*
-    ZeroOrMore(Box<ExprNode>),
+    ZeroOrMore(Box<Self>),
     /// e+
-    OneOrMore(Box<ExprNode>),
+    OneOrMore(Box<Self>),
     /// &e
-    Lookahead(Box<ExprNode>),
+    Lookahead(Box<Self>),
     /// !e
-    NegLookahead(Box<ExprNode>),
+    NegLookahead(Box<Self>),
     /// ( e )
-    Group(Box<ExprNode>),
+    Group(Box<Self>),
     /// Call rule by name
     Call(Ident),
     /// Byte literal "foo"
     Literal(LitStr),
-    /// #[node(KIND)] e or #[node(KIND)] #[field("name")] e
-    Node { kind: Expr, field: Option<LitStr>, inner: Box<ExprNode> },
-    /// #[token(KIND)] e
-    Token { kind: Expr, inner: Box<ExprNode> },
-    /// #[trivia(KIND)] e
-    Trivia { kind: Expr, inner: Box<ExprNode> },
-    /// #[capture(TAG)] e — legacy capture
-    Capture { tag: Expr, inner: Box<ExprNode> },
-    /// #[no_skip] e
-    NoSkip(Box<ExprNode>),
+    /// `#[node(KIND)]` e or `#[node(KIND)]` `#[field("name")]` e
+    Node { kind: Expr, field: Option<LitStr>, inner: Box<Self> },
+    /// `#[token(KIND)]` e
+    Token { kind: Expr, inner: Box<Self> },
+    /// `#[trivia(KIND)]` e
+    Trivia { kind: Expr, inner: Box<Self> },
+    /// `#[capture(TAG)]` e — legacy capture
+    Capture { tag: Expr, inner: Box<Self> },
+    /// `#[no_skip]` e
+    NoSkip(Box<Self>),
 }

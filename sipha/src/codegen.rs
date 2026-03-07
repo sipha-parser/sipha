@@ -5,6 +5,11 @@
 use std::fmt::Write;
 use crate::{builder::BuiltGraph, insn::Insn};
 
+/// Emit Rust source for the given grammar to `out`.
+///
+/// # Errors
+///
+/// Returns [`std::fmt::Result`] if writing to `out` fails.
 pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
     writeln!(out, "// AUTO-GENERATED — do not edit by hand.")?;
     writeln!(out, "#![allow(clippy::all, dead_code, unused)]")?;
@@ -44,7 +49,9 @@ pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
     writeln!(out)?;
 
     // Jump tables
-    if !graph.jump_tables.is_empty() {
+    if graph.jump_tables.is_empty() {
+        writeln!(out, "static JUMP_TABLES: &[[u32; 256]] = &[];")?;
+    } else {
         writeln!(out, "static JUMP_TABLES: &[[u32; 256]] = &[")?;
         for (ti, table) in graph.jump_tables.iter().enumerate() {
             writeln!(out, "    // table {ti}")?;
@@ -60,8 +67,6 @@ pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
             writeln!(out, "    ],")?;
         }
         writeln!(out, "];")?;
-    } else {
-        writeln!(out, "static JUMP_TABLES: &[[u32; 256]] = &[];")?;
     }
     writeln!(out)?;
 

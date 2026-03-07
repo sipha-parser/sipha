@@ -1,9 +1,9 @@
 //! Demonstrates all four parser extensions on a JSON grammar:
 //!
 //! 1. SIMD literal matching (transparent, used for "true"/"false"/"null")
-//! 2. Structured error diagnostics (ParseError::NoMatch with expected tokens)
-//! 3. Packrat memoisation (Engine::with_memo())
-//! 4. O(1) byte dispatch (byte_dispatch on JSON value rule)
+//! 2. Structured error diagnostics (`ParseError::NoMatch` with expected tokens)
+//! 3. Packrat memoisation (`Engine::with_memo()`)
+//! 4. O(1) byte dispatch (`byte_dispatch` on JSON value rule)
 
 use sipha::prelude::*;
 use sipha::types::classes;
@@ -227,7 +227,7 @@ fn main() {
                     ctx.expected.len(),
                     ctx.expected
                         .iter()
-                        .map(|e| e.display(Some(&graph.literals), Some(&graph.rule_names), Some(&graph.expected_labels)))
+                        .map(|e| e.display(Some(&graph.literals), Some(graph.rule_names), Some(graph.expected_labels)))
                         .collect::<Vec<_>>()
                 );
             }

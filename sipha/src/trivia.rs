@@ -10,12 +10,14 @@ use crate::types::SyntaxKind;
 
 /// Build a trivia token containing a single space.
 #[inline]
+#[must_use] 
 pub fn space(kind: SyntaxKind) -> Arc<GreenToken> {
     GreenToken::space(kind)
 }
 
 /// Build a trivia token containing a single newline.
 #[inline]
+#[must_use] 
 pub fn newline(kind: SyntaxKind) -> Arc<GreenToken> {
     GreenToken::newline(kind)
 }
@@ -29,7 +31,7 @@ pub fn replace_leading_trivia(
     trivia_kind: SyntaxKind,
     new_leading: &[&str],
 ) -> Arc<GreenNode> {
-    let mut children: Vec<GreenElement> = node.children.iter().cloned().collect();
+    let mut children: Vec<GreenElement> = node.children.to_vec();
     let mut i = 0;
     while i < children.len() {
         match &children[i] {
@@ -63,7 +65,7 @@ pub fn replace_trailing_trivia(
     trivia_kind: SyntaxKind,
     new_trailing: &[&str],
 ) -> Arc<GreenNode> {
-    let mut children: Vec<GreenElement> = node.children.iter().cloned().collect();
+    let mut children: Vec<GreenElement> = node.children.to_vec();
     let mut trail_start = children.len();
     while trail_start > 0 {
         match &children[trail_start - 1] {

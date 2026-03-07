@@ -206,7 +206,7 @@ fn check(engine: &mut Engine, graph: &sipha::insn::ParseGraph,
     } else {
         let ectx = engine.error_context();
         let exp: Vec<String> = ectx.expected.iter()
-            .map(|e| e.display(Some(&graph.literals), Some(&graph.rule_names), Some(&graph.expected_labels))).collect();
+            .map(|e| e.display(Some(&graph.literals), Some(graph.rule_names), Some(graph.expected_labels))).collect();
         println!("  [{sym}] {desc} → ERR at byte {}: {exp:?}", ectx.furthest);
     }
     correct

@@ -31,7 +31,8 @@ impl Default for EmitOptions {
 
 impl EmitOptions {
     /// Emit only semantic tokens (no trivia).
-    pub fn semantic_only() -> Self {
+    #[must_use] 
+    pub const fn semantic_only() -> Self {
         Self {
             include_trivia: false,
             skip_kind: None,
@@ -39,6 +40,7 @@ impl EmitOptions {
     }
 
     /// Emit all tokens including trivia.
+    #[must_use] 
     pub fn full() -> Self {
         Self::default()
     }
@@ -69,6 +71,7 @@ impl Visitor for EmitVisitor {
 ///
 /// Uses the same traversal as the walk API; options control whether trivia
 /// is included and whether a sentinel token kind (e.g. EOF) is skipped.
+#[must_use]
 pub fn syntax_root_to_string(root: &SyntaxNode, options: &EmitOptions) -> String {
     let mut visitor = EmitVisitor {
         out: String::new(),

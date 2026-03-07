@@ -31,7 +31,8 @@ impl ParsedDoc {
     /// Returns `None` if the output has no or invalid tree events (e.g. empty
     /// or malformed). The `source` slice used during parsing should match what
     /// you pass here so that token text and spans are correct.
-    pub fn new(source: Vec<u8>, output: ParseOutput) -> Option<Self> {
+    #[must_use]
+    pub fn new(source: Vec<u8>, output: &ParseOutput) -> Option<Self> {
         let line_index = LineIndex::new(&source);
         let root = output.syntax_root(&source)?;
         Some(Self {
@@ -46,48 +47,56 @@ impl ParsedDoc {
     /// Clones `source` into a `Vec<u8>`. Prefer [`new`](Self::new) when you
     /// already own a `Vec<u8>`. Returns `None` if the output has no or invalid
     /// tree events.
-    pub fn from_slice(source: &[u8], output: ParseOutput) -> Option<Self> {
+    #[must_use]
+    pub fn from_slice(source: &[u8], output: &ParseOutput) -> Option<Self> {
         Self::new(source.to_vec(), output)
     }
 
     /// Reference to the syntax tree root.
     #[inline]
-    pub fn root(&self) -> &SyntaxNode {
+    #[must_use] 
+    pub const fn root(&self) -> &SyntaxNode {
         &self.root
     }
 
     /// Raw source bytes.
     #[inline]
+    #[must_use] 
     pub fn source(&self) -> &[u8] {
         &self.source
     }
 
     /// Source as UTF-8 str, or empty if invalid UTF-8.
     #[inline]
+    #[must_use] 
     pub fn source_str(&self) -> &str {
         std::str::from_utf8(&self.source).unwrap_or("")
     }
 
     /// Line index for this document (offset → line/column, snippets).
     #[inline]
-    pub fn line_index(&self) -> &LineIndex {
+    #[must_use] 
+    pub const fn line_index(&self) -> &LineIndex {
         &self.line_index
     }
 
     /// Line and column (0-based) for a byte offset.
     #[inline]
+    #[must_use] 
     pub fn offset_to_line_col(&self, offset: Pos) -> (u32, u32) {
         self.line_index.line_col(offset)
     }
 
     /// Line and column (1-based) for error messages and IDE.
     #[inline]
+    #[must_use] 
     pub fn offset_to_line_col_1based(&self, offset: Pos) -> (u32, u32) {
         self.line_index.line_col_1based(offset)
     }
 
     /// Single-line snippet with caret at the given offset (for ad-hoc errors).
     #[inline]
+    #[must_use] 
     pub fn snippet_at(&self, offset: Pos) -> String {
         self.line_index.snippet_at(&self.source, offset)
     }
@@ -96,6 +105,7 @@ impl ParsedDoc {
     ///
     /// Pass the grammar's literal, rule-name, and expected-label tables for readable
     /// "expected" strings; otherwise literal/rule/label ids are shown.
+    #[must_use] 
     pub fn format_diagnostic(
         &self,
         diagnostic: &Diagnostic,
@@ -114,6 +124,7 @@ impl ParsedDoc {
 
     /// Byte slice for a span (convenience for compiler/formatter).
     #[inline]
+    #[must_use] 
     pub fn span_slice(&self, span: Span) -> &[u8] {
         span.as_slice(&self.source)
     }
@@ -124,18 +135,21 @@ impl ParsedDoc {
     /// style as parse errors. For miette reports, use
     /// [`SemanticDiagnostic::into_miette`] with `self.source_str()` and your
     /// file name.
+    #[must_use] 
     pub fn format_semantic_diagnostic(&self, diagnostic: &SemanticDiagnostic) -> String {
         diagnostic.format_with_source(&self.source, &self.line_index)
     }
 
     /// Return the smallest syntax node whose range contains the given byte offset.
     #[inline]
+    #[must_use] 
     pub fn node_at_offset(&self, offset: Pos) -> Option<SyntaxNode> {
         self.root.node_at_offset(offset)
     }
 
     /// Return the deepest token at the given byte offset (including trivia).
     #[inline]
+    #[must_use] 
     pub fn token_at_offset(&self, offset: Pos) -> Option<crate::red::SyntaxToken> {
         self.root.token_at_offset(offset)
     }
@@ -144,6 +158,7 @@ impl ParsedDoc {
     /// Requires the `utf16` feature.
     #[cfg(feature = "utf16")]
     #[inline]
+    #[must_use] 
     pub fn offset_to_line_col_utf16(&self, offset: Pos) -> (u32, u32) {
         self.line_index.line_col_utf16(self.source_str(), offset)
     }
@@ -151,6 +166,7 @@ impl ParsedDoc {
     /// Line and column (1-based) in UTF-16 for LSP and error messages.
     #[cfg(feature = "utf16")]
     #[inline]
+    #[must_use] 
     pub fn offset_to_line_col_utf16_1based(&self, offset: Pos) -> (u32, u32) {
         self.line_index.line_col_utf16_1based(self.source_str(), offset)
     }
@@ -158,6 +174,7 @@ impl ParsedDoc {
     /// UTF-16 code unit range `(start, end)` for the given span.
     #[cfg(feature = "utf16")]
     #[inline]
+    #[must_use] 
     pub fn span_to_utf16_range(&self, span: Span) -> (u32, u32) {
         crate::utf16::span_to_utf16_range(span, self.source_str())
     }

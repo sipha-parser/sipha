@@ -8,6 +8,7 @@ use crate::types::SyntaxKind;
 
 /// Options for S-expression output.
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct SexpOptions {
     /// Include trivia tokens in the output.
     pub include_trivia: bool,
@@ -18,18 +19,10 @@ pub struct SexpOptions {
     pub max_token_len: Option<usize>,
 }
 
-impl Default for SexpOptions {
-    fn default() -> Self {
-        Self {
-            include_trivia: false,
-            kind_to_name: None,
-            max_token_len: None,
-        }
-    }
-}
 
 impl SexpOptions {
     /// Structure and semantic tokens only; no trivia.
+    #[must_use] 
     pub fn semantic_only() -> Self {
         Self {
             include_trivia: false,
@@ -38,6 +31,7 @@ impl SexpOptions {
     }
 
     /// Full tree including trivia.
+    #[must_use] 
     pub fn full() -> Self {
         Self {
             include_trivia: true,
@@ -47,15 +41,16 @@ impl SexpOptions {
 }
 
 fn escape_str(s: &str, max_len: Option<usize>) -> String {
-    let s = if let Some(max) = max_len {
-        if s.len() > max {
-            format!("{}...", &s[..max])
-        } else {
-            s.to_string()
-        }
-    } else {
-        s.to_string()
-    };
+    let s = max_len.map_or_else(
+        || s.to_string(),
+        |max| {
+            if s.len() > max {
+                format!("{}...", &s[..max])
+            } else {
+                s.to_string()
+            }
+        },
+    );
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for c in s.chars() {
@@ -85,6 +80,7 @@ fn kind_str(kind: SyntaxKind, opts: &SexpOptions) -> String {
 ///
 /// Format: `(KIND child1 child2 ...)` for nodes; tokens as `(KIND "text")`.
 /// Trivia is included only when [`SexpOptions::include_trivia`] is true.
+#[must_use] 
 pub fn syntax_node_to_sexp(node: &SyntaxNode, opts: &SexpOptions) -> String {
     let mut out = String::new();
     append_node_to_sexp(node, opts, &mut out);

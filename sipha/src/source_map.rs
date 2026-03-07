@@ -16,7 +16,7 @@ pub trait SpanMapping {
     fn map_span(&self, new_span: Span) -> Option<Span>;
 }
 
-/// A span mapping represented as a sorted list of (new_span, old_span) pairs.
+/// A span mapping represented as a sorted list of (`new_span`, `old_span`) pairs.
 ///
 /// Lookup returns the old span for the pair whose new span contains the query
 /// span's start, or the nearest preceding pair. For exact mapping, use pairs
@@ -30,7 +30,8 @@ pub struct SpanMap {
 
 impl SpanMap {
     #[inline]
-    pub fn new() -> Self {
+    #[must_use] 
+    pub const fn new() -> Self {
         Self { pairs: Vec::new() }
     }
 
@@ -44,6 +45,7 @@ impl SpanMap {
     }
 
     /// Build from a list of (new, old) pairs and sort.
+    #[must_use] 
     pub fn from_pairs(mut pairs: Vec<(Span, Span)>) -> Self {
         pairs.sort_by_key(|(s, _)| s.start);
         Self { pairs }

@@ -320,6 +320,7 @@ fn emit_shared_rules(g: &mut GrammarBuilder) {
 /// - Trivia rule: `ws` matching `[ \t\n\r]*`
 /// - All structural rules are parser rules; `ws`, `string`, `number`, `escape`
 ///   are lexer rules.
+#[must_use] 
 pub fn build_json_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
 
@@ -348,6 +349,7 @@ pub fn build_json_grammar() -> BuiltGraph {
 /// - Trivia rule: `ws` matching whitespace runs, line comments, and block comments.
 /// - All structural rules are identical to [`build_json_grammar`].
 /// - `ws`, `line_comment`, `block_comment` are lexer rules.
+#[must_use] 
 pub fn build_jsonc_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
 
@@ -404,7 +406,7 @@ pub fn build_jsonc_grammar() -> BuiltGraph {
 
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
-fn kind_name(k: SyntaxKind) -> &'static str {
+const fn kind_name(k: SyntaxKind) -> &'static str {
     match k {
         NODE_DOCUMENT        => "Document",
         NODE_OBJECT          => "Object",
@@ -528,14 +530,14 @@ fn main() {
     println!();
     let doc_members = root.find_node(NODE_OBJECT).map(|o| object_members(&o)).unwrap_or_default();
     println!("   Members:");
-    for (k, v) in &doc_members { println!("     {:10} → {}", k, v); }
+    for (k, v) in &doc_members { println!("     {k:10} → {v}"); }
 
     c(doc_members.len() == 3, "JSON object has 3 members");
     c(doc_members[0] == ("name".into(),   "\"Alice\"".into()),  "member[0]: name = \"Alice\"");
     c(doc_members[1] == ("scores".into(), "<Array>".into()),    "member[1]: scores = <Array>");
     c(doc_members[2] == ("active".into(), "true".into()),       "member[2]: active = true");
 
-    let trivia: Vec<_> = root.descendant_tokens().into_iter().filter(|t| t.is_trivia()).collect();
+    let trivia: Vec<_> = root.descendant_tokens().into_iter().filter(sipha::red::SyntaxToken::is_trivia).collect();
     c(!trivia.is_empty(), "whitespace trivia tokens are present");
     println!("   Trivia tokens: {}", trivia.len());
 
@@ -563,15 +565,15 @@ fn main() {
 
     println!();
 
-    let all_trivia: Vec<SyntaxToken> = root_c.descendant_tokens().into_iter().filter(|t| t.is_trivia()).collect();
+    let all_trivia: Vec<SyntaxToken> = root_c.descendant_tokens().into_iter().filter(sipha::red::SyntaxToken::is_trivia).collect();
     let ws_count    = all_trivia.iter().filter(|t| t.kind() == TRIVIA_WS).count();
     let line_count  = all_trivia.iter().filter(|t| t.kind() == TRIVIA_LINE_COMMENT).count();
     let block_count = all_trivia.iter().filter(|t| t.kind() == TRIVIA_BLOCK_COMMENT).count();
 
     println!("   Trivia breakdown:");
-    println!("     {:2} whitespace runs", ws_count);
-    println!("     {:2} line comments",  line_count);
-    println!("     {:2} block comments", block_count);
+    println!("     {ws_count:2} whitespace runs");
+    println!("     {line_count:2} line comments");
+    println!("     {block_count:2} block comments");
     println!();
 
     c(line_count  == 2, "2 line comments");

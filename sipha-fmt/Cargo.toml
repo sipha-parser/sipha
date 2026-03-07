@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "Formatter options and helpers for sipha syntax trees"
 
+[lints]
+workspace = true
+
 [dependencies]
 sipha = { path = "../sipha", features = ["emit"] }

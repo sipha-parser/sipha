@@ -17,6 +17,9 @@
 use crate::builder::GrammarBuilder;
 use crate::types::IntoSyntaxKind;
 
+/// Closure type for a single choice arm in the builder.
+type BuilderChoice = Box<dyn FnOnce(&mut GrammarBuilder)>;
+
 /// Add a left-associative infix level: `level = lower ( op lower )*`.
 ///
 /// Each occurrence of `op lower` is wrapped in a node with the given `node_kind`.
@@ -39,13 +42,13 @@ pub fn left_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
     level_name: &'static str,
     lower_level_name: &'static str,
     ops: &[&'static str],
-    node_kind: K,
+    node_kind: &K,
 ) {
     g.parser_rule(level_name, |g| {
         g.call(lower_level_name);
         g.zero_or_more(move |g| {
             g.node(node_kind.clone(), |g| {
-                let mut alternatives: Vec<Box<dyn FnOnce(&mut GrammarBuilder)>> = Vec::new();
+                let mut alternatives: Vec<BuilderChoice> = Vec::new();
                 for op in ops {
                     let op = *op;
                     let lower = lower_level_name;
@@ -75,7 +78,7 @@ pub fn right_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
     level_name: &'static str,
     lower_level_name: &'static str,
     op_rule: &'static str,
-    node_kind: K,
+    node_kind: &K,
 ) {
     g.parser_rule(level_name, |g| {
         let lower = lower_level_name;

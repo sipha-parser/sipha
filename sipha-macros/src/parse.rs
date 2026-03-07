@@ -1,6 +1,6 @@
 //! Parser for the grammar DSL.
 
-use crate::ir::*;
+use crate::ir::{Directive, ExprNode, Rule, RuleAttr};
 use syn::parse::{Parse, ParseStream};
 use syn::{Attribute, Ident, LitStr, Token};
 
@@ -52,7 +52,7 @@ impl Parse for Grammar {
             });
         }
 
-        Ok(Grammar {
+        Ok(Self {
             directives,
             rules,
         })
@@ -135,32 +135,37 @@ fn parse_wrapped(input: ParseStream) -> syn::Result<ExprNode> {
     let attrs = input.call(Attribute::parse_outer)?;
     let mut node = parse_atom(input)?;
     for attr in attrs.into_iter().rev() {
-        node = apply_wrapper_attr(attr, node)?;
+        node = apply_wrapper_attr(&attr, &node)?;
     }
     Ok(node)
 }
 
-fn apply_wrapper_attr(attr: Attribute, inner: ExprNode) -> syn::Result<ExprNode> {
+fn apply_wrapper_attr(attr: &Attribute, inner: &ExprNode) -> syn::Result<ExprNode> {
     let path = attr.path().get_ident().ok_or_else(|| {
         syn::Error::new_spanned(attr.path(), "expected single identifier in attribute")
     })?;
     let s = path.to_string();
     match s.as_str() {
         "node" => {
-            let expr = parse_paren_expr(&attr)?;
+            let expr = parse_paren_expr(attr)?;
             Ok(ExprNode::Node {
                 kind: expr,
                 field: None,
-                inner: Box::new(inner),
+                inner: Box::new(inner.clone()),
             })
         }
         "field" => {
             let lit: LitStr = attr.meta.require_list()?.parse_args()?;
-            if let ExprNode::Node { kind, field: None, inner } = inner {
+            if let ExprNode::Node {
+                kind,
+                field: None,
+                inner: ref inner_box,
+            } = inner
+            {
                 Ok(ExprNode::Node {
-                    kind,
+                    kind: kind.clone(),
                     field: Some(lit),
-                    inner,
+                    inner: inner_box.clone(),
                 })
             } else {
                 Err(syn::Error::new_spanned(
@@ -170,27 +175,27 @@ fn apply_wrapper_attr(attr: Attribute, inner: ExprNode) -> syn::Result<ExprNode>
             }
         }
         "token" => {
-            let expr = parse_paren_expr(&attr)?;
+            let expr = parse_paren_expr(attr)?;
             Ok(ExprNode::Token {
                 kind: expr,
-                inner: Box::new(inner),
+                inner: Box::new(inner.clone()),
             })
         }
         "trivia" => {
-            let expr = parse_paren_expr(&attr)?;
+            let expr = parse_paren_expr(attr)?;
             Ok(ExprNode::Trivia {
                 kind: expr,
-                inner: Box::new(inner),
+                inner: Box::new(inner.clone()),
             })
         }
         "capture" => {
-            let expr = parse_paren_expr(&attr)?;
+            let expr = parse_paren_expr(attr)?;
             Ok(ExprNode::Capture {
                 tag: expr,
-                inner: Box::new(inner),
+                inner: Box::new(inner.clone()),
             })
         }
-        "no_skip" => Ok(ExprNode::NoSkip(Box::new(inner))),
+        "no_skip" => Ok(ExprNode::NoSkip(Box::new(inner.clone()))),
         _ => Err(syn::Error::new_spanned(
             path,
             "expected one of: node, field, token, trivia, capture, no_skip",

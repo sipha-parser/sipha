@@ -1,22 +1,22 @@
-//! Lower IR to GrammarBuilder code (quote).
+//! Lower IR to `GrammarBuilder` code (quote).
 
-use crate::ir::*;
+use crate::ir::{Directive, ExprNode, Grammar, Rule, RuleAttr, RuleKind};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::LitStr;
 
 /// Emit code that builds the grammar and returns `sipha::BuiltGraph`.
 pub fn lower_grammar(grammar: &Grammar) -> TokenStream {
-    let start_name = grammar
-        .directives
-        .iter()
-        .find_map(|d| match d {
-            Directive::Start(ref id) => Some(id),
-            _ => None,
-        });
+    let start_name = grammar.directives.iter().find_map(|d| {
+        if let Directive::Start(ref id) = d {
+            Some(id)
+        } else {
+            None
+        }
+    });
 
     let trivia = grammar.directives.iter().filter_map(|d| {
-        if let Directive::Trivia(ref id) = *d {
+        if let Directive::Trivia(ref id) = d {
             let name_lit = LitStr::new(&id.to_string(), id.span());
             Some(quote! { g.set_trivia_rule(#name_lit); })
         } else {
@@ -31,7 +31,9 @@ pub fn lower_grammar(grammar: &Grammar) -> TokenStream {
         let name = &r.name;
         let name_lit = LitStr::new(&name.to_string(), name.span());
         let body = lower_expr(&r.body);
-        let is_start = start_name.as_ref().map_or(false, |s| s.to_string() == name.to_string());
+        let is_start = start_name
+            .as_ref()
+            .is_some_and(|s| s.to_string() == *name.to_string());
         let rule_kind = rule_kind(r);
 
         let body_with_start = if is_start {
@@ -79,10 +81,13 @@ fn reorder_rules_for_start<'a>(
     rules: &'a [Rule],
     start_name: Option<&'a syn::Ident>,
 ) -> Vec<&'a Rule> {
-    let start_str = start_name.map(|s| s.to_string());
+    let start_str = start_name.map(std::string::ToString::to_string);
     let mut ordered: Vec<&Rule> = rules.iter().collect();
     if let Some(ref name) = start_str {
-        if let Some(pos) = ordered.iter().position(|r| r.name.to_string() == *name) {
+        if let Some(pos) = ordered
+            .iter()
+            .position(|r| r.name.to_string().as_str() == name.as_str())
+        {
             if pos > 0 {
                 let r = ordered.remove(pos);
                 ordered.insert(0, r);
@@ -150,10 +155,12 @@ fn lower_expr(node: &ExprNode) -> TokenStream {
         }
         ExprNode::Node { kind, field, inner } => {
             let body = lower_expr(inner);
-            match field {
-                Some(f) => quote! { g.node_with_field(#kind, #f, |g| { #body }); },
-                None => quote! { g.node(#kind, |g| { #body }); },
-            }
+            field
+                .as_ref()
+                .map_or_else(
+                    || quote! { g.node(#kind, |g| { #body }); },
+                    |f| quote! { g.node_with_field(#kind, #f, |g| { #body }); },
+                )
         }
         ExprNode::Token { kind, inner } => {
             let body = lower_expr(inner);

@@ -10,7 +10,7 @@
 //! |---|---|---|
 //! | Worst-case time | O(n²) or worse | O(n · |grammar|) |
 //! | Memory | O(depth) | O(n · |rules|) |
-//! | Per-call overhead | Zero | ~HashMap lookup |
+//! | Per-call overhead | Zero | ~`HashMap` lookup |
 //!
 //! For grammars without left-recursion and without pathological alternation
 //! the overhead is usually not worth it.  For grammars that re-parse large
@@ -96,6 +96,7 @@ pub struct MemoTable {
 
 impl MemoTable {
     /// Create with a reasonable initial capacity (no resizes for typical grammars).
+    #[must_use]
     pub fn new() -> Self {
         Self {
             table: HashMap::with_capacity(4096),
@@ -110,6 +111,7 @@ impl MemoTable {
 
     /// Look up a `(rule, pos)` pair.  Returns an *owned* [`MemoQuery`] so the
     /// borrow on `self` ends before any subsequent mutation.
+    #[must_use]
     #[inline]
     pub fn query(&self, rule: RuleId, pos: Pos) -> MemoQuery {
         match self.table.get(&pack(rule, pos)) {
@@ -125,6 +127,7 @@ impl MemoTable {
 
     /// Look up a `(rule, pos)` pair and, on hit, extend `events` and `tree_events`
     /// in place with the cached data.  Use this in the hot path for zero-copy replay.
+    #[must_use]
     #[inline]
     pub fn query_replay(
         &self,
@@ -175,10 +178,12 @@ impl MemoTable {
     }
 
     /// Number of cached entries (for diagnostics / benchmarks).
+    #[must_use]
     pub fn len(&self) -> usize {
         self.table.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
@@ -193,7 +198,7 @@ impl Default for MemoTable {
 // ─── Key packing ─────────────────────────────────────────────────────────────
 
 /// Pack `(rule: u16, pos: u32)` into a single `u64` key.
-#[inline(always)]
+#[inline]
 fn pack(rule: RuleId, pos: Pos) -> u64 {
-    ((rule as u64) << 32) | (pos as u64)
+    (u64::from(rule) << 32) | u64::from(pos)
 }

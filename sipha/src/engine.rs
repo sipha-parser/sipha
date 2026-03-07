@@ -15,12 +15,14 @@
 //! Both buffers are truncated on backtracking using marks saved in
 //! `Frame::Backtrack`, just like the capture event log.
 //!
-//! ## PartialCommit (zero_or_more) mark update
+//! ## `PartialCommit` (`zero_or_more`) mark update
 //!
-//! `PartialCommit` updates **all** backtrack marks — `saved_pos`,
+//! [`PartialCommit`] updates **all** backtrack marks — `saved_pos`,
 //! `capture_mark`, `tree_mark`, and `open_tokens_mark` — so that a failed
 //! subsequent iteration does not discard events from earlier completed
 //! iterations.
+//!
+//! [`PartialCommit`]: crate::insn::Insn::PartialCommit
 
 use crate::{
     context::{FlagMask, ParseContext},
@@ -68,7 +70,7 @@ enum Frame {
     Backtrack {
         alt:              u32,
         saved_pos:        Pos,
-        /// Mark into `engine.events`      (legacy captures).
+        /// Mark into `engine.events` (legacy captures).
         capture_mark:     u32,
         /// Mark into `engine.tree_events` (green/red tree events).
         tree_mark:        u32,
@@ -84,9 +86,9 @@ enum Frame {
         tree_mark:    u32,
     },
     ContextSave { snapshot_mark: u32 },
-    /// Error recovery: on failure, skip until sync_rule matches then continue at resume.
+    /// Error recovery: on failure, skip until `sync_rule` matches then continue at resume.
     Recover { sync_rule: RuleId, resume: InsnId },
-    /// Marker when trying the sync rule during recovery; popped by RecoveryResume.
+    /// Marker when trying the sync rule during recovery; popped by `RecoveryResume`.
     RecoverSync { sync_rule: RuleId, resume: InsnId },
 }
 
@@ -101,8 +103,8 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::NoMatch(d) => write!(f, "{d}"),
-            ParseError::BadGraph   => write!(f, "malformed parse graph"),
+            Self::NoMatch(d) => write!(f, "{d}"),
+            Self::BadGraph => write!(f, "malformed parse graph"),
         }
     }
 }
@@ -124,9 +126,9 @@ pub struct RecoverMultiResult {
 
 #[cfg(feature = "miette")]
 impl ParseError {
-    /// If this is a parse failure ([`NoMatch`](ParseError::NoMatch)), convert it
+    /// If this is a parse failure ([`NoMatch`](Self::NoMatch)), convert it
     /// into a [`miette::Report`] with source and optional literal table for
-    /// pretty-printed diagnostics. Returns `None` for [`BadGraph`](ParseError::BadGraph).
+    /// pretty-printed diagnostics. Returns `None` for [`BadGraph`](Self::BadGraph).
     ///
     /// Requires the `miette` feature. Example:
     ///
@@ -146,11 +148,11 @@ impl ParseError {
         expected_labels: Option<&[&'static str]>,
     ) -> Option<miette::Report> {
         match self {
-            ParseError::NoMatch(diag) => {
+            Self::NoMatch(diag) => {
                 let m = diag.into_miette(source, name, literals, rule_names, expected_labels);
                 Some(miette::Report::new(m))
             }
-            ParseError::BadGraph => None,
+            Self::BadGraph => None,
         }
     }
 }
@@ -177,6 +179,7 @@ impl ParseOutput {
     /// sliced from it and stored inside each [`crate::green::GreenToken`].
     ///
     /// Returns `None` if `tree_events` is empty or malformed.
+    #[must_use]
     pub fn build_green_tree(&self, input: &[u8]) -> Option<std::sync::Arc<crate::green::GreenNode>> {
         crate::green::build_green_tree(input, &self.tree_events)
     }
@@ -193,6 +196,7 @@ impl ParseOutput {
     ///     println!("{:?} {:?}", tok.kind(), tok.text());
     /// }
     /// ```
+    #[must_use]
     pub fn syntax_root(&self, input: &[u8]) -> Option<crate::red::SyntaxNode> {
         self.build_green_tree(input).map(crate::red::SyntaxNode::new_root)
     }
@@ -214,8 +218,12 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new() -> Self { Self::with_capacity(1024, 256) }
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_capacity(1024, 256)
+    }
 
+    #[must_use]
     pub fn with_capacity(stack_cap: usize, capture_cap: usize) -> Self {
         Self {
             stack:         Vec::with_capacity(stack_cap),
@@ -229,11 +237,18 @@ impl Engine {
         }
     }
 
+    #[must_use]
     pub fn with_memo(mut self) -> Self {
         self.memo = Some(MemoTable::new());
         self
     }
 
+    /// Parse the input against the grammar.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(ParseError::NoMatch(diagnostic))` on parse failure, or
+    /// `Err(ParseError::BadGraph)` if the graph is invalid.
     pub fn parse(
         &mut self,
         graph: &ParseGraph,
@@ -242,6 +257,12 @@ impl Engine {
         self.parse_with_context(graph, input, &ParseContext::new())
     }
 
+    /// Parse with the given context (e.g. for flags or error node kind).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(ParseError::NoMatch(diagnostic))` when the input does not
+    /// match the grammar. Returns `Err(ParseError::BadGraph)` if the graph is invalid.
     pub fn parse_with_context(
         &mut self,
         graph:   &ParseGraph,
@@ -289,6 +310,10 @@ impl Engine {
     /// is set to the error position ([`ErrorContext::furthest`]). Build a green tree from
     /// the partial `tree_events` with [`ParseOutput::build_green_tree`] (may return `None`
     /// if the partial events are not well-nested).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err((partial_output, parse_error))` when the parse fails.
     pub fn parse_recovering_with_context(
         &mut self,
         graph:   &ParseGraph,
@@ -345,6 +370,10 @@ impl Engine {
     }
 
     /// Like [`parse_recovering_with_context`] with a default context.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err((partial_output, parse_error))` when the parse fails.
     pub fn parse_recovering(
         &mut self,
         graph: &ParseGraph,
@@ -362,6 +391,11 @@ impl Engine {
     ///
     /// Returns `Ok(output)` on full success; `Err(RecoverMultiResult { partial, errors })`
     /// when at least one error was collected.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(RecoverMultiResult { partial, errors })` when one or more
+    /// parse errors were collected during recovery.
     pub fn parse_recovering_multi(
         &mut self,
         graph: &ParseGraph,
@@ -372,6 +406,11 @@ impl Engine {
     }
 
     /// Like [`parse_recovering_multi`] with a custom context (e.g. for error node kind).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(RecoverMultiResult { partial, errors })` when one or more
+    /// parse errors were collected during recovery.
     pub fn parse_recovering_multi_with_context(
         &mut self,
         graph: &ParseGraph,
@@ -435,8 +474,11 @@ impl Engine {
         }
     }
 
-    pub fn error_context(&self) -> &ErrorContext { &self.error_ctx }
-    pub fn memo_len(&self) -> Option<usize>      { self.memo.as_ref().map(|m| m.len()) }
+    #[must_use] 
+    pub const fn error_context(&self) -> &ErrorContext { &self.error_ctx }
+    #[must_use] 
+    pub fn memo_len(&self) -> Option<usize>      { self.memo.as_ref().map(super::memo::MemoTable::len) }
+    #[must_use] 
     pub fn flag_words(&self) -> &[u64]            { &self.flags }
 }
 
@@ -446,6 +488,8 @@ impl Default for Engine { fn default() -> Self { Self::new() } }
 
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)] // VM dispatch loop; splitting would obscure control flow
+#[allow(clippy::ptr_arg)] // need Vec for .push/.pop/.truncate
 fn run(
     graph:         &ParseGraph,
     input:         &[u8],
@@ -510,7 +554,7 @@ fn run(
             Insn::Literal { lit_id, on_fail } => {
                 let lit = graph.literals.get(lit_id);
                 if simd::literal_eq(input, pos, lit) {
-                    pos += lit.len() as Pos;
+                    pos += Pos::try_from(lit.len()).unwrap_or(0);
                     ip  += 1;
                 } else {
                     error_ctx.record(pos, Expected::Literal(lit_id));
@@ -537,7 +581,8 @@ fn run(
 
             Insn::AnyChar { on_fail } => {
                 if let Some((_cp, len)) = decode_utf8(input, pos as usize) {
-                    pos += len as Pos; ip += 1;
+                    pos += Pos::try_from(len).unwrap_or(0);
+                    ip += 1;
                 } else {
                     error_ctx.record(pos, Expected::AnyChar);
                     fail_jump!(on_fail);
@@ -546,7 +591,11 @@ fn run(
 
             Insn::Char { codepoint, on_fail } => {
                 if let Some((cp, len)) = decode_utf8(input, pos as usize) {
-                    if cp == codepoint { pos += len as Pos; ip += 1; continue; }
+                    if cp == codepoint {
+                        pos += Pos::try_from(len).unwrap_or(0);
+                        ip += 1;
+                        continue;
+                    }
                 }
                 error_ctx.record(pos, Expected::Char(codepoint));
                 fail_jump!(on_fail);
@@ -554,7 +603,11 @@ fn run(
 
             Insn::CharRange { lo, hi, on_fail } => {
                 if let Some((cp, len)) = decode_utf8(input, pos as usize) {
-                    if cp >= lo && cp <= hi { pos += len as Pos; ip += 1; continue; }
+                    if cp >= lo && cp <= hi {
+                        pos += Pos::try_from(len).unwrap_or(0);
+                        ip += 1;
+                        continue;
+                    }
                 }
                 error_ctx.record(pos, Expected::CharRange(lo, hi));
                 fail_jump!(on_fail);
@@ -575,23 +628,21 @@ fn run(
                     match mt.query_replay(rule, pos, events, tree_events) {
                         MemoReplay::Hit { end_pos } => {
                             pos = end_pos;
-                            ip  += 1;
-                            continue;
+                            ip += 1;
                         }
                         MemoReplay::Miss { furthest } => {
                             error_ctx.record(furthest, Expected::Rule(rule));
                             do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
                                     events, tree_events, open_tokens, memo, error_ctx,
                                     multi_errors, max_errors)?;
-                            continue;
                         }
                         MemoReplay::Unknown => {
                             stack.push(Frame::MemoReturn {
                                 ret_ip:      ip + 1,
                                 rule,
                                 start_pos:   pos,
-                                events_mark: events.len() as u32,
-                                tree_mark:   tree_events.len() as u32,
+                                events_mark: u32::try_from(events.len()).unwrap_or(0),
+                                tree_mark:   u32::try_from(tree_events.len()).unwrap_or(0),
                             });
                             ip = entry;
                         }
@@ -642,9 +693,9 @@ fn run(
                 stack.push(Frame::Backtrack {
                     alt,
                     saved_pos:        pos,
-                    capture_mark:     events.len()      as u32,
-                    tree_mark:        tree_events.len() as u32,
-                    open_tokens_mark: open_tokens.len() as u32,
+                    capture_mark:     u32::try_from(events.len()).unwrap_or(0),
+                    tree_mark:        u32::try_from(tree_events.len()).unwrap_or(0),
+                    open_tokens_mark: u32::try_from(open_tokens.len()).unwrap_or(0),
                 });
                 ip += 1;
             }
@@ -674,9 +725,9 @@ fn run(
                 update_backtrack_marks(
                     stack,
                     pos,
-                    events.len()      as u32,
-                    tree_events.len() as u32,
-                    open_tokens.len() as u32,
+                    u32::try_from(events.len()).unwrap_or(0),
+                    u32::try_from(tree_events.len()).unwrap_or(0),
+                    u32::try_from(open_tokens.len()).unwrap_or(0),
                 )?;
                 ip = target;
             }
@@ -705,17 +756,17 @@ fn run(
             }
 
             Insn::IfNotFlag { flag_id, on_fail } => {
-                if !flag_is_set(flags, flag_id) {
-                    ip += 1;
-                } else {
+                if flag_is_set(flags, flag_id) {
                     error_ctx.record(pos, Expected::Flag { id: flag_id, required: false });
                     fail_jump!(on_fail);
+                } else {
+                    ip += 1;
                 }
             }
 
             Insn::PushFlags { mask_id } => {
                 let entries = graph.flag_masks.get(mask_id);
-                let mark    = ctx_snapshots.len() as u32;
+                let mark    = u32::try_from(ctx_snapshots.len()).unwrap_or(0);
                 for e in entries {
                     let w = e.word as usize;
                     let old = if w < flags.len() { flags[w] } else { 0 };
@@ -812,21 +863,21 @@ fn run(
 
 // ─── UTF-8 decoder ───────────────────────────────────────────────────────────
 
-#[inline(always)]
+#[inline]
 fn decode_utf8(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     let b0 = *bytes.get(pos)?;
-    if b0 < 0x80 { return Some((b0 as u32, 1)); }
+    if b0 < 0x80 { return Some((u32::from(b0), 1)); }
     if b0 < 0xC2 { return None; }
     if b0 < 0xE0 {
         let b1 = *bytes.get(pos + 1)?;
         if b1 & 0xC0 != 0x80 { return None; }
-        return Some((((b0 as u32 & 0x1F) << 6) | (b1 as u32 & 0x3F), 2));
+        return Some((((u32::from(b0) & 0x1F) << 6) | (u32::from(b1) & 0x3F), 2));
     }
     if b0 < 0xF0 {
         let b1 = *bytes.get(pos + 1)?;
         let b2 = *bytes.get(pos + 2)?;
         if b1 & 0xC0 != 0x80 || b2 & 0xC0 != 0x80 { return None; }
-        let cp = ((b0 as u32 & 0x0F) << 12) | ((b1 as u32 & 0x3F) << 6) | (b2 as u32 & 0x3F);
+        let cp = ((u32::from(b0) & 0x0F) << 12) | ((u32::from(b1) & 0x3F) << 6) | (u32::from(b2) & 0x3F);
         if cp < 0x800 || (0xD800..=0xDFFF).contains(&cp) { return None; }
         return Some((cp, 3));
     }
@@ -835,9 +886,11 @@ fn decode_utf8(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
         let b2 = *bytes.get(pos + 2)?;
         let b3 = *bytes.get(pos + 3)?;
         if b1 & 0xC0 != 0x80 || b2 & 0xC0 != 0x80 || b3 & 0xC0 != 0x80 { return None; }
-        let cp = ((b0 as u32 & 0x07) << 18) | ((b1 as u32 & 0x3F) << 12)
-               | ((b2 as u32 & 0x3F) << 6)  |  (b3 as u32 & 0x3F);
-        if cp < 0x10000 || cp > 0x10FFFF { return None; }
+        let cp = ((u32::from(b0) & 0x07) << 18) | ((u32::from(b1) & 0x3F) << 12)
+               | ((u32::from(b2) & 0x3F) << 6)  |  (u32::from(b3) & 0x3F);
+        if !(0x10000..=0x10_FFFF).contains(&cp) {
+            return None;
+        }
         return Some((cp, 4));
     }
     None
@@ -845,7 +898,7 @@ fn decode_utf8(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
 
 // ─── Flag helpers ─────────────────────────────────────────────────────────────
 
-#[inline(always)]
+#[inline]
 fn flag_is_set(flags: &[u64], flag_id: u16) -> bool {
     let w = (flag_id >> 6) as usize;
     w < flags.len() && (flags[w] >> (flag_id & 63)) & 1 != 0
@@ -853,8 +906,8 @@ fn flag_is_set(flags: &[u64], flag_id: u16) -> bool {
 
 // ─── Snapshot restore ─────────────────────────────────────────────────────────
 
-#[inline(always)]
-fn restore_snapshot(flags: &mut Vec<u64>, snaps: &mut Vec<SnapEntry>, mark: u32) {
+#[inline]
+fn restore_snapshot(flags: &mut [u64], snaps: &mut Vec<SnapEntry>, mark: u32) {
     let mark = mark as usize;
     for entry in snaps[mark..].iter().rev() {
         if (entry.word as usize) < flags.len() { flags[entry.word as usize] = entry.val; }
@@ -865,7 +918,7 @@ fn restore_snapshot(flags: &mut Vec<u64>, snaps: &mut Vec<SnapEntry>, mark: u32)
 // ─── Frame-stack helpers ──────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-#[inline(always)]
+#[inline]
 fn fail_or_jump(
     on_fail:       u32,
     graph:         &ParseGraph,
@@ -879,7 +932,7 @@ fn fail_or_jump(
     tree_events:   &mut Vec<TreeEvent>,
     open_tokens:   &mut Vec<(SyntaxKind, bool, Pos)>,
     memo:          &mut Option<MemoTable>,
-    error_ctx:     &mut ErrorContext,
+    error_ctx:     &ErrorContext,
     multi_errors:  &mut Option<&mut Vec<ParseError>>,
     max_errors:    usize,
 ) -> Result<(), ParseError> {
@@ -894,15 +947,16 @@ fn fail_or_jump(
 }
 
 /// Advance `pos` by one byte (or to end of input). Used during error recovery skip.
-#[inline(always)]
-fn recovery_advance(pos: &mut Pos, input: &[u8]) {
+#[inline]
+const fn recovery_advance(pos: &mut Pos, input: &[u8]) {
     if (*pos as usize) < input.len() {
         *pos += 1;
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-#[inline(always)]
+#[inline]
+#[allow(clippy::ptr_arg)] // need Vec for .truncate
 fn do_fail(
     graph:         &ParseGraph,
     input:         &[u8],
@@ -936,7 +990,7 @@ fn do_fail(
             Some(Frame::MemoReturn { rule, start_pos, .. }) => {
                 if let Some(m) = memo { m.insert_miss(rule, start_pos, error_ctx.furthest); }
             }
-            Some(Frame::Recover { sync_rule, resume }) => {
+            Some(Frame::Recover { sync_rule, resume } | Frame::RecoverSync { sync_rule, resume }) => {
                 if let Some(errs) = multi_errors {
                     errs.push(ParseError::NoMatch(error_ctx.to_diagnostic()));
                     if errs.len() >= max_errors {
@@ -945,26 +999,7 @@ fn do_fail(
                 }
                 recovery_advance(pos, input);
                 if (*pos as usize) >= input.len() {
-                    // Synced to EOI; don't jump back into the recovery body — keep popping
-                    // so the outer loop (e.g. zero_or_more) can exit.
-                } else {
-                    let entry = *graph.rule_entry.get(sync_rule as usize).ok_or(ParseError::BadGraph)?;
-                    stack.push(Frame::RecoverSync { sync_rule, resume });
-                    stack.push(Frame::Return { ret_ip: resume });
-                    *ip = entry;
-                    return Ok(());
-                }
-            }
-            Some(Frame::RecoverSync { sync_rule, resume }) => {
-                if let Some(errs) = multi_errors {
-                    errs.push(ParseError::NoMatch(error_ctx.to_diagnostic()));
-                    if errs.len() >= max_errors {
-                        return Err(ParseError::NoMatch(error_ctx.to_diagnostic()));
-                    }
-                }
-                recovery_advance(pos, input);
-                if (*pos as usize) >= input.len() {
-                    // Same: synced to EOI, keep popping to exit outer construct.
+                    // Synced to EOI; don't jump back into the recovery body — keep popping.
                 } else {
                     let entry = *graph.rule_entry.get(sync_rule as usize).ok_or(ParseError::BadGraph)?;
                     stack.push(Frame::RecoverSync { sync_rule, resume });
@@ -980,32 +1015,32 @@ fn do_fail(
     }
 }
 
-#[inline(always)]
+#[inline]
 fn pop_backtrack(stack: &mut Vec<Frame>) -> Result<(), ParseError> {
     loop {
         match stack.pop() {
             Some(Frame::Backtrack { .. }) => return Ok(()),
-            Some(_) => continue,
-            None    => return Err(ParseError::BadGraph),
+            Some(_) => {}
+            None => return Err(ParseError::BadGraph),
         }
     }
 }
 
-#[inline(always)]
+#[inline]
 fn pop_backtrack_pos(stack: &mut Vec<Frame>) -> Result<Pos, ParseError> {
     loop {
         match stack.pop() {
             Some(Frame::Backtrack { saved_pos, .. }) => return Ok(saved_pos),
-            Some(_) => continue,
-            None    => return Err(ParseError::BadGraph),
+            Some(_) => {}
+            None => return Err(ParseError::BadGraph),
         }
     }
 }
 
 /// Update ALL marks in the nearest `Backtrack` frame (used by `PartialCommit`).
-#[inline(always)]
+#[inline]
 fn update_backtrack_marks(
-    stack:            &mut Vec<Frame>,
+    stack:            &mut [Frame],
     new_pos:          Pos,
     new_capture_mark: u32,
     new_tree_mark:    u32,
@@ -1023,13 +1058,13 @@ fn update_backtrack_marks(
     Err(ParseError::BadGraph)
 }
 
-#[inline(always)]
+#[inline]
 fn pop_context_save(stack: &mut Vec<Frame>) -> Result<u32, ParseError> {
     loop {
         match stack.pop() {
             Some(Frame::ContextSave { snapshot_mark }) => return Ok(snapshot_mark),
-            Some(_) => continue,
-            None    => return Err(ParseError::BadGraph),
+            Some(_) => {}
+            None => return Err(ParseError::BadGraph),
         }
     }
 }

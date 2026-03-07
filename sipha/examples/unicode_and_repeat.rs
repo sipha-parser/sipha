@@ -30,7 +30,7 @@ fn check(
     } else {
         let ec = engine.error_context();
         let exp: Vec<_> = ec.expected.iter()
-            .map(|e| e.display(Some(&graph.literals), Some(&graph.rule_names), Some(&graph.expected_labels))).collect();
+            .map(|e| e.display(Some(&graph.literals), Some(graph.rule_names), Some(graph.expected_labels))).collect();
         println!("  [{sym}] {desc:<58} → ERR byte {}: {exp:?}", ec.furthest);
     }
     ok == expect_ok
@@ -184,9 +184,9 @@ fn main() {
         let bg = grammar_any_char(); let gr = bg.as_graph();
         let bad = b"\x80";
         let ok = engine.parse(&gr, bad).is_ok();
-        let sym = if !ok { "✓" } else { "✗" };
-        println!("  [{sym}] {:<58} → {}", "invalid UTF-8 (0x80 continuation as lead)", if !ok { "ERR (correct)" } else { "OK (wrong!)" });
-        if !ok { pass += 1 } else { fail += 1 }
+        let sym = if ok { "✗" } else { "✓" };
+        println!("  [{sym}] {:<58} → {}", "invalid UTF-8 (0x80 continuation as lead)", if ok { "OK (wrong!)" } else { "ERR (correct)" });
+        if ok { fail += 1 } else { pass += 1 }
     }
 
     println!();

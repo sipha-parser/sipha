@@ -13,6 +13,11 @@ use crate::insn::ParseGraph;
 use crate::red::SyntaxNode;
 use crate::types::{FieldId, Pos, SyntaxKind, TreeEvent};
 
+/// Stack element when building green tree from events (with or without reuse).
+type IncrementalStackEntry = (SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>);
+/// Root or child element: (optional field id, node or token).
+type IncrementalRootElem = (Option<FieldId>, GreenElement);
+
 /// A text edit: replace `old_source[start..end]` with `new_text`.
 #[derive(Clone, Debug)]
 pub struct TextEdit {
@@ -26,6 +31,7 @@ pub struct TextEdit {
 
 impl TextEdit {
     /// Build the new source buffer after applying this edit.
+    #[must_use] 
     pub fn apply(&self, old_source: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(
             old_source.len().saturating_sub((self.end - self.start) as usize) + self.new_text.len(),
@@ -39,7 +45,8 @@ impl TextEdit {
 
 /// Map a span in the *new* source to the corresponding span in the *old* source
 /// if that range is unchanged; otherwise return `None`.
-fn new_span_to_old(
+#[allow(clippy::cast_possible_truncation)] // const fn; new_text_len is small in practice
+const fn new_span_to_old(
     new_start: Pos,
     new_end: Pos,
     edit_start: Pos,
@@ -57,13 +64,13 @@ fn new_span_to_old(
     }
 }
 
-/// Build a map from (old_start, old_end) to the green token at that span by walking the tree.
+/// Build a map from (`old_start`, `old_end`) to the green token at that span by walking the tree.
 fn old_tree_token_map(root: &GreenNode, _old_source: &[u8]) -> HashMap<(Pos, Pos), Arc<GreenToken>> {
     let mut map = HashMap::new();
     let mut stack: Vec<(&GreenNode, Pos)> = vec![(root, 0)];
     while let Some((node, offset)) = stack.pop() {
         let mut off = offset;
-        for child in node.children.iter() {
+        for child in &node.children {
             let start = off;
             off += child.text_len();
             match child {
@@ -81,6 +88,7 @@ fn old_tree_token_map(root: &GreenNode, _old_source: &[u8]) -> HashMap<(Pos, Pos
 
 /// Build a green tree from events, reusing tokens (and optionally nodes) from the old tree
 /// when the new parse produces the same span in an unchanged region.
+#[must_use] 
 pub fn build_green_tree_with_reuse(
     new_source: &[u8],
     events: &[TreeEvent],
@@ -93,9 +101,8 @@ pub fn build_green_tree_with_reuse(
     let edit_end = edit.end;
     let new_text_len = edit.new_text.len();
 
-    type StackEntry = (SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>);
-    let mut stack: Vec<StackEntry> = Vec::new();
-    let mut roots: Vec<(Option<FieldId>, GreenElement)> = Vec::new();
+    let mut stack: Vec<IncrementalStackEntry> = Vec::new();
+    let mut roots: Vec<IncrementalRootElem> = Vec::new();
 
     for ev in events {
         match *ev {
@@ -155,18 +162,18 @@ pub fn build_green_tree_with_reuse(
             }
         }
         _ => {
-            let children_with_fields: Vec<(Option<FieldId>, GreenElement)> =
-                roots.into_iter().map(|(f, e)| (f, e)).collect();
+            let children_with_fields: Vec<IncrementalRootElem> = roots.into_iter().collect();
             Some(GreenNode::new_with_fields(u16::MAX, children_with_fields))
         }
     }
 }
 
 #[inline]
+#[allow(clippy::ptr_arg)] // need Vec for .push
 fn push_element(
-    stack: &mut Vec<(SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>)>,
-    roots: &mut Vec<(Option<FieldId>, GreenElement)>,
-    elem: (Option<FieldId>, GreenElement),
+    stack: &mut Vec<IncrementalStackEntry>,
+    roots: &mut Vec<IncrementalRootElem>,
+    elem: IncrementalRootElem,
 ) {
     match stack.last_mut() {
         Some((_, _, children)) => children.push(elem),
@@ -178,6 +185,10 @@ fn push_element(
 /// reusing unchanged tokens from the old tree.
 ///
 /// Returns the new syntax root, or `None` if the parse produced no root (e.g. empty or error).
+///
+/// # Errors
+///
+/// Propagates [`ParseError`] from the parser if the new source fails to parse.
 pub fn reparse(
     engine: &mut Engine,
     graph: &ParseGraph,
@@ -194,7 +205,7 @@ pub fn reparse(
         old_source,
         edit,
     );
-    Ok(new_green.map(|g| SyntaxNode::new_root(g)))
+    Ok(new_green.map(SyntaxNode::new_root))
 }
 
 #[cfg(test)]

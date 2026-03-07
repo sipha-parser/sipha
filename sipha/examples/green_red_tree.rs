@@ -5,8 +5,8 @@
 //! 1. Build a grammar with `g.node()`, `g.token()`, and `g.trivia()`
 //! 2. Parse input
 //! 3. Call `output.syntax_root(input)` to get the red tree root
-//! 4. Navigate the tree: children, tokens, trivia, token_groups, find_node,
-//!    descendant_semantic_tokens, token_at_offset, collect_text
+//! 4. Navigate the tree: children, tokens, trivia, `token_groups`, `find_node`,
+//!    `descendant_semantic_tokens`, `token_at_offset`, `collect_text`
 //!
 //! Grammar: a tiny statement list
 //! ```
@@ -60,7 +60,7 @@ fn build_grammar() -> BuiltGraph {
                 |g| { g.choice(
                     |g| { g.literal(b"const"); },
                     |g| { g.literal(b"var"); },
-                )},
+                );},
             );
         });
         // mandatory whitespace between keyword and ident (trivia)
@@ -102,7 +102,7 @@ fn build_grammar() -> BuiltGraph {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn kind_name(k: SyntaxKind) -> &'static str {
+const fn kind_name(k: SyntaxKind) -> &'static str {
     match k {
         NODE_STMT_LIST => "StmtList",
         NODE_STMT      => "Stmt",
@@ -195,7 +195,7 @@ fn main() {
 
     // collect_text: reconstruct node text from stored tokens.
     let stmt0_text = stmts[0].collect_text();
-    c(stmt0_text == "let foo;\n", &format!("stmt[0].collect_text() = {:?}", stmt0_text));
+    c(stmt0_text == "let foo;\n", &format!("stmt[0].collect_text() = {stmt0_text:?}"));
 
     println!();
     println!("─── Red tree: ranges ───");
@@ -264,7 +264,7 @@ fn main() {
     let root1_list = root1.find_node(NODE_STMT_LIST).unwrap();
     let list_lt = root1_list.leading_trivia();
     c(list_lt.len() == 1 && list_lt[0].text() == "  ",
-      &format!("StmtList leading_trivia = {:?}", list_lt.iter().map(|t| t.text()).collect::<Vec<_>>()));
+      &format!("StmtList leading_trivia = {:?}", list_lt.iter().map(sipha::red::SyntaxToken::text).collect::<Vec<_>>()));
 
     println!();
     println!("─── Trivia: full_text on TokenWithTrivia ───");

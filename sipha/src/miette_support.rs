@@ -67,7 +67,7 @@ impl MietteParseDiagnostic {
             if list == "nothing" {
                 "expected nothing".to_string()
             } else {
-                format!("expected {}", list)
+                format!("expected {list}")
             }
         };
         let source_str = source.into();
@@ -120,7 +120,7 @@ impl miette::Diagnostic for MietteParseDiagnostic {
             let s = self
                 .hints
                 .iter()
-                .map(|h| format!("  hint: {}", h))
+                .map(|h| format!("  hint: {h}"))
                 .collect::<Vec<_>>()
                 .join("\n");
             Some(Box::new(HintDisplay(s)))

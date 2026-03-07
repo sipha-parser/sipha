@@ -1,4 +1,4 @@
-//! # ParsedDoc and better errors
+//! # `ParsedDoc` and better errors
 //!
 //! Shows the recommended API for compiler/formatter use:
 //!
@@ -69,7 +69,7 @@ fn main() {
     let ok_src = b"let foo;\nconst bar;";
     match engine.parse(&graph, ok_src) {
         Ok(output) => {
-            let doc = ParsedDoc::new(ok_src.to_vec(), output).expect("tree");
+            let doc = ParsedDoc::new(ok_src.to_vec(), &output).expect("tree");
             let root = doc.root();
             let stmts = root.find_all_nodes(NODE_STMT);
             println!("Parsed {} statement(s)", stmts.len());
@@ -85,8 +85,8 @@ fn main() {
         }
         Err(ParseError::NoMatch(diag)) => {
             let line_index = LineIndex::new(ok_src);
-            let msg = diag.format_with_source(ok_src, &line_index, literals, Some(&graph.rule_names), Some(&graph.expected_labels));
-            println!("{}", msg);
+            let msg = diag.format_with_source(ok_src, &line_index, literals, Some(graph.rule_names), Some(graph.expected_labels));
+            println!("{msg}");
         }
         Err(ParseError::BadGraph) => println!("Bad graph"),
     }
@@ -96,7 +96,7 @@ fn main() {
     let bad_src = b"let foo\n  bar"; // missing semicolon after "foo"
     if let Err(ParseError::NoMatch(diag)) = engine.parse(&graph, bad_src) {
         let line_index = LineIndex::new(bad_src);
-        let msg = diag.format_with_source(bad_src, &line_index, literals, Some(&graph.rule_names), Some(&graph.expected_labels));
-        println!("\n--- Error (with line/col and snippet) ---\n{}", msg);
+        let msg = diag.format_with_source(bad_src, &line_index, literals, Some(graph.rule_names), Some(graph.expected_labels));
+        println!("\n--- Error (with line/col and snippet) ---\n{msg}");
     }
 }

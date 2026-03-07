@@ -54,9 +54,7 @@
 //!
 //! See the individual modules for details and the `examples/` directory for
 //! full grammars (e.g. JSON). For common patterns (expression precedence,
-//! error recovery, byte_dispatch, trivia), see `docs/COOKBOOK.md` in the crate.
-
-#![allow(clippy::module_name_repetitions)]
+//! error recovery, `byte_dispatch`, trivia), see `docs/COOKBOOK.md` in the crate.
 
 pub use sipha_macros::SyntaxKinds;
 

@@ -3,6 +3,9 @@ name = "sipha"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [features]
 default = ["walk"]
 walk = []

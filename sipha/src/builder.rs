@@ -135,6 +135,11 @@ use crate::{
     types::{CharClass, FieldId, InsnId, IntoSyntaxKind, RuleId, Tag},
 };
 
+/// Single choice closure for [`GrammarBuilder::choices`] and related.
+type GrammarChoiceFn = Box<dyn FnOnce(&mut GrammarBuilder)>;
+/// One arm of a byte dispatch: character class + body.
+type ByteDispatchArm = (CharClass, GrammarChoiceFn);
+
 /// N-way choice without `Vec<Box<dyn FnOnce>>`: `choices!(g, |g| g.literal(b"a"), |g| g.literal(b"b"))`.
 #[macro_export]
 macro_rules! choices {
@@ -200,16 +205,17 @@ impl LiteralInterner {
 
     /// Append `bytes` and return the id of the new literal.
     fn intern(&mut self, bytes: &[u8]) -> u32 {
-        let id = (self.offsets.len() - 1) as u32;
+        let id = u32::try_from(self.offsets.len().saturating_sub(1)).unwrap_or(0);
         self.data.extend_from_slice(bytes);
-        self.offsets.push(self.data.len() as u32);
+        self.offsets.push(u32::try_from(self.data.len()).unwrap_or(0));
         id
     }
 
     /// Ensure the sentinel offset is present (called by `finish`).
     fn seal(&mut self) {
-        if self.offsets.last() != Some(&(self.data.len() as u32)) {
-            self.offsets.push(self.data.len() as u32);
+        let len_u32 = u32::try_from(self.data.len()).unwrap_or(0);
+        if self.offsets.last() != Some(&len_u32) {
+            self.offsets.push(len_u32);
         }
     }
 }
@@ -239,24 +245,25 @@ impl FlagMaskInterner {
         // Group by word index (BTreeMap gives deterministic order).
         let mut by_word: BTreeMap<u32, (u64, u64)> = BTreeMap::new();
         for &id in set_ids {
-            by_word.entry((id >> 6) as u32).or_default().0 |= 1u64 << (id & 63);
+            by_word.entry(u32::from(id >> 6)).or_default().0 |= 1u64 << (id & 63);
         }
         for &id in clear_ids {
-            by_word.entry((id >> 6) as u32).or_default().1 |= 1u64 << (id & 63);
+            by_word.entry(u32::from(id >> 6)).or_default().1 |= 1u64 << (id & 63);
         }
 
-        let id = (self.offsets.len() - 1) as u32;
+        let id = u32::try_from(self.offsets.len().saturating_sub(1)).unwrap_or(0);
         for (word, (set_bits, clear_bits)) in by_word {
             self.data.push(FlagMaskWord { word, set_bits, clear_bits });
         }
-        self.offsets.push(self.data.len() as u32);
+        self.offsets.push(u32::try_from(self.data.len()).unwrap_or(0));
         id
     }
 
     /// Ensure the sentinel offset is present (called by `finish`).
     fn seal(&mut self) {
-        if self.offsets.last() != Some(&(self.data.len() as u32)) {
-            self.offsets.push(self.data.len() as u32);
+        let len_u32 = u32::try_from(self.data.len()).unwrap_or(0);
+        if self.offsets.last() != Some(&len_u32) {
+            self.offsets.push(len_u32);
         }
     }
 }
@@ -302,9 +309,10 @@ impl BuiltGraph {
     /// Violating these conditions is undefined behavior.  In typical usage
     /// the `BuiltGraph` is stored in a variable that outlives the parse
     /// call (e.g. `let built = g.finish()?; let graph = built.as_graph();`).
+    #[must_use] 
     pub fn as_graph(&self) -> ParseGraph {
         // SAFETY: see doc comment above.
-        unsafe fn to_static<T>(v: &[T]) -> &'static [T] {
+        const unsafe fn to_static<T>(v: &[T]) -> &'static [T] {
             std::slice::from_raw_parts(v.as_ptr(), v.len())
         }
         unsafe {
@@ -323,7 +331,7 @@ impl BuiltGraph {
                 rule_names:    to_static(&self.rule_names),
                 tag_names:     to_static(&self.tag_names),
                 class_labels:    if self.class_labels.is_empty() {
-                    const DEFAULT: &[&'static str] = &["character class"];
+                    const DEFAULT: &[&str] = &["character class"];
                     DEFAULT
                 } else {
                     to_static(&self.class_labels)
@@ -395,7 +403,7 @@ pub struct GrammarBuilder {
     /// If `true`, [`finish`](Self::finish) will not report an error for
     /// left-recursive or mutually recursive rule cycles. Use when the grammar
     /// uses packrat memoization and intentionally has indirect recursion
-    /// (e.g. expr → primary → object_pair → expr). Default is `false`.
+    /// (e.g. expr → primary → `object_pair` → expr). Default is `false`.
     allow_rule_cycles: bool,
 
     /// If `false`, [`finish`](Self::finish) will return an error when any rule
@@ -404,6 +412,7 @@ pub struct GrammarBuilder {
 }
 
 impl GrammarBuilder {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             insns:         Vec::with_capacity(1024),
@@ -434,15 +443,15 @@ impl GrammarBuilder {
     /// call graph contains a cycle. Use for grammars that run with
     /// [`Engine::with_memo`](crate::engine::Engine::with_memo) and have
     /// intentional indirect recursion (e.g. expression precedence chains that
-    /// cycle back through primary → object_pair → expr).
-    pub fn allow_rule_cycles(&mut self, allow: bool) -> &mut Self {
+    /// cycle back through primary → `object_pair` → expr).
+    pub const fn allow_rule_cycles(&mut self, allow: bool) -> &mut Self {
         self.allow_rule_cycles = allow;
         self
     }
 
     /// If `false`, [`finish`](Self::finish) will error when any rule is unreachable
     /// from the start rule. Default is `true`.
-    pub fn allow_unreachable_rules(&mut self, allow: bool) -> &mut Self {
+    pub const fn allow_unreachable_rules(&mut self, allow: bool) -> &mut Self {
         self.allow_unreachable_rules = allow;
         self
     }
@@ -600,8 +609,8 @@ impl GrammarBuilder {
     /// Every `begin_rule` must be followed by exactly one
     /// [`end_rule`](Self::end_rule).
     pub fn begin_rule(&mut self, name: &'static str) -> RuleId {
-        let id = self.rule_entry.len() as RuleId;
-        self.rule_entry.push(self.insns.len() as InsnId);
+        let id = RuleId::try_from(self.rule_entry.len()).unwrap_or(0);
+        self.rule_entry.push(InsnId::try_from(self.insns.len()).unwrap_or(0));
         self.rule_by_name.insert(name.to_string(), id);
         self.rule_names.push(name);
         id
@@ -649,7 +658,7 @@ impl GrammarBuilder {
         if let Some(&id) = self.tag_by_name.get(name) {
             return id;
         }
-        let id = self.tag_names.len() as Tag;
+        let id = Tag::try_from(self.tag_names.len()).unwrap_or(0);
         self.tag_by_name.insert(name.to_string(), id);
         self.tag_names.push(name);
         id
@@ -662,13 +671,14 @@ impl GrammarBuilder {
     /// Prefer the higher-level combinators.  This is exposed for grammars that
     /// need to emit instructions that have no combinator wrapper.
     pub fn emit(&mut self, insn: Insn) -> InsnId {
-        let id = self.insns.len() as InsnId;
+        let id = InsnId::try_from(self.insns.len()).unwrap_or(0);
         self.insns.push(insn);
         id
     }
 
     /// Return the address the *next* emitted instruction will have.
-    fn current_ip(&self) -> InsnId {
+    #[allow(clippy::cast_possible_truncation)] // const fn; graph size fits InsnId in practice
+    const fn current_ip(&self) -> InsnId {
         self.insns.len() as InsnId
     }
 
@@ -736,7 +746,7 @@ impl GrammarBuilder {
 
     /// Like [`class`](Self::class) but use `label` in diagnostics (e.g. "digit", "whitespace").
     pub fn class_with_label(&mut self, class: CharClass, label: &'static str) -> InsnId {
-        let label_id = self.class_labels.len() as u32;
+        let label_id = u32::try_from(self.class_labels.len()).unwrap_or(0);
         self.class_labels.push(label);
         self.emit(Insn::Class {
             class,
@@ -775,7 +785,7 @@ impl GrammarBuilder {
     /// For ASCII codepoints (U+0000–U+007F), `byte(c as u8)` is equivalent
     /// and avoids the UTF-8 decode.
     pub fn char(&mut self, c: char) -> InsnId {
-        self.emit(Insn::Char { codepoint: c as u32, on_fail: u32::MAX })
+        self.emit(Insn::Char { codepoint: u32::from(c), on_fail: u32::MAX })
     }
 
     /// Match any codepoint in the inclusive range `[lo, hi]`.
@@ -786,7 +796,11 @@ impl GrammarBuilder {
     /// g.char_range('\u{1F600}', '\u{1F64F}')  // Smiley emoji block
     /// ```
     pub fn char_range(&mut self, lo: char, hi: char) -> InsnId {
-        self.emit(Insn::CharRange { lo: lo as u32, hi: hi as u32, on_fail: u32::MAX })
+        self.emit(Insn::CharRange {
+            lo: u32::from(lo),
+            hi: u32::from(hi),
+            on_fail: u32::MAX,
+        })
     }
 
     // ── Control flow ──────────────────────────────────────────────────────────
@@ -884,7 +898,7 @@ impl GrammarBuilder {
         if let Some(&id) = self.field_by_name.get(name) {
             return id;
         }
-        let id = self.field_names.len() as FieldId;
+        let id = FieldId::try_from(self.field_names.len()).unwrap_or(0);
         self.field_names.push(name);
         self.field_by_name.insert(name.to_string(), id);
         id
@@ -973,7 +987,11 @@ impl GrammarBuilder {
     ///     Box::new(|g| g.literal(b"c")),
     /// ]);
     /// ```
-    pub fn choices(&mut self, mut alternatives: Vec<Box<dyn FnOnce(&mut Self)>>) {
+    ///
+    /// # Panics
+    ///
+    /// Never; the `len` check ensures `pop` and `remove` are only used when valid.
+    pub fn choices(&mut self, mut alternatives: Vec<GrammarChoiceFn>) {
         match alternatives.len() {
             0 => {}
             1 => {
@@ -1073,7 +1091,7 @@ impl GrammarBuilder {
     pub fn expect_label<F>(&mut self, label: &'static str, body: F)
     where F: FnOnce(&mut Self)
     {
-        let label_id = self.expected_labels.len() as u32;
+        let label_id = u32::try_from(self.expected_labels.len()).unwrap_or(0);
         self.expected_labels.push(label);
         self.emit(Insn::RecordExpectedLabel { label_id });
         body(self);
@@ -1198,8 +1216,8 @@ impl GrammarBuilder {
     /// consumed before the dispatch).
     pub fn byte_dispatch(
         &mut self,
-        arms:     Vec<(CharClass, Box<dyn FnOnce(&mut Self)>)>,
-        fallback: Option<Box<dyn FnOnce(&mut Self)>>,
+        arms:     Vec<ByteDispatchArm>,
+        fallback: Option<GrammarChoiceFn>,
     ) {
         if self.auto_trivia { self.skip(); }
         // Arm bodies run without auto-skip: trivia is already consumed above,
@@ -1222,7 +1240,7 @@ impl GrammarBuilder {
 
         if let Some(body) = fallback {
             let fallback_start = self.current_ip();
-            for slot in table.iter_mut() {
+            for slot in &mut table {
                 if *slot == u32::MAX { *slot = fallback_start; }
             }
             body(self);
@@ -1230,7 +1248,7 @@ impl GrammarBuilder {
         }
 
         let after    = self.current_ip();
-        let table_id = self.jump_tables.len() as u32;
+        let table_id = u32::try_from(self.jump_tables.len()).unwrap_or(0);
         for jmp in exits { self.patch(jmp, after); }
         self.jump_tables.push(table);
         self.patch_table_id(dispatch_ip, table_id);
@@ -1241,6 +1259,8 @@ impl GrammarBuilder {
     // ── Finalisation ──────────────────────────────────────────────────────────
 
     /// Resolve all pending rule references and return the completed [`BuiltGraph`].
+    ///
+    /// # Errors
     ///
     /// Returns `Err` if any [`call`](Self::call) referred to a rule name that
     /// was never defined, or if the grammar contains a left-recursive (or mutually
@@ -1262,15 +1282,11 @@ impl GrammarBuilder {
         }
 
         if !self.allow_rule_cycles {
-            if let Err(msg) = self.check_rule_cycles() {
-                return Err(msg);
-            }
+            self.check_rule_cycles()?;
         }
 
         if !self.allow_unreachable_rules {
-            if let Err(msg) = self.check_unreachable_rules() {
-                return Err(msg);
-            }
+            self.check_unreachable_rules()?;
         }
 
         self.literals.seal();
@@ -1295,12 +1311,46 @@ impl GrammarBuilder {
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /// Build rule→rule call graph and detect cycles (left-recursion or mutual recursion).
+    #[allow(clippy::too_many_lines)] // graph build + DFS cycle detection in one pass
     fn check_rule_cycles(&self) -> Result<(), String> {
+        /// DFS state for cycle detection; keeps args to one struct for the recursive visit.
+        struct CycleDfsState<'a> {
+            edges:    &'a [Vec<RuleId>],
+            in_stack: &'a mut [bool],
+            order:    &'a mut [Option<u32>],
+            cycle:    &'a mut Vec<RuleId>,
+            counter:  &'a mut u32,
+        }
+        fn visit(state: &mut CycleDfsState<'_>, r_usize: usize) -> bool {
+            let r = RuleId::try_from(r_usize).unwrap_or(0);
+            if state.order[r_usize].is_some() {
+                if state.in_stack[r_usize] {
+                    state.cycle.push(r);
+                    return true;
+                }
+                return false;
+            }
+            state.in_stack[r_usize] = true;
+            *state.counter += 1;
+            state.order[r_usize] = Some(*state.counter);
+            for &s in &state.edges[r_usize] {
+                let s_usize = s as usize;
+                if visit(state, s_usize) {
+                    if state.cycle.len() == 1 || state.cycle[0] != r {
+                        state.cycle.push(r);
+                    }
+                    state.in_stack[r_usize] = false;
+                    return true;
+                }
+            }
+            state.in_stack[r_usize] = false;
+            false
+        }
+
         let num_rules = self.rule_entry.len();
         if num_rules == 0 {
             return Ok(());
         }
-
         // For each rule r, collect all rules it calls (directly) by walking reachable insns.
         let mut edges: Vec<Vec<RuleId>> = (0..num_rules).map(|_| Vec::new()).collect();
         let insns = &self.insns;
@@ -1324,15 +1374,15 @@ impl GrammarBuilder {
                         stack.push(ip + 1);
                     }
                     Insn::Return | Insn::Fail | Insn::Accept => {}
-                    Insn::Jump { target } => stack.push(*target as usize),
+                    Insn::Jump { target }
+                    | Insn::Commit { target }
+                    | Insn::BackCommit { target }
+                    | Insn::NegBackCommit { target }
+                    | Insn::PartialCommit { target } => stack.push(*target as usize),
                     Insn::Choice { alt } => {
                         stack.push(ip + 1);
                         stack.push(*alt as usize);
                     }
-                    Insn::Commit { target }
-                    | Insn::BackCommit { target }
-                    | Insn::NegBackCommit { target }
-                    | Insn::PartialCommit { target } => stack.push(*target as usize),
                     Insn::ByteDispatch { table_id } => {
                         let tid = *table_id as usize;
                         if tid < jump_tables.len() {
@@ -1353,7 +1403,8 @@ impl GrammarBuilder {
                     Insn::RecoveryResume => stack.push(ip + 1),
                     _ => {
                         stack.push(ip + 1);
-                        if let Some(on_fail) = self.insn_on_fail(ip as u32) {
+                        let ip_u32 = u32::try_from(ip).unwrap_or(0);
+                        if let Some(on_fail) = self.insn_on_fail(ip_u32) {
                             if on_fail != u32::MAX {
                                 stack.push(on_fail as usize);
                             }
@@ -1367,57 +1418,22 @@ impl GrammarBuilder {
         let mut in_stack = vec![false; num_rules];
         let mut order = vec![None; num_rules];
         let mut cycle = Vec::new();
-
-        fn visit(
-            r: RuleId,
-            r_usize: usize,
-            edges: &[Vec<RuleId>],
-            rule_names: &[&'static str],
-            in_stack: &mut [bool],
-            order: &mut [Option<u32>],
-            cycle: &mut Vec<RuleId>,
-            counter: &mut u32,
-        ) -> bool {
-            if order[r_usize].is_some() {
-                if in_stack[r_usize] {
-                    cycle.push(r);
-                    return true;
-                }
-                return false;
-            }
-            in_stack[r_usize] = true;
-            *counter += 1;
-            order[r_usize] = Some(*counter);
-            for &s in &edges[r_usize] {
-                let s_usize = s as usize;
-                if visit(s, s_usize, edges, rule_names, in_stack, order, cycle, counter) {
-                    if cycle.len() == 1 || cycle[0] != r {
-                        cycle.push(r);
-                    }
-                    in_stack[r_usize] = false;
-                    return true;
-                }
-            }
-            in_stack[r_usize] = false;
-            false
-        }
-
         let mut counter = 0u32;
         for r in 0..num_rules {
-            if order[r].is_none()
-                && visit(
-                    r as RuleId,
-                    r,
-                    &edges,
-                    &self.rule_names,
-                    &mut in_stack,
-                    &mut order,
-                    &mut cycle,
-                    &mut counter,
-                )
-            {
-                cycle.reverse();
-                let names: Vec<&str> = cycle
+            if order[r].is_some() {
+                continue;
+            }
+            let mut state = CycleDfsState {
+                edges:    &edges,
+                in_stack: &mut in_stack,
+                order:    &mut order,
+                cycle:    &mut cycle,
+                counter:  &mut counter,
+            };
+            if visit(&mut state, r) {
+                state.cycle.reverse();
+                let names: Vec<&str> = state
+                    .cycle
                     .iter()
                     .map(|&id| {
                         self.rule_names
@@ -1497,15 +1513,15 @@ impl GrammarBuilder {
                         stack.push(ip + 1);
                     }
                     Insn::Return | Insn::Fail | Insn::Accept => {}
-                    Insn::Jump { target } => stack.push(*target as usize),
+                    Insn::Jump { target }
+                    | Insn::Commit { target }
+                    | Insn::BackCommit { target }
+                    | Insn::NegBackCommit { target }
+                    | Insn::PartialCommit { target } => stack.push(*target as usize),
                     Insn::Choice { alt } => {
                         stack.push(ip + 1);
                         stack.push(*alt as usize);
                     }
-                    Insn::Commit { target }
-                    | Insn::BackCommit { target }
-                    | Insn::NegBackCommit { target }
-                    | Insn::PartialCommit { target } => stack.push(*target as usize),
                     Insn::ByteDispatch { table_id } => {
                         let tid = *table_id as usize;
                         if tid < jump_tables.len() {
@@ -1526,7 +1542,8 @@ impl GrammarBuilder {
                     Insn::RecoveryResume => stack.push(ip + 1),
                     _ => {
                         stack.push(ip + 1);
-                        if let Some(on_fail) = self.insn_on_fail(ip as u32) {
+                        let ip_u32 = u32::try_from(ip).unwrap_or(0);
+                        if let Some(on_fail) = self.insn_on_fail(ip_u32) {
                             if on_fail != u32::MAX {
                                 stack.push(on_fail as usize);
                             }
@@ -1538,7 +1555,7 @@ impl GrammarBuilder {
         edges
     }
 
-    /// Return the on_fail target for a terminal-like instruction at the given address.
+    /// Return the `on_fail` target for a terminal-like instruction at the given address.
     fn insn_on_fail(&self, addr: u32) -> Option<u32> {
         let ip = addr as usize;
         if ip >= self.insns.len() {

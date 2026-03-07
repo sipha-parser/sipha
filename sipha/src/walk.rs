@@ -34,7 +34,8 @@ impl Default for WalkOptions {
 
 impl WalkOptions {
     /// Only visit syntax nodes (no tokens). Useful for structure-only analysis.
-    pub fn nodes_only() -> Self {
+    #[must_use] 
+    pub const fn nodes_only() -> Self {
         Self {
             visit_tokens: false,
             visit_trivia: false,
@@ -42,12 +43,14 @@ impl WalkOptions {
     }
 
     /// Visit nodes and semantic tokens only (no trivia).
+    #[must_use] 
     pub fn semantic_only() -> Self {
         Self::default()
     }
 
     /// Visit nodes and all tokens including trivia. Useful for formatting.
-    pub fn full() -> Self {
+    #[must_use] 
+    pub const fn full() -> Self {
         Self {
             visit_tokens: true,
             visit_trivia: true,
@@ -101,7 +104,7 @@ fn walk_node(
     visitor: &mut impl Visitor,
     options: &WalkOptions,
 ) -> WalkResult {
-    if let WalkResult::Break(()) = visitor.enter_node(node) {
+    if visitor.enter_node(node) == WalkResult::Break(()) {
         return WalkResult::Break(());
     }
 
@@ -109,7 +112,7 @@ fn walk_node(
         for elem in node.children() {
             match elem {
                 SyntaxElement::Node(child) => {
-                    if let WalkResult::Break(()) = walk_node(&child, visitor, options) {
+                    if walk_node(&child, visitor, options) == WalkResult::Break(()) {
                         let _ = visitor.leave_node(node);
                         return WalkResult::Break(());
                     }
@@ -118,7 +121,7 @@ fn walk_node(
                     if token.is_trivia() && !options.visit_trivia {
                         continue;
                     }
-                    if let WalkResult::Break(()) = visitor.visit_token(&token) {
+                    if visitor.visit_token(&token) == WalkResult::Break(()) {
                         let _ = visitor.leave_node(node);
                         return WalkResult::Break(());
                     }
@@ -127,14 +130,14 @@ fn walk_node(
         }
     } else {
         for child in node.child_nodes() {
-            if let WalkResult::Break(()) = walk_node(&child, visitor, options) {
+            if walk_node(&child, visitor, options) == WalkResult::Break(()) {
                 let _ = visitor.leave_node(node);
                 return WalkResult::Break(());
             }
         }
     }
 
-    if let WalkResult::Break(()) = visitor.leave_node(node) {
+    if visitor.leave_node(node) == WalkResult::Break(()) {
         return WalkResult::Break(());
     }
     WalkResult::Continue(())

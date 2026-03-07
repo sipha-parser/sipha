@@ -60,7 +60,8 @@ pub struct ParseContext {
 
 impl ParseContext {
     /// Create an empty context (all flags clear, no words allocated).
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             words:          Vec::new(),
             error_node_kind: None,
@@ -69,6 +70,7 @@ impl ParseContext {
 
     /// Create with enough pre-allocated words to hold flags up to `max_flag_id`
     /// without reallocation.
+    #[must_use]
     pub fn with_capacity_for(max_flag_id: FlagId) -> Self {
         let n = word_index(max_flag_id) + 1;
         Self {
@@ -80,12 +82,14 @@ impl ParseContext {
     // ── Mutation ──────────────────────────────────────────────────────────────
 
     /// Set flag `id` and return `self` (builder style).
+    #[must_use]
     pub fn with_set(mut self, id: FlagId) -> Self {
         self.set(id);
         self
     }
 
     /// Clear flag `id` and return `self` (builder style).
+    #[must_use]
     pub fn with_clear(mut self, id: FlagId) -> Self {
         self.clear(id);
         self
@@ -113,7 +117,8 @@ impl ParseContext {
     // ── Query ─────────────────────────────────────────────────────────────────
 
     /// Test flag `id`.  Returns `false` for any flag beyond the current bank.
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub fn has(&self, id: FlagId) -> bool {
         let w = word_index(id);
         if w < self.words.len() {
@@ -124,35 +129,33 @@ impl ParseContext {
     }
 
     /// The number of `u64` words currently allocated.
+    #[must_use]
     #[inline]
-    pub fn num_words(&self) -> usize {
+    pub const fn num_words(&self) -> usize {
         self.words.len()
     }
 
     /// Read-only view of the internal word array.
+    #[must_use]
     #[inline]
     pub fn words(&self) -> &[u64] {
         &self.words
-    }
-
-    /// Mutable access — used by the engine to resize/update the live flag bank.
-    #[inline]
-    pub(crate) fn words_mut(&mut self) -> &mut Vec<u64> {
-        &mut self.words
     }
 
     /// Set the syntax kind to use for error nodes when parsing in recovering mode.
     ///
     /// When set, a failed parse will still produce a well-nested partial tree by
     /// closing any open nodes and inserting an error node at the failure position.
-    pub fn with_error_node_kind(mut self, kind: crate::types::SyntaxKind) -> Self {
+    #[must_use]
+    pub const fn with_error_node_kind(mut self, kind: crate::types::SyntaxKind) -> Self {
         self.error_node_kind = Some(kind);
         self
     }
 
     /// Return the error node kind if set.
+    #[must_use]
     #[inline]
-    pub fn error_node_kind(&self) -> Option<crate::types::SyntaxKind> {
+    pub const fn error_node_kind(&self) -> Option<crate::types::SyntaxKind> {
         self.error_node_kind
     }
 }
@@ -160,14 +163,14 @@ impl ParseContext {
 // ─── Bit addressing helpers ───────────────────────────────────────────────────
 
 /// `flag_id >> 6`
-#[inline(always)]
-pub(crate) fn word_index(id: FlagId) -> usize {
+#[inline]
+pub(crate) const fn word_index(id: FlagId) -> usize {
     (id >> 6) as usize
 }
 
 /// `flag_id & 63`
-#[inline(always)]
-pub(crate) fn bit_index(id: FlagId) -> u32 {
+#[inline]
+pub(crate) const fn bit_index(id: FlagId) -> u32 {
     (id & 63) as u32
 }
 
@@ -199,7 +202,7 @@ pub struct FlagMask<'a> {
     pub entries: &'a [FlagMaskWord],
 }
 
-impl<'a> FlagMask<'a> {
+impl FlagMask<'_> {
     /// Apply this mask to a mutable flag bank, growing it if needed.
     #[inline]
     pub fn apply(&self, flags: &mut Vec<u64>) {

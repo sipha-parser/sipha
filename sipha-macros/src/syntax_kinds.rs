@@ -50,7 +50,7 @@ pub fn derive_syntax_kinds(input: TokenStream) -> TokenStream {
     };
 
     let mut unit_variants = Vec::new();
-    for v in variants.iter() {
+    for v in variants {
         match &v.fields {
             Fields::Unit => unit_variants.push(v),
             _ => {

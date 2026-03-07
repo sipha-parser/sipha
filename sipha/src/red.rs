@@ -47,33 +47,56 @@ pub enum SyntaxElement {
 }
 
 impl SyntaxElement {
+    #[must_use]
     pub fn text_range(&self) -> Span {
         match self {
-            SyntaxElement::Node(n)  => n.text_range(),
-            SyntaxElement::Token(t) => t.text_range(),
+            Self::Node(n) => n.text_range(),
+            Self::Token(t) => t.text_range(),
         }
     }
+
+    #[must_use]
     pub fn kind(&self) -> SyntaxKind {
         match self {
-            SyntaxElement::Node(n)  => n.kind(),
-            SyntaxElement::Token(t) => t.kind(),
+            Self::Node(n) => n.kind(),
+            Self::Token(t) => t.kind(),
         }
     }
+
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
+    #[must_use]
     #[inline]
     pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
         K::from_syntax_kind(self.kind())
     }
+
+    #[must_use]
     pub fn is_trivia(&self) -> bool {
         match self {
-            SyntaxElement::Token(t) => t.is_trivia(),
-            SyntaxElement::Node(_)  => false,
+            Self::Token(t) => t.is_trivia(),
+            Self::Node(_) => false,
         }
     }
-    pub fn into_node(self)  -> Option<SyntaxNode>  { if let Self::Node(n)  = self { Some(n) } else { None } }
-    pub fn into_token(self) -> Option<SyntaxToken> { if let Self::Token(t) = self { Some(t) } else { None } }
-    pub fn as_node(&self)   -> Option<&SyntaxNode>  { if let Self::Node(n)  = self { Some(n) } else { None } }
-    pub fn as_token(&self)  -> Option<&SyntaxToken> { if let Self::Token(t) = self { Some(t) } else { None } }
+
+    #[must_use]
+    pub fn into_node(self) -> Option<SyntaxNode> {
+        if let Self::Node(n) = self { Some(n) } else { None }
+    }
+
+    #[must_use]
+    pub fn into_token(self) -> Option<SyntaxToken> {
+        if let Self::Token(t) = self { Some(t) } else { None }
+    }
+
+    #[must_use]
+    pub const fn as_node(&self) -> Option<&SyntaxNode> {
+        if let Self::Node(n) = self { Some(n) } else { None }
+    }
+
+    #[must_use]
+    pub const fn as_token(&self) -> Option<&SyntaxToken> {
+        if let Self::Token(t) = self { Some(t) } else { None }
+    }
 }
 
 // ─── SyntaxToken ─────────────────────────────────────────────────────────────
@@ -89,23 +112,43 @@ pub struct SyntaxToken {
 }
 
 impl SyntaxToken {
-    pub(crate) fn new(green: Arc<GreenToken>, offset: u32) -> Self {
+    #[must_use]
+    pub(crate) const fn new(green: Arc<GreenToken>, offset: u32) -> Self {
         Self { green, offset }
     }
 
     /// Grammar-defined kind of this token.
-    #[inline] pub fn kind(&self)      -> SyntaxKind { self.green.kind }
+    #[must_use]
+    #[inline]
+    pub fn kind(&self) -> SyntaxKind {
+        self.green.kind
+    }
+
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
-    #[inline] pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
+    #[must_use]
+    #[inline]
+    pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
         K::from_syntax_kind(self.green.kind)
     }
+
     /// Whether this is a trivia token (whitespace, comment, etc.).
-    #[inline] pub fn is_trivia(&self) -> bool       { self.green.is_trivia }
+    #[must_use]
+    #[inline]
+    pub fn is_trivia(&self) -> bool {
+        self.green.is_trivia
+    }
+
     /// Number of UTF-8 bytes this token occupies in the source.
-    #[inline] pub fn text_len(&self)  -> u32        { self.green.text_len }
+    #[must_use]
+    #[inline]
+    pub fn text_len(&self) -> u32 {
+        self.green.text_len
+    }
 
     /// Absolute byte range `[start, end)` of this token in the source.
-    #[inline] pub fn text_range(&self) -> Span {
+    #[must_use]
+    #[inline]
+    pub fn text_range(&self) -> Span {
         Span::new(self.offset, self.offset + self.green.text_len)
     }
 
@@ -113,21 +156,34 @@ impl SyntaxToken {
     ///
     /// This does **not** require the original source buffer — the text is
     /// stored inside the green token's `Arc<str>`.
-    #[inline] pub fn text(&self) -> &str { &self.green.text }
+    #[must_use]
+    #[inline]
+    pub fn text(&self) -> &str {
+        &self.green.text
+    }
 
     /// Extract the token's raw bytes from the original source buffer.
     ///
     /// Equivalent to `self.text_range().as_slice(source)`.  Prefer
     /// [`text`](Self::text) unless you need the raw `&[u8]`.
-    #[inline] pub fn text_bytes<'src>(&self, source: &'src [u8]) -> &'src [u8] {
+    #[must_use]
+    #[inline]
+    pub fn text_bytes<'src>(&self, source: &'src [u8]) -> &'src [u8] {
         self.text_range().as_slice(source)
     }
 
     /// Access the underlying green token (position-independent).
-    pub fn green(&self) -> &Arc<GreenToken> { &self.green }
+    #[must_use]
+    pub const fn green(&self) -> &Arc<GreenToken> {
+        &self.green
+    }
 
     /// Byte offset of this token's first byte in the source.
-    #[inline] pub fn offset(&self) -> u32 { self.offset }
+    #[must_use]
+    #[inline]
+    pub const fn offset(&self) -> u32 {
+        self.offset
+    }
 }
 
 // ─── SyntaxNode ──────────────────────────────────────────────────────────────
@@ -144,7 +200,8 @@ pub struct SyntaxNode {
 
 impl SyntaxNode {
     /// Construct from a green root (offset = 0).
-    pub fn new_root(green: Arc<GreenNode>) -> Self {
+    #[must_use]
+    pub const fn new_root(green: Arc<GreenNode>) -> Self {
         Self { green, offset: 0 }
     }
 
@@ -152,23 +209,39 @@ impl SyntaxNode {
     ///
     /// Used when rebuilding the tree (e.g. in transforms) to create red views of
     /// child green nodes at the correct position.
+    #[must_use]
     #[inline]
-    pub fn new(green: Arc<GreenNode>, offset: u32) -> Self {
+    pub const fn new(green: Arc<GreenNode>, offset: u32) -> Self {
         Self { green, offset }
     }
 
     // ── Basics ────────────────────────────────────────────────────────────────
 
     /// Grammar-defined kind.
-    #[inline] pub fn kind(&self)     -> SyntaxKind { self.green.kind }
+    #[must_use]
+    #[inline]
+    pub fn kind(&self) -> SyntaxKind {
+        self.green.kind
+    }
+
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
-    #[inline] pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
+    #[must_use]
+    #[inline]
+    pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
         K::from_syntax_kind(self.green.kind)
     }
+
     /// Total byte length (all descendants and trivia).
-    #[inline] pub fn text_len(&self) -> u32        { self.green.text_len }
+    #[must_use]
+    #[inline]
+    pub fn text_len(&self) -> u32 {
+        self.green.text_len
+    }
+
     /// Absolute byte range `[start, end)` of this node in the source.
-    #[inline] pub fn text_range(&self) -> Span {
+    #[must_use]
+    #[inline]
+    pub fn text_range(&self) -> Span {
         Span::new(self.offset, self.offset + self.green.text_len)
     }
 
@@ -176,7 +249,9 @@ impl SyntaxNode {
     ///
     /// This is a zero-copy slice of the original source buffer.
     /// For a source-independent `String`, use [`collect_text`](Self::collect_text).
-    #[inline] pub fn text<'src>(&self, source: &'src [u8]) -> &'src [u8] {
+    #[must_use]
+    #[inline]
+    pub fn text<'src>(&self, source: &'src [u8]) -> &'src [u8] {
         self.text_range().as_slice(source)
     }
 
@@ -184,13 +259,23 @@ impl SyntaxNode {
     ///
     /// Allocates a fresh `String`; for a zero-copy `&[u8]` use
     /// [`text`](Self::text) with the source buffer.
-    pub fn collect_text(&self) -> String { self.green.collect_text() }
+    #[must_use]
+    pub fn collect_text(&self) -> String {
+        self.green.collect_text()
+    }
 
     /// Byte offset of this node's first byte in the source.
-    #[inline] pub fn offset(&self) -> u32 { self.offset }
+    #[must_use]
+    #[inline]
+    pub const fn offset(&self) -> u32 {
+        self.offset
+    }
 
     /// Access the underlying green node (position-independent).
-    pub fn green(&self) -> &Arc<GreenNode> { &self.green }
+    #[must_use]
+    pub const fn green(&self) -> &Arc<GreenNode> {
+        &self.green
+    }
 
     // ── Child iterators ───────────────────────────────────────────────────────
 
@@ -201,22 +286,23 @@ impl SyntaxNode {
             let start = off;
             off += child.text_len();
             match child {
-                GreenElement::Node(n)  => SyntaxElement::Node(SyntaxNode::new(Arc::clone(n), start)),
+                GreenElement::Node(n) => SyntaxElement::Node(Self::new(Arc::clone(n), start)),
                 GreenElement::Token(t) => SyntaxElement::Token(SyntaxToken::new(Arc::clone(t), start)),
             }
         })
     }
 
     /// Iterate direct child **nodes** only (skips all tokens, including trivia).
-    pub fn child_nodes(&self) -> impl Iterator<Item = SyntaxNode> + '_ {
-        self.children().filter_map(|e| e.into_node())
+    pub fn child_nodes(&self) -> impl Iterator<Item = Self> + '_ {
+        self.children().filter_map(SyntaxElement::into_node)
     }
 
     /// First direct child **node** with the given kind, if any.
     ///
     /// Only considers child nodes (not tokens). Useful in visitors when a node
     /// has a known structure and you want one child by kind.
-    pub fn child_by_kind(&self, kind: SyntaxKind) -> Option<SyntaxNode> {
+    #[must_use] 
+    pub fn child_by_kind(&self, kind: SyntaxKind) -> Option<Self> {
         self.child_nodes().find(|n| n.kind() == kind)
     }
 
@@ -225,7 +311,8 @@ impl SyntaxNode {
     /// Use the grammar's `field_names` (or your `Kind`/schema) to resolve a
     /// name to [`FieldId`] and call this. Returns the first child node whose
     /// slot is labeled with that field.
-    pub fn field_by_id(&self, id: FieldId) -> Option<SyntaxNode> {
+    #[must_use]
+    pub fn field_by_id(&self, id: FieldId) -> Option<Self> {
         let fields = self.green.child_fields.as_ref()?;
         let mut off = self.offset;
         for (i, child) in self.green.children.iter().enumerate() {
@@ -235,7 +322,7 @@ impl SyntaxNode {
                 continue;
             }
             if let GreenElement::Node(n) = child {
-                return Some(SyntaxNode::new(Arc::clone(n), start));
+                return Some(Self::new(Arc::clone(n), start));
             }
         }
         None
@@ -243,7 +330,7 @@ impl SyntaxNode {
 
     /// Iterate all direct child **tokens** including trivia.
     pub fn child_tokens(&self) -> impl Iterator<Item = SyntaxToken> + '_ {
-        self.children().filter_map(|e| e.into_token())
+        self.children().filter_map(SyntaxElement::into_token)
     }
 
     /// Iterate direct child tokens, **excluding** trivia.
@@ -255,6 +342,7 @@ impl SyntaxNode {
 
     /// Leading trivia of this node: trivia tokens at the very start before the
     /// first non-trivia token in the node's direct children.
+    #[must_use] 
     pub fn leading_trivia(&self) -> Vec<SyntaxToken> {
         let mut trivia = Vec::new();
         for tok in self.child_tokens() {
@@ -265,6 +353,7 @@ impl SyntaxNode {
 
     /// Trailing trivia: trivia tokens after the last non-trivia token in the
     /// node's direct children.
+    #[must_use]
     pub fn trailing_trivia(&self) -> Vec<SyntaxToken> {
         let all: Vec<SyntaxToken> = self.child_tokens().collect();
         let mut trivia = Vec::new();
@@ -280,8 +369,8 @@ impl SyntaxNode {
     /// Each triple contains:
     /// - `leading` — consecutive trivia tokens immediately before the semantic token
     /// - `token`   — the semantic (non-trivia) token
-    /// - `trailing`— consecutive trivia tokens immediately after it, up to (not
-    ///               including) the next semantic token
+    /// - `trailing` — consecutive trivia tokens immediately after it, up to (not
+    ///   including) the next semantic token
     ///
     /// Orphan trailing trivia after the last semantic token is attached to that
     /// last group.  This is the canonical per-token trivia view.
@@ -292,6 +381,7 @@ impl SyntaxNode {
     ///       ^^              → trailing of `let` / leading of `foo`
     ///               ^^     → trailing of `42` (node-level trailing trivia)
     /// ```
+    #[must_use]
     pub fn token_groups(&self) -> Vec<TokenWithTrivia> {
         let tokens: Vec<SyntaxToken> = self.child_tokens().collect();
         let mut groups: Vec<TokenWithTrivia> = Vec::new();
@@ -317,10 +407,7 @@ impl SyntaxNode {
             // Trailing trivia: all consecutive trivia tokens after `token` up to
             // (but not including) the next semantic token.
             let next_semantic_rel = tokens[i..].iter().position(|t| !t.is_trivia());
-            let trivia_end = match next_semantic_rel {
-                Some(rel) => i + rel,
-                None      => tokens.len(),
-            };
+            let trivia_end = next_semantic_rel.map_or(tokens.len(), |rel| i + rel);
             let trailing: Vec<SyntaxToken> = tokens[i..trivia_end].to_vec();
             i = trivia_end; // do NOT advance past the next semantic token
             groups.push(TokenWithTrivia { leading, token, trailing });
@@ -332,24 +419,27 @@ impl SyntaxNode {
     // ── Depth-first search ────────────────────────────────────────────────────
 
     /// Find the first descendant node (or self) with the given `kind`.
-    pub fn find_node(&self, kind: SyntaxKind) -> Option<SyntaxNode> {
+    #[must_use]
+    pub fn find_node(&self, kind: SyntaxKind) -> Option<Self> {
         if self.kind() == kind { return Some(self.clone()); }
         self.child_nodes().find_map(|n| n.find_node(kind))
     }
 
     /// Collect all descendant nodes (including self) with the given `kind`.
-    pub fn find_all_nodes(&self, kind: SyntaxKind) -> Vec<SyntaxNode> {
+    #[must_use]
+    pub fn find_all_nodes(&self, kind: SyntaxKind) -> Vec<Self> {
         let mut out = Vec::new();
         self.collect_nodes(kind, &mut out);
         out
     }
 
-    fn collect_nodes(&self, kind: SyntaxKind, out: &mut Vec<SyntaxNode>) {
+    fn collect_nodes(&self, kind: SyntaxKind, out: &mut Vec<Self>) {
         if self.kind() == kind { out.push(self.clone()); }
         for child in self.child_nodes() { child.collect_nodes(kind, out); }
     }
 
     /// Find all descendant **tokens** (including trivia) in document order.
+    #[must_use]
     pub fn descendant_tokens(&self) -> Vec<SyntaxToken> {
         let mut out = Vec::new();
         self.collect_tokens_into(&mut out);
@@ -360,22 +450,24 @@ impl SyntaxNode {
         for child in self.children() {
             match child {
                 SyntaxElement::Token(t) => out.push(t),
-                SyntaxElement::Node(n)  => n.collect_tokens_into(out),
+                SyntaxElement::Node(n) => n.collect_tokens_into(out),
             }
         }
     }
 
     /// Find all descendant **semantic** (non-trivia) tokens in document order.
+    #[must_use]
     pub fn descendant_semantic_tokens(&self) -> Vec<SyntaxToken> {
         self.descendant_tokens().into_iter().filter(|t| !t.is_trivia()).collect()
     }
 
     /// First semantic (non-trivia) token in this node's subtree, in document order.
+    #[must_use]
     pub fn first_token(&self) -> Option<SyntaxToken> {
         for child in self.children() {
             match child {
                 SyntaxElement::Token(t) if !t.is_trivia() => return Some(t),
-                SyntaxElement::Token(_) => continue,
+                SyntaxElement::Token(_) => {}
                 SyntaxElement::Node(n) => {
                     if let Some(t) = n.first_token() {
                         return Some(t);
@@ -387,12 +479,13 @@ impl SyntaxNode {
     }
 
     /// Last semantic (non-trivia) token in this node's subtree, in document order.
+    #[must_use]
     pub fn last_token(&self) -> Option<SyntaxToken> {
         let children: Vec<SyntaxElement> = self.children().collect();
         for child in children.into_iter().rev() {
             match child {
                 SyntaxElement::Token(t) if !t.is_trivia() => return Some(t),
-                SyntaxElement::Token(_) => continue,
+                SyntaxElement::Token(_) => {}
                 SyntaxElement::Node(n) => {
                     if let Some(t) = n.last_token() {
                         return Some(t);
@@ -406,7 +499,8 @@ impl SyntaxNode {
     /// Find the first ancestor of this node (from parent toward root) with the given kind.
     ///
     /// Returns `None` if `self` is the root or no ancestor has `kind`.
-    pub fn find_ancestor(&self, root: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
+    #[must_use]
+    pub fn find_ancestor(&self, root: &Self, kind: SyntaxKind) -> Option<Self> {
         self.ancestors(root).into_iter().find(|a| a.kind() == kind)
     }
 
@@ -416,7 +510,8 @@ impl SyntaxNode {
     ///
     /// Returns `None` if `offset` is outside this node's range. Otherwise
     /// returns the deepest descendant node (or self) that contains `offset`.
-    pub fn node_at_offset(&self, offset: u32) -> Option<SyntaxNode> {
+    #[must_use]
+    pub fn node_at_offset(&self, offset: u32) -> Option<Self> {
         if !self.text_range().contains_offset(offset) {
             return None;
         }
@@ -426,7 +521,7 @@ impl SyntaxNode {
             if offset < end {
                 return match child {
                     GreenElement::Node(n) => {
-                        let child_red = SyntaxNode::new(Arc::clone(n), off);
+                        let child_red = Self::new(Arc::clone(n), off);
                         child_red.node_at_offset(offset).or(Some(child_red))
                     }
                     GreenElement::Token(_) => Some(self.clone()),
@@ -440,16 +535,17 @@ impl SyntaxNode {
     /// Return the deepest token whose range contains `offset`.
     ///
     /// If `offset` falls on a trivia token, that trivia token is returned.
+    #[must_use]
     pub fn token_at_offset(&self, offset: u32) -> Option<SyntaxToken> {
         let range = self.text_range();
         if offset < range.start || offset >= range.end { return None; }
         let mut off = self.offset;
-        for child in self.green.children.iter() {
+        for child in &self.green.children {
             let end = off + child.text_len();
             if offset < end {
                 return match child {
                     GreenElement::Token(t) => Some(SyntaxToken::new(Arc::clone(t), off)),
-                    GreenElement::Node(n)  => SyntaxNode::new(Arc::clone(n), off).token_at_offset(offset),
+                    GreenElement::Node(n)  => Self::new(Arc::clone(n), off).token_at_offset(offset),
                 };
             }
             off = end;
@@ -459,6 +555,7 @@ impl SyntaxNode {
 
     /// Like [`token_at_offset`] but skips trivia — returns the deepest
     /// semantic token whose range contains `offset`.
+    #[must_use]
     pub fn semantic_token_at_offset(&self, offset: u32) -> Option<SyntaxToken> {
         self.token_at_offset(offset).filter(|t| !t.is_trivia())
     }
@@ -471,8 +568,9 @@ impl SyntaxNode {
     /// The first element is the *parent* of `self`; the last is `root` (if
     /// `self` is a descendant).  Returns an empty `Vec` if `self` == `root`.
     ///
-    /// This is O(depth × tree_width) but is rarely on the hot path.
-    pub fn ancestors(&self, root: &SyntaxNode) -> Vec<SyntaxNode> {
+    /// This is O(depth × `tree_width`) but is rarely on the hot path.
+    #[must_use]
+    pub fn ancestors(&self, root: &Self) -> Vec<Self> {
         let mut path = Vec::new();
         find_path(root, self.offset, self.green.kind, self.text_len(), &mut path);
         path
@@ -522,17 +620,16 @@ pub struct TokenWithTrivia {
 
 impl TokenWithTrivia {
     /// Total byte range: start of leading trivia → end of trailing trivia.
+    #[must_use]
     pub fn full_range(&self) -> Span {
         let start = self.leading.first()
-            .map(|t| t.offset)
-            .unwrap_or(self.token.offset);
-        let end = self.trailing.last()
-            .map(|t| t.offset + t.green.text_len)
-            .unwrap_or_else(|| self.token.offset + self.token.green.text_len);
+            .map_or(self.token.offset, |t| t.offset);
+        let end = self.trailing.last().map_or_else(|| self.token.offset + self.token.green.text_len, |t| t.offset + t.green.text_len);
         Span::new(start, end)
     }
 
     /// Concatenate text: leading + token + trailing.
+    #[must_use]
     pub fn full_text(&self) -> String {
         let mut s = String::new();
         for t in &self.leading  { s.push_str(t.text()); }

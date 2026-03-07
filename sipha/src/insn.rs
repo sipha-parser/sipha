@@ -139,7 +139,7 @@ pub enum Insn {
     // sync_rule matches (or EOI), then continue at resume. Used by
     // [`recover_until`](crate::builder::GrammarBuilder::recover_until).
 
-    /// Start a recoverable region. On failure, skip until sync_rule matches, then jump to resume.
+    /// Start a recoverable region. On failure, skip until `sync_rule` matches, then jump to resume.
     RecoverUntil { sync_rule: RuleId, resume: InsnId },
     /// After sync rule matched during recovery; pops the recovery frame and continues.
     RecoveryResume,
@@ -157,7 +157,8 @@ pub struct LiteralTable {
 }
 
 impl LiteralTable {
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub fn get(&self, id: u32) -> &[u8] {
         let s = self.offsets[id as usize]     as usize;
         let e = self.offsets[id as usize + 1] as usize;
@@ -175,13 +176,14 @@ impl LiteralTable {
 pub struct FlagMaskTable {
     /// All `FlagMaskWord` entries concatenated.
     pub data:    &'static [FlagMaskWord],
-    /// Offset into `data` for each mask.  Length = num_masks + 1.
+    /// Offset into `data` for each mask.  Length = `num_masks` + 1.
     pub offsets: &'static [u32],
 }
 
 impl FlagMaskTable {
     /// Return the entries for mask `id`.
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub fn get(&self, id: u32) -> &[FlagMaskWord] {
         let s = self.offsets[id as usize]     as usize;
         let e = self.offsets[id as usize + 1] as usize;
@@ -208,15 +210,20 @@ pub struct ParseGraph {
 }
 
 impl ParseGraph {
-    #[inline(always)]
-    pub fn start(&self) -> InsnId { self.rule_entry[0] }
+    #[must_use]
+    #[inline]
+    pub fn start(&self) -> InsnId {
+        self.rule_entry[0]
+    }
 
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub fn insn(&self, id: InsnId) -> Insn {
         unsafe { *self.insns.get_unchecked(id as usize) }
     }
 
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub fn dispatch(&self, table_id: u32, byte: u8) -> InsnId {
         unsafe {
             *self.jump_tables

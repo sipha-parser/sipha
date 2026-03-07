@@ -1,7 +1,7 @@
 //! # UTF-16 offset support
 //!
 //! Helpers to convert byte (UTF-8) positions to UTF-16 code unit offsets.
-//! Required for LSP and editors that use UTF-16 (e.g. JavaScript, VSCode).
+//! Required for LSP and editors that use UTF-16 (e.g. JavaScript, `VSCode`).
 //!
 //! Enable the `utf16` feature to use this module.
 
@@ -9,8 +9,9 @@ use crate::types::Span;
 
 /// Number of UTF-16 code units in `s`.
 #[inline]
+#[must_use] 
 pub fn utf16_len(s: &str) -> u32 {
-    s.chars().map(|c| c.len_utf16()).sum::<usize>() as u32
+    u32::try_from(s.chars().map(char::len_utf16).sum::<usize>()).unwrap_or(0)
 }
 
 /// UTF-16 code unit offset corresponding to `byte_offset` in UTF-8 `s`.
@@ -19,13 +20,14 @@ pub fn utf16_len(s: &str) -> u32 {
 /// If `byte_offset` is inside a multi-byte character, returns the offset at the
 /// start of that character.
 #[inline]
+#[must_use] 
 pub fn byte_offset_to_utf16(s: &str, byte_offset: usize) -> u32 {
     let mut utf16 = 0u32;
     for (i, c) in s.char_indices() {
         if i >= byte_offset {
             break;
         }
-        utf16 += c.len_utf16() as u32;
+        utf16 += u32::try_from(c.len_utf16()).unwrap_or(0);
     }
     utf16
 }
@@ -34,6 +36,7 @@ pub fn byte_offset_to_utf16(s: &str, byte_offset: usize) -> u32 {
 ///
 /// Useful for LSP `Range` (character is in UTF-16 code units).
 #[inline]
+#[must_use] 
 pub fn span_to_utf16_range(span: Span, source: &str) -> (u32, u32) {
     let start = byte_offset_to_utf16(source, span.start as usize);
     let end = byte_offset_to_utf16(source, span.end as usize);

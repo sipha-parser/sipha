@@ -1,4 +1,4 @@
-//! Example: build a small grammar using sipha_grammar! macro.
+//! Example: build a small grammar using `sipha_grammar`! macro.
 
 use sipha::prelude::*;
 use sipha_macros::sipha_grammar;

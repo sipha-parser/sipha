@@ -30,7 +30,7 @@ pub trait IntoSyntaxKind {
 }
 
 impl IntoSyntaxKind for SyntaxKind {
-    #[inline(always)]
+    #[inline]
     fn into_syntax_kind(self) -> SyntaxKind {
         self
     }
@@ -45,7 +45,7 @@ pub trait FromSyntaxKind: Sized {
 }
 
 impl FromSyntaxKind for SyntaxKind {
-    #[inline(always)]
+    #[inline]
     fn from_syntax_kind(k: SyntaxKind) -> Option<Self> {
         Some(k)
     }
@@ -59,35 +59,51 @@ pub struct Span {
 }
 
 impl Span {
-    #[inline(always)]
-    pub const fn new(start: Pos, end: Pos) -> Self { Self { start, end } }
-    #[inline(always)]
-    pub fn len(self)      -> usize { (self.end - self.start) as usize }
-    #[inline(always)]
-    pub fn is_empty(self) -> bool  { self.start == self.end }
-    #[inline(always)]
-    pub fn as_slice<'a>(self, input: &'a [u8]) -> &'a [u8] {
+    #[must_use]
+    #[inline]
+    pub const fn new(start: Pos, end: Pos) -> Self {
+        Self { start, end }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn len(self) -> usize {
+        (self.end - self.start) as usize
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn as_slice(self, input: &[u8]) -> &[u8] {
         &input[self.start as usize..self.end as usize]
     }
 
     /// Returns true if the byte offset lies inside this span (start inclusive, end exclusive).
-    #[inline(always)]
-    pub fn contains_offset(self, offset: Pos) -> bool {
+    #[must_use]
+    #[inline]
+    pub const fn contains_offset(self, offset: Pos) -> bool {
         offset >= self.start && offset < self.end
     }
 
     /// Returns true if `other` is entirely inside this span.
-    #[inline(always)]
-    pub fn contains_span(self, other: Span) -> bool {
+    #[must_use]
+    #[inline]
+    pub const fn contains_span(self, other: Self) -> bool {
         other.start >= self.start && other.end <= self.end
     }
 
     /// Merge two spans that touch or overlap into one span covering both.
     /// Returns `None` if the spans are disjoint (no overlap and not adjacent).
+    #[must_use]
     #[inline]
-    pub fn merge(self, other: Span) -> Option<Span> {
+    pub fn merge(self, other: Self) -> Option<Self> {
         if self.end >= other.start && other.end >= self.start {
-            Some(Span::new(
+            Some(Self::new(
                 self.start.min(other.start),
                 self.end.max(other.end),
             ))
@@ -112,47 +128,62 @@ pub struct CharClass(pub [u64; 4]);
 
 impl CharClass {
     pub const EMPTY: Self = Self([0; 4]);
-    pub const ANY:   Self = Self([u64::MAX; 4]);
+    pub const ANY: Self = Self([u64::MAX; 4]);
 
-    #[inline(always)]
-    pub const fn from_words(words: [u64; 4]) -> Self { Self(words) }
+    #[must_use]
+    #[inline]
+    pub const fn from_words(words: [u64; 4]) -> Self {
+        Self(words)
+    }
 
-    #[inline(always)]
-    pub fn contains(self, byte: u8) -> bool {
+    #[must_use]
+    #[inline]
+    pub const fn contains(self, byte: u8) -> bool {
         let (word, bit) = (byte as usize >> 6, byte as usize & 63);
         (self.0[word] >> bit) & 1 != 0
     }
 
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub const fn with_byte(mut self, byte: u8) -> Self {
         let (word, bit) = ((byte >> 6) as usize, (byte & 63) as usize);
         self.0[word] |= 1u64 << bit;
         self
     }
 
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub const fn with_range(mut self, lo: u8, hi: u8) -> Self {
         let mut b = lo;
         loop {
             let (word, bit) = ((b >> 6) as usize, (b & 63) as usize);
             self.0[word] |= 1u64 << bit;
-            if b == hi { break; }
+            if b == hi {
+                break;
+            }
             b += 1;
         }
         self
     }
 
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub const fn union(self, other: Self) -> Self {
-        Self([self.0[0]|other.0[0], self.0[1]|other.0[1],
-              self.0[2]|other.0[2], self.0[3]|other.0[3]])
+        Self([
+            self.0[0] | other.0[0],
+            self.0[1] | other.0[1],
+            self.0[2] | other.0[2],
+            self.0[3] | other.0[3],
+        ])
     }
 
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub const fn complement(self) -> Self {
         Self([!self.0[0], !self.0[1], !self.0[2], !self.0[3]])
     }
 
+    #[must_use]
     pub const fn from_chars(chars: &[u8]) -> Self {
         let mut cls = Self::EMPTY;
         let mut i = 0;
@@ -224,7 +255,8 @@ pub mod classes {
         .union(CharClass::EMPTY.with_range(b'a', b'f'))
         .union(CharClass::EMPTY.with_range(b'A', b'F'));
     pub const PRINTABLE: CharClass = CharClass::EMPTY.with_range(0x20, 0x7E);
-    /// All bytes except ASCII newline (`0x0A`).  Useful for "rest of line" patterns.
+    /// All bytes except ASCII newline (`0x0A`). Useful for "rest of line" patterns.
+    ///
     /// For a "not newline" constraint in a grammar you can also use
     /// [`neg_lookahead`](crate::builder::GrammarBuilder::neg_lookahead) with `byte(b'\n')`.
     pub const NOT_NEWLINE: CharClass = CharClass::EMPTY

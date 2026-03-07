@@ -50,32 +50,39 @@ pub struct GreenToken {
 
 impl GreenToken {
     /// Construct from already-sliced text.
+    #[must_use]
     pub fn new(kind: SyntaxKind, text: &str, is_trivia: bool) -> Arc<Self> {
         Arc::new(Self {
             kind,
-            text_len: text.len() as u32,
+            text_len: u32::try_from(text.len()).unwrap_or(u32::MAX),
             is_trivia,
             text: text.into(),
         })
     }
 
     /// The token's source text, without needing the original input buffer.
+    #[must_use]
     #[inline]
-    pub fn text(&self) -> &str { &self.text }
+    pub fn text(&self) -> &str {
+        &self.text
+    }
 
     /// Build a trivia token containing a single space. Use for normalizing whitespace.
+    #[must_use]
     #[inline]
     pub fn space(kind: SyntaxKind) -> Arc<Self> {
         Self::new(kind, " ", true)
     }
 
     /// Build a trivia token containing a single newline.
+    #[must_use]
     #[inline]
     pub fn newline(kind: SyntaxKind) -> Arc<Self> {
         Self::new(kind, "\n", true)
     }
 
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
+    #[must_use]
     #[inline]
     pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
         K::from_syntax_kind(self.kind)
@@ -99,6 +106,7 @@ pub struct GreenNode {
 
 impl GreenNode {
     /// Build a node from children only (no field labels). For backward compatibility and tests.
+    #[must_use]
     pub fn new(kind: SyntaxKind, children: Vec<GreenElement>) -> Arc<Self> {
         let text_len = children.iter().map(GreenElement::text_len).sum();
         Arc::new(Self {
@@ -110,6 +118,7 @@ impl GreenNode {
     }
 
     /// Build a node from children with optional field ids per child.
+    #[must_use]
     pub fn new_with_fields(
         kind: SyntaxKind,
         children_with_fields: Vec<(Option<FieldId>, GreenElement)>,
@@ -138,6 +147,7 @@ impl GreenNode {
     }
 
     /// Return the field id for the child at index `i`, if any.
+    #[must_use]
     #[inline]
     pub fn child_field(&self, i: usize) -> Option<FieldId> {
         self.child_fields
@@ -147,6 +157,7 @@ impl GreenNode {
     }
 
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
+    #[must_use]
     #[inline]
     pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
         K::from_syntax_kind(self.kind)
@@ -156,6 +167,7 @@ impl GreenNode {
     ///
     /// Returns a freshly-allocated `String`; for a borrowed slice over the
     /// original source use [`crate::red::SyntaxNode::text`].
+    #[must_use]
     pub fn collect_text(&self) -> String {
         let mut out = String::with_capacity(self.text_len as usize);
         collect_text_into(self, &mut out);
@@ -164,9 +176,9 @@ impl GreenNode {
 }
 
 fn collect_text_into(node: &GreenNode, out: &mut String) {
-    for child in node.children.iter() {
+    for child in &node.children {
         match child {
-            GreenElement::Node(n)  => collect_text_into(n, out),
+            GreenElement::Node(n) => collect_text_into(n, out),
             GreenElement::Token(t) => out.push_str(&t.text),
         }
     }
@@ -183,33 +195,37 @@ pub enum GreenElement {
 
 impl GreenElement {
     /// Total byte length of this element (including all descendants and trivia).
+    #[must_use]
     #[inline]
     pub fn text_len(&self) -> u32 {
         match self {
-            GreenElement::Node(n)  => n.text_len,
-            GreenElement::Token(t) => t.text_len,
+            Self::Node(n) => n.text_len,
+            Self::Token(t) => t.text_len,
         }
     }
 
     /// `true` if this element is a trivia token.
+    #[must_use]
     #[inline]
     pub fn is_trivia(&self) -> bool {
         match self {
-            GreenElement::Token(t) => t.is_trivia,
-            GreenElement::Node(_)  => false,
+            Self::Token(t) => t.is_trivia,
+            Self::Node(_) => false,
         }
     }
 
     /// `SyntaxKind` of the element.
+    #[must_use]
     #[inline]
     pub fn kind(&self) -> SyntaxKind {
         match self {
-            GreenElement::Node(n)  => n.kind,
-            GreenElement::Token(t) => t.kind,
+            Self::Node(n) => n.kind,
+            Self::Token(t) => t.kind,
         }
     }
 
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
+    #[must_use]
     #[inline]
     pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {
         K::from_syntax_kind(self.kind())
@@ -236,6 +252,7 @@ impl GreenElement {
 ///
 /// If the grammar emits multiple top-level nodes (unusual), they are wrapped
 /// in a synthetic root with `kind = u16::MAX`.
+#[must_use]
 pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenNode>> {
     // Stack: (kind, this node's field when closed, children with their field labels)
     type StackEntry = (SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>);
@@ -280,18 +297,20 @@ pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenN
         }
         _ => {
             let children_with_fields: Vec<(Option<FieldId>, GreenElement)> =
-                roots.into_iter().map(|(f, e)| (f, e)).collect();
+                roots.into_iter().collect();
             Some(GreenNode::new_with_fields(u16::MAX, children_with_fields))
         }
     }
 }
 
+/// Root or child element: (optional field id, node or token).
+type BuildElem = (Option<FieldId>, GreenElement);
+/// Stack entry for building: (kind, field, children).
+type BuildStackEntry = (SyntaxKind, Option<FieldId>, Vec<BuildElem>);
+
 #[inline]
-fn push_element(
-    stack: &mut Vec<(SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>)>,
-    roots: &mut Vec<(Option<FieldId>, GreenElement)>,
-    elem: (Option<FieldId>, GreenElement),
-) {
+#[allow(clippy::ptr_arg)] // need Vec for .push
+fn push_element(stack: &mut Vec<BuildStackEntry>, roots: &mut Vec<BuildElem>, elem: BuildElem) {
     match stack.last_mut() {
         Some((_, _, children)) => children.push(elem),
         None => roots.push(elem),

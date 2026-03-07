@@ -66,6 +66,7 @@ impl Expected {
     ///
     /// `rule_names` is used for [`Expected::Rule`]; `expected_labels` for
     /// [`Expected::Label`]. Pass the grammar's tables when formatting.
+    #[must_use]
     pub fn display(
         &self,
         literals: Option<&LiteralTable>,
@@ -73,51 +74,48 @@ impl Expected {
         expected_labels: Option<&[&'static str]>,
     ) -> String {
         match self {
-            Expected::Byte(b) => {
-                if b.is_ascii_graphic() {
-                    format!("'{}'", *b as char)
+            Self::Byte(b) => {
+                if (*b).is_ascii_graphic() {
+                    format!("'{}'", char::from(*b))
                 } else {
                     format!("0x{b:02X}")
                 }
             }
-            Expected::ByteRange(lo, hi) => {
-                format!("'{}'–'{}'", *lo as char, *hi as char)
+            Self::ByteRange(lo, hi) => {
+                format!("'{}'-'{}'", char::from(*lo), char::from(*hi))
             }
-            Expected::Class(label) => label.to_string(),
-            Expected::Literal(lit_id) => {
+            Self::Class(label) => (*label).to_string(),
+            Self::Literal(lit_id) => {
                 if let Some(tbl) = literals {
                     let bytes = tbl.get(*lit_id);
                     if let Ok(s) = std::str::from_utf8(bytes) {
                         return format!("{s:?}");
                     }
-                    format!("0x{:X?}", bytes)
+                    format!("0x{bytes:X?}")
                 } else {
                     format!("literal#{lit_id}")
                 }
             }
-            Expected::EndOfInput => "end-of-input".to_string(),
-            Expected::AnyChar => "any Unicode character".to_string(),
-            Expected::Char(cp) => {
-                if let Some(c) = char::from_u32(*cp) {
+            Self::EndOfInput => "end-of-input".to_string(),
+            Self::AnyChar => "any Unicode character".to_string(),
+            Self::Char(cp) => char::from_u32(*cp).map_or_else(
+                || format!("U+{cp:04X}"),
+                |c| {
                     if c.is_alphanumeric() || c.is_ascii_punctuation() {
                         format!("'{c}'")
                     } else {
                         format!("U+{cp:04X}")
                     }
-                } else {
-                    format!("U+{cp:04X}")
-                }
-            }
-            Expected::CharRange(lo, hi) => {
+                },
+            ),
+            Self::CharRange(lo, hi) => {
                 let fmt = |cp: u32| -> String {
                     char::from_u32(cp)
-                        .filter(|c| c.is_alphanumeric() || c.is_ascii_punctuation())
-                        .map(|c| format!("'{c}'"))
-                        .unwrap_or_else(|| format!("U+{cp:04X}"))
+                        .filter(|c| c.is_alphanumeric() || c.is_ascii_punctuation()).map_or_else(|| format!("U+{cp:04X}"), |c| format!("'{c}'"))
                 };
                 format!("{}–{}", fmt(*lo), fmt(*hi))
             }
-            Expected::Flag { id, required } => {
+            Self::Flag { id, required } => {
                 let word = id >> 6;
                 let bit  = id & 63;
                 if *required {
@@ -126,20 +124,20 @@ impl Expected {
                     format!("flag {id} (word {word} bit {bit}) to be clear")
                 }
             }
-            Expected::Rule(rule_id) => {
+            Self::Rule(rule_id) => {
                 if let Some(names) = rule_names {
                     let id = *rule_id as usize;
                     if id < names.len() {
-                        return format!("{}", names[id]);
+                        return (*names[id]).to_string();
                     }
                 }
                 format!("rule#{rule_id}")
             }
-            Expected::Label(label_id) => {
+            Self::Label(label_id) => {
                 if let Some(labels) = expected_labels {
                     let id = *label_id as usize;
                     if id < labels.len() {
-                        return labels[id].to_string();
+                        return (*labels[id]).to_string();
                     }
                 }
                 format!("expected#{label_id}")
@@ -163,10 +161,10 @@ pub(crate) fn format_expected_list(items: &[String]) -> String {
         display[0].clone()
     } else {
         let (last, rest) = display.split_last().unwrap();
-        format!("{}, or {}", rest.join(", "), last)
+        format!("{}, or {last}", rest.join(", "))
     };
     if more > 0 {
-        format!("{} (and {} more)", list, more)
+        format!("{list} (and {more} more)")
     } else {
         list
     }
@@ -193,6 +191,7 @@ impl Diagnostic {
     ///
     /// If there are more than [`MAX_EXPECTED_DISPLAY`] expected items, only the first
     /// ones are shown and the message ends with "(and N more)".
+    #[must_use]
     pub fn message(
         &self,
         literals: Option<&LiteralTable>,
@@ -208,8 +207,8 @@ impl Diagnostic {
         let expected_str = format_expected_list(&items);
 
         let mut out = format!(
-            "parse error at byte {}: expected {}",
-            self.furthest, expected_str
+            "parse error at byte {}: expected {expected_str}",
+            self.furthest
         );
         for hint in &self.hints {
             out.push_str("\n  hint: ");
@@ -223,6 +222,7 @@ impl Diagnostic {
     /// Uses `line_index` to resolve `furthest` to a line and column, then
     /// appends the line of source and a caret. If `source` is empty or
     /// `line_index` is for a different file, falls back to [`message`].
+    #[must_use]
     pub fn format_with_source(
         &self,
         source: &[u8],
@@ -242,8 +242,8 @@ impl Diagnostic {
 
         let (line_1, col_1) = line_index.line_col_1based(self.furthest);
         let header = format!(
-            "parse error at {}:{} (byte {}): expected {}",
-            line_1, col_1, self.furthest, expected_str
+            "parse error at {line_1}:{col_1} (byte {}): expected {expected_str}",
+            self.furthest
         );
 
         if source.is_empty() || self.furthest as usize > source.len() {
@@ -283,6 +283,7 @@ impl Diagnostic {
     /// let report = miette::Report::new(diag.into_miette(source, "file.txt", Some(&graph.literals)));
     /// eprintln!("{:?}", report);
     /// ```
+    #[must_use]
     pub fn into_miette(
         &self,
         source: impl Into<String>,
@@ -312,6 +313,7 @@ pub struct ErrorContext {
 }
 
 impl ErrorContext {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             furthest:  0,
@@ -332,7 +334,7 @@ impl ErrorContext {
     ///
     /// Only updates if `pos >= self.furthest`; clears existing expectations
     /// if `pos > self.furthest`.
-    #[inline(always)]
+    #[inline]
     pub fn record(&mut self, pos: Pos, what: Expected) {
         if pos > self.furthest {
             self.furthest = pos;
@@ -346,6 +348,7 @@ impl ErrorContext {
     }
 
     /// Build a [`Diagnostic`] from the accumulated context.
+    #[must_use]
     pub fn to_diagnostic(&self) -> Diagnostic {
         Diagnostic {
             furthest: self.furthest,
@@ -375,8 +378,10 @@ pub enum Severity {
 }
 
 /// A single diagnostic from semantic analysis or validation (e.g. undefined
-/// variable, type error). Use with [`SemanticDiagnostic::format_with_source`]
-/// or [`SemanticDiagnostic::into_miette`] (with the `miette` feature) so tools
+/// variable, type error).
+///
+/// Use with [`SemanticDiagnostic::format_with_source`] or
+/// [`SemanticDiagnostic::into_miette`] (with the `miette` feature) so tools
 /// and IDEs can show consistent, pluggable error output.
 #[derive(Clone, Debug)]
 pub struct SemanticDiagnostic {
@@ -398,6 +403,7 @@ impl SemanticDiagnostic {
     /// Uses `line_index` to resolve `span.start` to a line and column, then
     /// appends the line of source and a caret. Callers can use [`ParsedDoc`]
     /// to get `source` and `line_index` from a successful parse.
+    #[must_use]
     pub fn format_with_source(
         &self,
         source: &[u8],
@@ -416,9 +422,7 @@ impl SemanticDiagnostic {
             .unwrap_or_default();
         let location = self
             .file_id
-            .as_deref()
-            .map(|f| format!("{f}:{line_1}:{col_1}"))
-            .unwrap_or_else(|| format!("{line_1}:{col_1}"));
+            .as_deref().map_or_else(|| format!("{line_1}:{col_1}"), |f| format!("{f}:{line_1}:{col_1}"));
         let header = format!(
             "{}: {}{}: {}",
             location,
@@ -432,7 +436,7 @@ impl SemanticDiagnostic {
         }
 
         let snippet = line_index.snippet_at(source, self.span.start);
-        format!("{}\n{}", header, snippet)
+        format!("{header}\n{snippet}")
     }
 
     /// Build a diagnostic for an error at the given span.
@@ -458,12 +462,14 @@ impl SemanticDiagnostic {
     }
 
     /// Set an optional code (e.g. for filtering or docs).
+    #[must_use]
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = Some(code.into());
         self
     }
 
     /// Set an optional file id or path (for multi-file diagnostics).
+    #[must_use]
     pub fn with_file_id(mut self, file_id: impl Into<String>) -> Self {
         self.file_id = Some(file_id.into());
         self
@@ -474,6 +480,7 @@ impl SemanticDiagnostic {
 impl SemanticDiagnostic {
     /// Convert this diagnostic into a value implementing [`miette::Diagnostic`]
     /// for pretty-printed reports with source snippets.
+    #[must_use]
     pub fn into_miette(
         &self,
         source: impl Into<String>,
