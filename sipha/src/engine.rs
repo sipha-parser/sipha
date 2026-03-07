@@ -50,6 +50,7 @@ pub(crate) fn insert_error_node_events(
     }
     tree_events.push(TreeEvent::NodeOpen {
         kind: error_kind,
+        field: None,
         pos: furthest,
     });
     tree_events.push(TreeEvent::NodeClose { pos: furthest });
@@ -746,8 +747,8 @@ fn run(
 
             // Open a syntax node: push NodeOpen event immediately.
             // On backtracking, tree_events is truncated to the saved mark.
-            Insn::NodeBegin { kind } => {
-                tree_events.push(TreeEvent::NodeOpen { kind, pos });
+            Insn::NodeBegin { kind, field } => {
+                tree_events.push(TreeEvent::NodeOpen { kind, field, pos });
                 ip += 1;
             }
 

@@ -9,6 +9,7 @@ walk = []
 emit = ["walk"]
 transform = []
 miette = ["dep:miette"]
+utf16 = []
 
 [dependencies]
 sipha-macros = { path = "../sipha-macros" }

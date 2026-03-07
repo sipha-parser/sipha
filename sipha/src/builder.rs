@@ -132,7 +132,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::{
     context::{FlagId, FlagMaskWord},
     insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph},
-    types::{CharClass, InsnId, IntoSyntaxKind, RuleId, Tag},
+    types::{CharClass, FieldId, InsnId, IntoSyntaxKind, RuleId, Tag},
 };
 
 /// N-way choice without `Vec<Box<dyn FnOnce>>`: `choices!(g, |g| g.literal(b"a"), |g| g.literal(b"b"))`.
@@ -282,6 +282,8 @@ pub struct BuiltGraph {
     pub class_labels:      Vec<&'static str>,
     /// Labels for [`expect_label`](GrammarBuilder::expect_label).
     pub expected_labels:   Vec<&'static str>,
+    /// Names for named child fields (indexed by [`FieldId`]); used by `field_by_id` / name resolution.
+    pub field_names:       Vec<&'static str>,
 }
 
 impl BuiltGraph {
@@ -327,6 +329,7 @@ impl BuiltGraph {
                     to_static(&self.class_labels)
                 },
                 expected_labels: to_static(&self.expected_labels),
+                field_names:     to_static(&self.field_names),
             }
         }
     }
@@ -354,6 +357,9 @@ pub struct GrammarBuilder {
     // ── Tag registry ──────────────────────────────────────────────────────────
     tag_by_name: HashMap<String, Tag>,
     tag_names:   Vec<&'static str>,
+
+    // ── Field names (for named child access) ─────────────────────────────────
+    field_by_name: HashMap<String, FieldId>,
 
     // ── Interners ─────────────────────────────────────────────────────────────
     literals:   LiteralInterner,
@@ -383,6 +389,9 @@ pub struct GrammarBuilder {
     /// Labels for [`expect_label`](Self::expect_label).
     expected_labels: Vec<&'static str>,
 
+    /// Names for named child fields (indexed by [`FieldId`]).
+    field_names: Vec<&'static str>,
+
     /// If `true`, [`finish`](Self::finish) will not report an error for
     /// left-recursive or mutually recursive rule cycles. Use when the grammar
     /// uses packrat memoization and intentionally has indirect recursion
@@ -405,6 +414,7 @@ impl GrammarBuilder {
             pending_recover: Vec::new(),
             tag_by_name:     HashMap::new(),
             tag_names:     Vec::new(),
+            field_by_name:   HashMap::new(),
             literals:      LiteralInterner::new(),
             flag_masks:    FlagMaskInterner::new(),
             jump_tables:       Vec::new(),
@@ -412,6 +422,7 @@ impl GrammarBuilder {
             auto_trivia:       false,
             class_labels:      vec!["character class"],
             expected_labels:       Vec::new(),
+            field_names:       Vec::new(),
             allow_rule_cycles:     false,
             allow_unreachable_rules: true,
         }
@@ -849,9 +860,34 @@ impl GrammarBuilder {
     pub fn node<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
     where F: FnOnce(&mut Self)
     {
-        self.emit(Insn::NodeBegin { kind: kind.into_syntax_kind() });
+        self.emit(Insn::NodeBegin { kind: kind.into_syntax_kind(), field: None });
         body(self);
         self.emit(Insn::NodeEnd);
+    }
+
+    /// Wrap `body` in a syntax node of `kind` with a named field label.
+    ///
+    /// The label is interned in the grammar's `field_names` table; use
+    /// [`SyntaxNode::field_by_id`](crate::red::SyntaxNode::field_by_id) with the
+    /// corresponding [`FieldId`](crate::types::FieldId) to access this child by name.
+    pub fn node_with_field<K: IntoSyntaxKind, F>(&mut self, kind: K, field: &'static str, body: F)
+    where F: FnOnce(&mut Self)
+    {
+        let field_id = self.intern_field(field);
+        self.emit(Insn::NodeBegin { kind: kind.into_syntax_kind(), field: Some(field_id) });
+        body(self);
+        self.emit(Insn::NodeEnd);
+    }
+
+    /// Intern a field name and return its [`FieldId`]. Same name returns the same id.
+    pub fn intern_field(&mut self, name: &'static str) -> FieldId {
+        if let Some(&id) = self.field_by_name.get(name) {
+            return id;
+        }
+        let id = self.field_names.len() as FieldId;
+        self.field_names.push(name);
+        self.field_by_name.insert(name.to_string(), id);
+        id
     }
 
     /// Wrap `body` in a semantic (non-trivia) leaf token of `kind`.
@@ -1252,6 +1288,7 @@ impl GrammarBuilder {
             tag_names:         self.tag_names,
             class_labels:      self.class_labels,
             expected_labels:   self.expected_labels,
+            field_names:       self.field_names,
         })
     }
 

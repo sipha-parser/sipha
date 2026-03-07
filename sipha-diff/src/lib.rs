@@ -2,9 +2,15 @@
 //!
 //! Compare two syntax trees by their emitted text (round-trip). Useful for
 //! tests (assert formatted output) or refactors (compare before/after).
+//!
+//! ## Grammar tests with S-expressions
+//!
+//! Use [`assert_parse_eq`] or the [`assert_parse!`] macro to compare a parsed
+//! tree against an expected S-expression string (e.g. `"(ROOT (EXPR (NUM \"1\")))"`).
 
 use sipha::emit::{syntax_root_to_string, EmitOptions};
 use sipha::red::SyntaxNode;
+pub use sipha::sexp::{syntax_node_to_sexp, SexpOptions};
 
 /// Returns true if both trees emit the same string (same tokens and trivia).
 #[inline]
@@ -42,4 +48,50 @@ fn truncate_for_display(s: &str, max: usize) -> String {
     } else {
         format!("{}...", &s[..max])
     }
+}
+
+// ─── Grammar test helpers (S-expression) ────────────────────────────────────
+
+/// Assert that parsing `input` yields a tree whose S-expression equals `expected_sexp`.
+///
+/// `parse_result` is typically `parse(input)` or `parse_expression(input)` returning
+/// `Result<Option<SyntaxNode>, E>`. On failure prints expected vs got S-expression.
+pub fn assert_parse_eq<E: std::fmt::Debug>(
+    parse_result: Result<Option<SyntaxNode>, E>,
+    _input: &str,
+    expected_sexp: &str,
+    options: &SexpOptions,
+) {
+    let root = parse_result
+        .unwrap_or_else(|e| panic!("parse failed: {:?}", e))
+        .expect("parse returned None (no root)");
+    let got = syntax_node_to_sexp(&root, options);
+    assert_eq!(
+        got,
+        expected_sexp,
+        "S-expression mismatch:\nexpected:\n  {}\ngot:\n  {}",
+        expected_sexp,
+        got
+    );
+}
+
+/// Assert that parsing `input` with `parse_fn` produces a tree matching `expected_sexp`.
+///
+/// Example:
+/// ```ignore
+/// assert_parse!(|s| leekscript::parse(s), "1 + 2", "(ROOT (EXPR ...))");
+/// ```
+#[macro_export]
+macro_rules! assert_parse {
+    ($parse_fn:expr, $input:expr, $expected_sexp:expr) => {
+        $crate::assert_parse_eq(
+            $parse_fn($input),
+            $input,
+            $expected_sexp,
+            &$crate::SexpOptions::semantic_only(),
+        )
+    };
+    ($parse_fn:expr, $input:expr, $expected_sexp:expr, $options:expr) => {
+        $crate::assert_parse_eq($parse_fn($input), $input, $expected_sexp, $options)
+    };
 }

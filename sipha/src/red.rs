@@ -34,7 +34,7 @@
 use std::sync::Arc;
 use crate::{
     green::{GreenElement, GreenNode, GreenToken},
-    types::{FromSyntaxKind, Span, SyntaxKind},
+    types::{FieldId, FromSyntaxKind, Span, SyntaxKind},
 };
 
 // ─── SyntaxElement ────────────────────────────────────────────────────────────
@@ -218,6 +218,27 @@ impl SyntaxNode {
     /// has a known structure and you want one child by kind.
     pub fn child_by_kind(&self, kind: SyntaxKind) -> Option<SyntaxNode> {
         self.child_nodes().find(|n| n.kind() == kind)
+    }
+
+    /// First direct child **node** with the given field id (named child).
+    ///
+    /// Use the grammar's `field_names` (or your `Kind`/schema) to resolve a
+    /// name to [`FieldId`] and call this. Returns the first child node whose
+    /// slot is labeled with that field.
+    pub fn field_by_id(&self, id: FieldId) -> Option<SyntaxNode> {
+        let fields = self.green.child_fields.as_ref()?;
+        let mut off = self.offset;
+        for (i, child) in self.green.children.iter().enumerate() {
+            let start = off;
+            off += child.text_len();
+            if fields.get(i).copied().flatten() != Some(id) {
+                continue;
+            }
+            if let GreenElement::Node(n) = child {
+                return Some(SyntaxNode::new(Arc::clone(n), start));
+            }
+        }
+        None
     }
 
     /// Iterate all direct child **tokens** including trivia.

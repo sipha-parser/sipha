@@ -20,7 +20,7 @@
 //! inline — this supports masks that span many words without bloating the
 //! instruction.
 
-use crate::types::{CharClass, InsnId, RuleId, SyntaxKind, Tag};
+use crate::types::{CharClass, FieldId, InsnId, RuleId, SyntaxKind, Tag};
 use crate::context::FlagMaskWord;
 
 // ─── Instruction enum ─────────────────────────────────────────────────────────
@@ -115,7 +115,8 @@ pub enum Insn {
     // loop iteration is permanently committed.
 
     /// Open a syntax node.  Emits `TreeEvent::NodeOpen`.
-    NodeBegin { kind: SyntaxKind },
+    /// `field` labels this node as a named child of its parent when present.
+    NodeBegin { kind: SyntaxKind, field: Option<FieldId> },
 
     /// Close the current syntax node.  Emits `TreeEvent::NodeClose`.
     NodeEnd,
@@ -202,6 +203,8 @@ pub struct ParseGraph {
     pub class_labels:     &'static [&'static str],
     /// Labels for [`Expected::Label`] from [`expect_label`](crate::builder::GrammarBuilder::expect_label).
     pub expected_labels:  &'static [&'static str],
+    /// Names for named child fields (indexed by [`crate::types::FieldId`]); used by `field_by_id` / name resolution.
+    pub field_names:      &'static [&'static str],
 }
 
 impl ParseGraph {

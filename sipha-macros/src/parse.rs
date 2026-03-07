@@ -150,8 +150,24 @@ fn apply_wrapper_attr(attr: Attribute, inner: ExprNode) -> syn::Result<ExprNode>
             let expr = parse_paren_expr(&attr)?;
             Ok(ExprNode::Node {
                 kind: expr,
+                field: None,
                 inner: Box::new(inner),
             })
+        }
+        "field" => {
+            let lit: LitStr = attr.meta.require_list()?.parse_args()?;
+            if let ExprNode::Node { kind, field: None, inner } = inner {
+                Ok(ExprNode::Node {
+                    kind,
+                    field: Some(lit),
+                    inner,
+                })
+            } else {
+                Err(syn::Error::new_spanned(
+                    attr.path(),
+                    "#[field(\"name\")] must be applied immediately after #[node(KIND)]",
+                ))
+            }
         }
         "token" => {
             let expr = parse_paren_expr(&attr)?;
@@ -177,7 +193,7 @@ fn apply_wrapper_attr(attr: Attribute, inner: ExprNode) -> syn::Result<ExprNode>
         "no_skip" => Ok(ExprNode::NoSkip(Box::new(inner))),
         _ => Err(syn::Error::new_spanned(
             path,
-            "expected one of: node, token, trivia, capture, no_skip",
+            "expected one of: node, field, token, trivia, capture, no_skip",
         )),
     }
 }

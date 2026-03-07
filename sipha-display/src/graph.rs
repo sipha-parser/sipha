@@ -300,7 +300,7 @@ fn insn_label(insn: &Insn, graph: &BuiltGraph, _ip: InsnId) -> String {
         Insn::PopFlags => "pop_flags".to_string(),
         Insn::CaptureBegin { tag } => format!("capture_begin {}", tag),
         Insn::CaptureEnd { tag } => format!("capture_end {}", tag),
-        Insn::NodeBegin { kind } => format!("node_begin {}", kind),
+        Insn::NodeBegin { kind, field: _ } => format!("node_begin {}", kind),
         Insn::NodeEnd => "node_end".to_string(),
         Insn::TokenBegin { kind, is_trivia } => format!("token_begin {} trivia={}", kind, is_trivia),
         Insn::TokenEnd => "token_end".to_string(),

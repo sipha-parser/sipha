@@ -148,9 +148,12 @@ fn lower_expr(node: &ExprNode) -> TokenStream {
         ExprNode::Literal(lit) => {
             quote! { g.literal((#lit).as_bytes()); }
         }
-        ExprNode::Node { kind, inner } => {
+        ExprNode::Node { kind, field, inner } => {
             let body = lower_expr(inner);
-            quote! { g.node(#kind, |g| { #body }); }
+            match field {
+                Some(f) => quote! { g.node_with_field(#kind, #f, |g| { #body }); },
+                None => quote! { g.node(#kind, |g| { #body }); },
+            }
         }
         ExprNode::Token { kind, inner } => {
             let body = lower_expr(inner);

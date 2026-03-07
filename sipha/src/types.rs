@@ -10,6 +10,9 @@ pub type RuleId = u16;
 /// Capture tag — identifies what kind of capture this is.
 pub type Tag = u16;
 
+/// Index into the grammar's `field_names` table; identifies a named child slot (e.g. "lhs", "rhs").
+pub type FieldId = u16;
+
 /// Stored discriminant for a syntax kind (used internally in green/red trees and events).
 ///
 /// Grammar authors can use either raw `u16` values or an enum that implements
@@ -246,7 +249,8 @@ pub enum CaptureEvent {
 #[derive(Clone, Copy, Debug)]
 pub enum TreeEvent {
     /// Open a syntax node.  Matched by the next balanced [`TreeEvent::NodeClose`].
-    NodeOpen  { kind: SyntaxKind, pos: Pos },
+    /// `field` labels this node as a named child of its parent (for [`crate::red::SyntaxNode::field_by_id`]).
+    NodeOpen  { kind: SyntaxKind, field: Option<FieldId>, pos: Pos },
     /// Close the innermost open node.
     NodeClose { pos: Pos },
     /// A complete leaf token `[start, end)`.

@@ -74,6 +74,11 @@ pub mod red;
 pub mod builder;
 
 pub mod codegen;
+pub mod incremental;
+pub mod sexp;
+
+#[cfg(feature = "utf16")]
+pub mod utf16;
 /// Helpers for building expression grammars with precedence (left/right-assoc infix levels).
 pub mod expr;
 pub mod line_index;
@@ -121,4 +126,7 @@ pub mod prelude {
 
     #[cfg(feature = "miette")]
     pub use crate::miette_support::{MietteParseDiagnostic, MietteSemanticDiagnostic};
+
+    #[cfg(feature = "utf16")]
+    pub use crate::utf16::{byte_offset_to_utf16, span_to_utf16_range, utf16_len};
 }

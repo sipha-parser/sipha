@@ -139,4 +139,26 @@ impl ParsedDoc {
     pub fn token_at_offset(&self, offset: Pos) -> Option<crate::red::SyntaxToken> {
         self.root.token_at_offset(offset)
     }
+
+    /// Line and column (0-based) with column in UTF-16 code units.
+    /// Requires the `utf16` feature.
+    #[cfg(feature = "utf16")]
+    #[inline]
+    pub fn offset_to_line_col_utf16(&self, offset: Pos) -> (u32, u32) {
+        self.line_index.line_col_utf16(self.source_str(), offset)
+    }
+
+    /// Line and column (1-based) in UTF-16 for LSP and error messages.
+    #[cfg(feature = "utf16")]
+    #[inline]
+    pub fn offset_to_line_col_utf16_1based(&self, offset: Pos) -> (u32, u32) {
+        self.line_index.line_col_utf16_1based(self.source_str(), offset)
+    }
+
+    /// UTF-16 code unit range `(start, end)` for the given span.
+    #[cfg(feature = "utf16")]
+    #[inline]
+    pub fn span_to_utf16_range(&self, span: Span) -> (u32, u32) {
+        crate::utf16::span_to_utf16_range(span, self.source_str())
+    }
 }

@@ -83,6 +83,9 @@ pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
     writeln!(out, "static EXPECTED_LABELS: &[&str] = &[")?;
     for n in &graph.expected_labels { writeln!(out, "    \"{n}\",")?; }
     writeln!(out, "];")?;
+    writeln!(out, "static FIELD_NAMES: &[&str] = &[")?;
+    for n in &graph.field_names { writeln!(out, "    \"{n}\",")?; }
+    writeln!(out, "];")?;
     writeln!(out)?;
 
     // Instructions
@@ -104,7 +107,9 @@ pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
     writeln!(out, "    flag_masks:  FlagMaskTable {{ data: FLAG_MASK_DATA, offsets: FLAG_MASK_OFFSETS }},")?;
     writeln!(out, "    rule_names:   RULE_NAMES,")?;
     writeln!(out, "    tag_names:    TAG_NAMES,")?;
-    writeln!(out, "    class_labels: CLASS_LABELS,")?;
+    writeln!(out, "    class_labels:    CLASS_LABELS,")?;
+    writeln!(out, "    expected_labels: EXPECTED_LABELS,")?;
+    writeln!(out, "    field_names:     FIELD_NAMES,")?;
     writeln!(out, "}};")?;
     Ok(())
 }
@@ -146,7 +151,10 @@ fn emit_insn(out: &mut String, insn: &Insn) -> std::fmt::Result {
         Insn::PushFlags { mask_id } =>
             write!(out, "Insn::PushFlags {{ mask_id: {mask_id} }}"),
         Insn::PopFlags  => write!(out, "Insn::PopFlags"),
-        Insn::NodeBegin   { kind }           => write!(out, "Insn::NodeBegin {{ kind: {kind} }}"),
+        Insn::NodeBegin   { kind, field }    => match field {
+            None => write!(out, "Insn::NodeBegin {{ kind: {kind}, field: None }}"),
+            Some(f) => write!(out, "Insn::NodeBegin {{ kind: {kind}, field: Some({f}) }}"),
+        },
         Insn::NodeEnd                          => write!(out, "Insn::NodeEnd"),
         Insn::TokenBegin  { kind, is_trivia }  => write!(out, "Insn::TokenBegin {{ kind: {kind}, is_trivia: {is_trivia} }}"),
         Insn::TokenEnd                         => write!(out, "Insn::TokenEnd"),

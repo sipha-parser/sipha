@@ -102,6 +102,37 @@ impl LineIndex {
         let snip = self.snippet_at(source, offset);
         format!("at {}:{}:\n{}", line_1, col_1, snip)
     }
+
+    /// Line and column for a byte offset with column in UTF-16 code units (0-based).
+    ///
+    /// Returns `(line_0, utf16_col)`. Use for LSP and editors that expect UTF-16 positions.
+    /// Requires the `utf16` feature.
+    #[cfg(feature = "utf16")]
+    pub fn line_col_utf16(&self, source: &str, offset: Pos) -> (u32, u32) {
+        let (line_0, _) = self.line_col(offset);
+        let line_start = self.line_start(line_0) as usize;
+        let offset_usize = offset as usize;
+        if line_start >= source.len() {
+            return (line_0, 0);
+        }
+        let rest = &source[line_start..];
+        let mut utf16_col = 0u32;
+        for (i, c) in rest.char_indices() {
+            if line_start + i >= offset_usize {
+                break;
+            }
+            utf16_col += c.len_utf16() as u32;
+        }
+        (line_0, utf16_col)
+    }
+
+    /// Line and column in UTF-16 (1-based) for display and LSP.
+    #[cfg(feature = "utf16")]
+    #[inline]
+    pub fn line_col_utf16_1based(&self, source: &str, offset: Pos) -> (u32, u32) {
+        let (line_0, utf16_col) = self.line_col_utf16(source, offset);
+        (line_0 + 1, utf16_col + 1)
+    }
 }
 
 #[cfg(test)]

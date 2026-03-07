@@ -51,6 +51,7 @@ pub fn replace_leading_trivia(
         kind: node.kind,
         text_len: text_len_new,
         children: out.into(),
+        child_fields: node.child_fields.clone(),
     })
 }
 
@@ -84,5 +85,6 @@ pub fn replace_trailing_trivia(
         kind: node.kind,
         text_len: text_len_new,
         children: out.into(),
+        child_fields: node.child_fields.clone(),
     })
 }

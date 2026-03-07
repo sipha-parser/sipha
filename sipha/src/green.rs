@@ -27,7 +27,7 @@
 //! [`crate::red::SyntaxNode::token_groups`].
 
 use std::sync::Arc;
-use crate::types::{FromSyntaxKind, SyntaxKind, TreeEvent};
+use crate::types::{FieldId, FromSyntaxKind, SyntaxKind, TreeEvent};
 
 // ─── GreenToken ───────────────────────────────────────────────────────────────
 
@@ -93,12 +93,57 @@ pub struct GreenNode {
     pub text_len: u32,
     /// Ordered children.
     pub children: Box<[GreenElement]>,
+    /// Optional field id per child (same length as `children`); `None` if no child has a field.
+    pub child_fields: Option<Box<[Option<FieldId>]>>,
 }
 
 impl GreenNode {
+    /// Build a node from children only (no field labels). For backward compatibility and tests.
     pub fn new(kind: SyntaxKind, children: Vec<GreenElement>) -> Arc<Self> {
         let text_len = children.iter().map(GreenElement::text_len).sum();
-        Arc::new(Self { kind, text_len, children: children.into() })
+        Arc::new(Self {
+            kind,
+            text_len,
+            children: children.into(),
+            child_fields: None,
+        })
+    }
+
+    /// Build a node from children with optional field ids per child.
+    pub fn new_with_fields(
+        kind: SyntaxKind,
+        children_with_fields: Vec<(Option<FieldId>, GreenElement)>,
+    ) -> Arc<Self> {
+        let text_len = children_with_fields
+            .iter()
+            .map(|(_, e)| e.text_len())
+            .sum();
+        let child_fields: Box<[Option<FieldId>]> = children_with_fields
+            .iter()
+            .map(|(f, _)| *f)
+            .collect::<Vec<_>>()
+            .into();
+        let children: Box<[GreenElement]> = children_with_fields
+            .into_iter()
+            .map(|(_, e)| e)
+            .collect::<Vec<_>>()
+            .into();
+        let has_any_field = child_fields.iter().any(Option::is_some);
+        Arc::new(Self {
+            kind,
+            text_len,
+            children,
+            child_fields: if has_any_field { Some(child_fields) } else { None },
+        })
+    }
+
+    /// Return the field id for the child at index `i`, if any.
+    #[inline]
+    pub fn child_field(&self, i: usize) -> Option<FieldId> {
+        self.child_fields
+            .as_ref()
+            .and_then(|f| f.get(i).copied())
+            .flatten()
     }
 
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
@@ -192,60 +237,64 @@ impl GreenElement {
 /// If the grammar emits multiple top-level nodes (unusual), they are wrapped
 /// in a synthetic root with `kind = u16::MAX`.
 pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenNode>> {
-    // Stack of open nodes: (kind, children_so_far)
-    let mut stack: Vec<(SyntaxKind, Vec<GreenElement>)> = Vec::new();
-    let mut roots: Vec<GreenElement> = Vec::new();
+    // Stack: (kind, this node's field when closed, children with their field labels)
+    type StackEntry = (SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>);
+    let mut stack: Vec<StackEntry> = Vec::new();
+    let mut roots: Vec<(Option<FieldId>, GreenElement)> = Vec::new();
 
-    for &ev in events {
-        match ev {
-            TreeEvent::NodeOpen { kind, .. } => {
-                stack.push((kind, Vec::new()));
+    for ev in events {
+        match *ev {
+            TreeEvent::NodeOpen { kind, field, .. } => {
+                stack.push((kind, field, Vec::new()));
             }
 
             TreeEvent::NodeClose { .. } => {
-                let (kind, children) = stack.pop()?;
-                let node = GreenNode::new(kind, children);
-                push_element(&mut stack, &mut roots, GreenElement::Node(node));
+                let (kind, my_field, children_with_fields) = stack.pop()?;
+                let node = GreenNode::new_with_fields(kind, children_with_fields);
+                push_element(&mut stack, &mut roots, (my_field, GreenElement::Node(node)));
             }
 
             TreeEvent::Token { kind, start, end, is_trivia } => {
-                // Skip zero-length tokens: they contribute nothing to the tree
-                // and arise when optional trivia (e.g. `zero_or_more` inside
-                // `g.trivia()`) matches the empty string.
                 if start == end { continue; }
                 let text = input.get(start as usize..end as usize)
                     .and_then(|b| std::str::from_utf8(b).ok())
                     .unwrap_or("");
                 let tok = GreenToken::new(kind, text, is_trivia);
-                push_element(&mut stack, &mut roots, GreenElement::Token(tok));
+                push_element(&mut stack, &mut roots, (None, GreenElement::Token(tok)));
             }
         }
     }
 
-    if !stack.is_empty() { return None; } // unclosed NodeOpen
+    if !stack.is_empty() { return None; }
 
     match roots.len() {
         0 => None,
-        1 => match roots.remove(0) {
-            GreenElement::Node(n) => Some(n),
-            GreenElement::Token(t) => {
-                // Lone leaf — wrap in a synthetic root.
-                Some(GreenNode::new(t.kind, vec![GreenElement::Token(t)]))
+        1 => {
+            let (_, elem) = roots.remove(0);
+            match elem {
+                GreenElement::Node(n) => Some(n),
+                GreenElement::Token(t) => {
+                    Some(GreenNode::new(t.kind, vec![GreenElement::Token(t)]))
+                }
             }
-        },
-        _ => Some(GreenNode::new(u16::MAX, roots)),
+        }
+        _ => {
+            let children_with_fields: Vec<(Option<FieldId>, GreenElement)> =
+                roots.into_iter().map(|(f, e)| (f, e)).collect();
+            Some(GreenNode::new_with_fields(u16::MAX, children_with_fields))
+        }
     }
 }
 
 #[inline]
 fn push_element(
-    stack: &mut Vec<(SyntaxKind, Vec<GreenElement>)>,
-    roots: &mut Vec<GreenElement>,
-    elem:  GreenElement,
+    stack: &mut Vec<(SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>)>,
+    roots: &mut Vec<(Option<FieldId>, GreenElement)>,
+    elem: (Option<FieldId>, GreenElement),
 ) {
     match stack.last_mut() {
-        Some((_, children)) => children.push(elem),
-        None                => roots.push(elem),
+        Some((_, _, children)) => children.push(elem),
+        None => roots.push(elem),
     }
 }
 
@@ -279,7 +328,7 @@ mod tests {
     fn build_green_tree_node_with_token() {
         let input = b"x";
         let events = [
-            TreeEvent::NodeOpen { kind: 10, pos: 0 },
+            TreeEvent::NodeOpen { kind: 10, field: None, pos: 0 },
             TreeEvent::Token {
                 kind: 2,
                 start: 0,

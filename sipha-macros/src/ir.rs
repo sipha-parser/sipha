@@ -59,8 +59,8 @@ pub enum ExprNode {
     Call(Ident),
     /// Byte literal "foo"
     Literal(LitStr),
-    /// #[node(KIND)] e
-    Node { kind: Expr, inner: Box<ExprNode> },
+    /// #[node(KIND)] e or #[node(KIND)] #[field("name")] e
+    Node { kind: Expr, field: Option<LitStr>, inner: Box<ExprNode> },
     /// #[token(KIND)] e
     Token { kind: Expr, inner: Box<ExprNode> },
     /// #[trivia(KIND)] e
