@@ -53,19 +53,28 @@ pub type FlagId = u16;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ParseContext {
     words: Vec<u64>,
+    /// If set, [`parse_recovering_with_context`](crate::engine::Engine::parse_recovering_with_context)
+    /// will insert an error node and close open nodes on failure so the partial tree is well-nested.
+    error_node_kind: Option<crate::types::SyntaxKind>,
 }
 
 impl ParseContext {
     /// Create an empty context (all flags clear, no words allocated).
     pub fn new() -> Self {
-        Self { words: Vec::new() }
+        Self {
+            words:          Vec::new(),
+            error_node_kind: None,
+        }
     }
 
     /// Create with enough pre-allocated words to hold flags up to `max_flag_id`
     /// without reallocation.
     pub fn with_capacity_for(max_flag_id: FlagId) -> Self {
         let n = word_index(max_flag_id) + 1;
-        Self { words: vec![0u64; n] }
+        Self {
+            words:          vec![0u64; n],
+            error_node_kind: None,
+        }
     }
 
     // ── Mutation ──────────────────────────────────────────────────────────────
@@ -130,6 +139,21 @@ impl ParseContext {
     #[inline]
     pub(crate) fn words_mut(&mut self) -> &mut Vec<u64> {
         &mut self.words
+    }
+
+    /// Set the syntax kind to use for error nodes when parsing in recovering mode.
+    ///
+    /// When set, a failed parse will still produce a well-nested partial tree by
+    /// closing any open nodes and inserting an error node at the failure position.
+    pub fn with_error_node_kind(mut self, kind: crate::types::SyntaxKind) -> Self {
+        self.error_node_kind = Some(kind);
+        self
+    }
+
+    /// Return the error node kind if set.
+    #[inline]
+    pub fn error_node_kind(&self) -> Option<crate::types::SyntaxKind> {
+        self.error_node_kind
     }
 }
 

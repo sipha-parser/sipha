@@ -5,7 +5,7 @@
 //! spans, line/col) and formatter (tokens, trivia, source slices).
 
 use crate::engine::ParseOutput;
-use crate::error::Diagnostic;
+use crate::error::{Diagnostic, SemanticDiagnostic};
 use crate::insn::LiteralTable;
 use crate::line_index::LineIndex;
 use crate::red::SyntaxNode;
@@ -39,6 +39,15 @@ impl ParsedDoc {
             line_index,
             root,
         })
+    }
+
+    /// Build a parsed document from a source slice and parse output.
+    ///
+    /// Clones `source` into a `Vec<u8>`. Prefer [`new`](Self::new) when you
+    /// already own a `Vec<u8>`. Returns `None` if the output has no or invalid
+    /// tree events.
+    pub fn from_slice(source: &[u8], output: ParseOutput) -> Option<Self> {
+        Self::new(source.to_vec(), output)
     }
 
     /// Reference to the syntax tree root.
@@ -85,19 +94,49 @@ impl ParsedDoc {
 
     /// Format a parse diagnostic with line/column and source snippet.
     ///
-    /// Pass the grammar's literal table for readable "expected" strings;
-    /// otherwise literal ids are shown.
+    /// Pass the grammar's literal, rule-name, and expected-label tables for readable
+    /// "expected" strings; otherwise literal/rule/label ids are shown.
     pub fn format_diagnostic(
         &self,
         diagnostic: &Diagnostic,
         literals: Option<&LiteralTable>,
+        rule_names: Option<&[&'static str]>,
+        expected_labels: Option<&[&'static str]>,
     ) -> String {
-        diagnostic.format_with_source(&self.source, &self.line_index, literals)
+        diagnostic.format_with_source(
+            &self.source,
+            &self.line_index,
+            literals,
+            rule_names,
+            expected_labels,
+        )
     }
 
     /// Byte slice for a span (convenience for compiler/formatter).
     #[inline]
     pub fn span_slice(&self, span: Span) -> &[u8] {
         span.as_slice(&self.source)
+    }
+
+    /// Format a semantic (analysis) diagnostic with line/column and source snippet.
+    ///
+    /// Use this to report validation/analysis errors and warnings in the same
+    /// style as parse errors. For miette reports, use
+    /// [`SemanticDiagnostic::into_miette`] with `self.source_str()` and your
+    /// file name.
+    pub fn format_semantic_diagnostic(&self, diagnostic: &SemanticDiagnostic) -> String {
+        diagnostic.format_with_source(&self.source, &self.line_index)
+    }
+
+    /// Return the smallest syntax node whose range contains the given byte offset.
+    #[inline]
+    pub fn node_at_offset(&self, offset: Pos) -> Option<SyntaxNode> {
+        self.root.node_at_offset(offset)
+    }
+
+    /// Return the deepest token at the given byte offset (including trivia).
+    #[inline]
+    pub fn token_at_offset(&self, offset: Pos) -> Option<crate::red::SyntaxToken> {
+        self.root.token_at_offset(offset)
     }
 }

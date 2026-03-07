@@ -85,7 +85,7 @@ fn main() {
         }
         Err(ParseError::NoMatch(diag)) => {
             let line_index = LineIndex::new(ok_src);
-            let msg = diag.format_with_source(ok_src, &line_index, literals);
+            let msg = diag.format_with_source(ok_src, &line_index, literals, Some(&graph.rule_names), Some(&graph.expected_labels));
             println!("{}", msg);
         }
         Err(ParseError::BadGraph) => println!("Bad graph"),
@@ -96,7 +96,7 @@ fn main() {
     let bad_src = b"let foo\n  bar"; // missing semicolon after "foo"
     if let Err(ParseError::NoMatch(diag)) = engine.parse(&graph, bad_src) {
         let line_index = LineIndex::new(bad_src);
-        let msg = diag.format_with_source(bad_src, &line_index, literals);
+        let msg = diag.format_with_source(bad_src, &line_index, literals, Some(&graph.rule_names), Some(&graph.expected_labels));
         println!("\n--- Error (with line/col and snippet) ---\n{}", msg);
     }
 }

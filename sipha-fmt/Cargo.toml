@@ -1,0 +1,8 @@
+[package]
+name = "sipha-fmt"
+version = "0.1.0"
+edition = "2021"
+description = "Formatter options and helpers for sipha syntax trees"
+
+[dependencies]
+sipha = { path = "../sipha", features = ["emit"] }

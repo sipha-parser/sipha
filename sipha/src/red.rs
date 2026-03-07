@@ -148,7 +148,12 @@ impl SyntaxNode {
         Self { green, offset: 0 }
     }
 
-    pub(crate) fn new(green: Arc<GreenNode>, offset: u32) -> Self {
+    /// Construct from a green node and its byte offset in the source.
+    ///
+    /// Used when rebuilding the tree (e.g. in transforms) to create red views of
+    /// child green nodes at the correct position.
+    #[inline]
+    pub fn new(green: Arc<GreenNode>, offset: u32) -> Self {
         Self { green, offset }
     }
 
@@ -205,6 +210,14 @@ impl SyntaxNode {
     /// Iterate direct child **nodes** only (skips all tokens, including trivia).
     pub fn child_nodes(&self) -> impl Iterator<Item = SyntaxNode> + '_ {
         self.children().filter_map(|e| e.into_node())
+    }
+
+    /// First direct child **node** with the given kind, if any.
+    ///
+    /// Only considers child nodes (not tokens). Useful in visitors when a node
+    /// has a known structure and you want one child by kind.
+    pub fn child_by_kind(&self, kind: SyntaxKind) -> Option<SyntaxNode> {
+        self.child_nodes().find(|n| n.kind() == kind)
     }
 
     /// Iterate all direct child **tokens** including trivia.
@@ -336,7 +349,72 @@ impl SyntaxNode {
         self.descendant_tokens().into_iter().filter(|t| !t.is_trivia()).collect()
     }
 
+    /// First semantic (non-trivia) token in this node's subtree, in document order.
+    pub fn first_token(&self) -> Option<SyntaxToken> {
+        for child in self.children() {
+            match child {
+                SyntaxElement::Token(t) if !t.is_trivia() => return Some(t),
+                SyntaxElement::Token(_) => continue,
+                SyntaxElement::Node(n) => {
+                    if let Some(t) = n.first_token() {
+                        return Some(t);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Last semantic (non-trivia) token in this node's subtree, in document order.
+    pub fn last_token(&self) -> Option<SyntaxToken> {
+        let children: Vec<SyntaxElement> = self.children().collect();
+        for child in children.into_iter().rev() {
+            match child {
+                SyntaxElement::Token(t) if !t.is_trivia() => return Some(t),
+                SyntaxElement::Token(_) => continue,
+                SyntaxElement::Node(n) => {
+                    if let Some(t) = n.last_token() {
+                        return Some(t);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Find the first ancestor of this node (from parent toward root) with the given kind.
+    ///
+    /// Returns `None` if `self` is the root or no ancestor has `kind`.
+    pub fn find_ancestor(&self, root: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
+        self.ancestors(root).into_iter().find(|a| a.kind() == kind)
+    }
+
     // ── Offset-based lookup ───────────────────────────────────────────────────
+
+    /// Return the smallest node whose range contains `offset`.
+    ///
+    /// Returns `None` if `offset` is outside this node's range. Otherwise
+    /// returns the deepest descendant node (or self) that contains `offset`.
+    pub fn node_at_offset(&self, offset: u32) -> Option<SyntaxNode> {
+        if !self.text_range().contains_offset(offset) {
+            return None;
+        }
+        let mut off = self.offset;
+        for child in &self.green.children {
+            let end = off + child.text_len();
+            if offset < end {
+                return match child {
+                    GreenElement::Node(n) => {
+                        let child_red = SyntaxNode::new(Arc::clone(n), off);
+                        child_red.node_at_offset(offset).or(Some(child_red))
+                    }
+                    GreenElement::Token(_) => Some(self.clone()),
+                };
+            }
+            off = end;
+        }
+        Some(self.clone())
+    }
 
     /// Return the deepest token whose range contains `offset`.
     ///

@@ -24,7 +24,7 @@
 //! [`Diagnostic::format_with_source`] with a [`crate::line_index::LineIndex`].
 
 use crate::line_index::LineIndex;
-use crate::{insn::LiteralTable, types::Pos};
+use crate::{insn::LiteralTable, types::Pos, types::RuleId, types::Span};
 
 // ─── Expected token ───────────────────────────────────────────────────────────
 
@@ -52,11 +52,26 @@ pub enum Expected {
     /// A context-flag gate failed.  `id` is the [`FlagId`]; `required` is
     /// true for `IfFlag`, false for `IfNotFlag`.
     Flag { id: u16, required: bool },
+    /// A named rule was expected (e.g. "statement", "expr").  Display uses
+    /// `rule_names` to show the rule name when available.
+    Rule(RuleId),
+    /// A custom expectation label (e.g. "statement", "expression") from
+    /// [`expect_label`](crate::builder::GrammarBuilder::expect_label).  Display
+    /// uses `expected_labels` when available.
+    Label(u32),
 }
 
 impl Expected {
     /// Format a single `Expected` item into a human-readable string.
-    pub fn display(&self, literals: Option<&LiteralTable>) -> String {
+    ///
+    /// `rule_names` is used for [`Expected::Rule`]; `expected_labels` for
+    /// [`Expected::Label`]. Pass the grammar's tables when formatting.
+    pub fn display(
+        &self,
+        literals: Option<&LiteralTable>,
+        rule_names: Option<&[&'static str]>,
+        expected_labels: Option<&[&'static str]>,
+    ) -> String {
         match self {
             Expected::Byte(b) => {
                 if b.is_ascii_graphic() {
@@ -111,7 +126,49 @@ impl Expected {
                     format!("flag {id} (word {word} bit {bit}) to be clear")
                 }
             }
+            Expected::Rule(rule_id) => {
+                if let Some(names) = rule_names {
+                    let id = *rule_id as usize;
+                    if id < names.len() {
+                        return format!("{}", names[id]);
+                    }
+                }
+                format!("rule#{rule_id}")
+            }
+            Expected::Label(label_id) => {
+                if let Some(labels) = expected_labels {
+                    let id = *label_id as usize;
+                    if id < labels.len() {
+                        return labels[id].to_string();
+                    }
+                }
+                format!("expected#{label_id}")
+            }
         }
+    }
+}
+
+// ─── Helpers for expected list formatting ─────────────────────────────────────
+
+pub(crate) fn format_expected_list(items: &[String]) -> String {
+    if items.is_empty() {
+        return "nothing".to_string();
+    }
+    let (display, more) = if items.len() <= MAX_EXPECTED_DISPLAY {
+        (items, 0)
+    } else {
+        (&items[..MAX_EXPECTED_DISPLAY], items.len() - MAX_EXPECTED_DISPLAY)
+    };
+    let list = if display.len() == 1 {
+        display[0].clone()
+    } else {
+        let (last, rest) = display.split_last().unwrap();
+        format!("{}, or {}", rest.join(", "), last)
+    };
+    if more > 0 {
+        format!("{} (and {} more)", list, more)
+    } else {
+        list
     }
 }
 
@@ -124,30 +181,41 @@ pub struct Diagnostic {
     pub furthest: Pos,
     /// What the parser expected to find at [`furthest`].
     pub expected: Vec<Expected>,
+    /// Optional hints (e.g. "did you mean 'x'?", "add a semicolon here") shown after the expected message.
+    pub hints: Vec<&'static str>,
 }
 
+/// Maximum number of expected items to show before truncating with "(and N more)".
+const MAX_EXPECTED_DISPLAY: usize = 10;
+
 impl Diagnostic {
-    /// Format the diagnostic using the grammar's literal table (optional).
-    pub fn message(&self, literals: Option<&LiteralTable>) -> String {
+    /// Format the diagnostic using the grammar's literal, rule-name, and label tables (optional).
+    ///
+    /// If there are more than [`MAX_EXPECTED_DISPLAY`] expected items, only the first
+    /// ones are shown and the message ends with "(and N more)".
+    pub fn message(
+        &self,
+        literals: Option<&LiteralTable>,
+        rule_names: Option<&[&'static str]>,
+        expected_labels: Option<&[&'static str]>,
+    ) -> String {
         let items: Vec<String> = self
             .expected
             .iter()
-            .map(|e| e.display(literals))
+            .map(|e| e.display(literals, rule_names, expected_labels))
             .collect();
 
-        let expected_str = match items.len() {
-            0 => "nothing".to_string(),
-            1 => items[0].clone(),
-            _ => {
-                let (last, rest) = items.split_last().unwrap();
-                format!("{}, or {}", rest.join(", "), last)
-            }
-        };
+        let expected_str = format_expected_list(&items);
 
-        format!(
+        let mut out = format!(
             "parse error at byte {}: expected {}",
             self.furthest, expected_str
-        )
+        );
+        for hint in &self.hints {
+            out.push_str("\n  hint: ");
+            out.push_str(hint);
+        }
+        out
     }
 
     /// Format with line/column and source snippet for compiler/IDE use.
@@ -160,21 +228,16 @@ impl Diagnostic {
         source: &[u8],
         line_index: &LineIndex,
         literals: Option<&LiteralTable>,
+        rule_names: Option<&[&'static str]>,
+        expected_labels: Option<&[&'static str]>,
     ) -> String {
         let expected_str = {
             let items: Vec<String> = self
                 .expected
                 .iter()
-                .map(|e| e.display(literals))
+                .map(|e| e.display(literals, rule_names, expected_labels))
                 .collect();
-            match items.len() {
-                0 => "nothing".to_string(),
-                1 => items[0].clone(),
-                _ => {
-                    let (last, rest) = items.split_last().unwrap();
-                    format!("{}, or {}", rest.join(", "), last)
-                }
-            }
+            format_expected_list(&items)
         };
 
         let (line_1, col_1) = line_index.line_col_1based(self.furthest);
@@ -184,17 +247,28 @@ impl Diagnostic {
         );
 
         if source.is_empty() || self.furthest as usize > source.len() {
-            return header;
+            let mut out = header;
+            for hint in &self.hints {
+                out.push_str("\n  hint: ");
+                out.push_str(hint);
+            }
+            return out;
         }
 
-        let snippet = line_index.snippet_at(source, self.furthest);
-        format!("{}\n{}", header, snippet)
+        let mut out = header;
+        for hint in &self.hints {
+            out.push_str("\n  hint: ");
+            out.push_str(hint);
+        }
+        out.push('\n');
+        out.push_str(&line_index.snippet_at(source, self.furthest));
+        out
     }
 }
 
 impl std::fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message(None))
+        f.write_str(&self.message(None, None, None))
     }
 }
 
@@ -214,8 +288,12 @@ impl Diagnostic {
         source: impl Into<String>,
         name: impl Into<String>,
         literals: Option<&LiteralTable>,
+        rule_names: Option<&[&'static str]>,
+        expected_labels: Option<&[&'static str]>,
     ) -> crate::miette_support::MietteParseDiagnostic {
-        crate::miette_support::MietteParseDiagnostic::new(self, source, name, literals)
+        crate::miette_support::MietteParseDiagnostic::new(
+            self, source, name, literals, rule_names, expected_labels,
+        )
     }
 }
 
@@ -272,6 +350,7 @@ impl ErrorContext {
         Diagnostic {
             furthest: self.furthest,
             expected: self.expected.clone(),
+            hints: Vec::new(),
         }
     }
 }
@@ -279,6 +358,128 @@ impl ErrorContext {
 impl Default for ErrorContext {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ─── Semantic (analysis) diagnostics ─────────────────────────────────────────
+
+/// Severity for analysis/validation diagnostics (errors, warnings, etc.).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Severity {
+    /// Error: invalid program (e.g. undefined variable, type mismatch).
+    Error,
+    /// Warning: likely mistake or bad style (e.g. unused variable).
+    Warning,
+    /// Informational note.
+    Note,
+}
+
+/// A single diagnostic from semantic analysis or validation (e.g. undefined
+/// variable, type error). Use with [`SemanticDiagnostic::format_with_source`]
+/// or [`SemanticDiagnostic::into_miette`] (with the `miette` feature) so tools
+/// and IDEs can show consistent, pluggable error output.
+#[derive(Clone, Debug)]
+pub struct SemanticDiagnostic {
+    /// Source span (half-open byte range) for highlighting.
+    pub span: Span,
+    /// Human-readable message.
+    pub message: String,
+    /// Error, warning, or note.
+    pub severity: Severity,
+    /// Optional code (e.g. `"E0425"`, `"unused_variable"`) for filtering and docs.
+    pub code: Option<String>,
+    /// Optional file id or path for multi-file compilers (e.g. `"src/main.leek"`).
+    pub file_id: Option<String>,
+}
+
+impl SemanticDiagnostic {
+    /// Format this diagnostic with line/column and source snippet.
+    ///
+    /// Uses `line_index` to resolve `span.start` to a line and column, then
+    /// appends the line of source and a caret. Callers can use [`ParsedDoc`]
+    /// to get `source` and `line_index` from a successful parse.
+    pub fn format_with_source(
+        &self,
+        source: &[u8],
+        line_index: &LineIndex,
+    ) -> String {
+        let (line_1, col_1) = line_index.line_col_1based(self.span.start);
+        let severity_label = match self.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+            Severity::Note => "note",
+        };
+        let code_part = self
+            .code
+            .as_deref()
+            .map(|c| format!(" [{c}]"))
+            .unwrap_or_default();
+        let location = self
+            .file_id
+            .as_deref()
+            .map(|f| format!("{f}:{line_1}:{col_1}"))
+            .unwrap_or_else(|| format!("{line_1}:{col_1}"));
+        let header = format!(
+            "{}: {}{}: {}",
+            location,
+            severity_label,
+            code_part,
+            self.message
+        );
+
+        if source.is_empty() || self.span.start as usize >= source.len() {
+            return header;
+        }
+
+        let snippet = line_index.snippet_at(source, self.span.start);
+        format!("{}\n{}", header, snippet)
+    }
+
+    /// Build a diagnostic for an error at the given span.
+    pub fn error(span: Span, message: impl Into<String>) -> Self {
+        Self {
+            span,
+            message: message.into(),
+            severity: Severity::Error,
+            code: None,
+            file_id: None,
+        }
+    }
+
+    /// Build a diagnostic for a warning at the given span.
+    pub fn warning(span: Span, message: impl Into<String>) -> Self {
+        Self {
+            span,
+            message: message.into(),
+            severity: Severity::Warning,
+            code: None,
+            file_id: None,
+        }
+    }
+
+    /// Set an optional code (e.g. for filtering or docs).
+    pub fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = Some(code.into());
+        self
+    }
+
+    /// Set an optional file id or path (for multi-file diagnostics).
+    pub fn with_file_id(mut self, file_id: impl Into<String>) -> Self {
+        self.file_id = Some(file_id.into());
+        self
+    }
+}
+
+#[cfg(feature = "miette")]
+impl SemanticDiagnostic {
+    /// Convert this diagnostic into a value implementing [`miette::Diagnostic`]
+    /// for pretty-printed reports with source snippets.
+    pub fn into_miette(
+        &self,
+        source: impl Into<String>,
+        name: impl Into<String>,
+    ) -> crate::miette_support::MietteSemanticDiagnostic {
+        crate::miette_support::MietteSemanticDiagnostic::new(self, source, name)
     }
 }
 
@@ -315,5 +516,19 @@ mod tests {
         let diag = ctx.to_diagnostic();
         assert_eq!(diag.furthest, 10);
         assert_eq!(diag.expected.len(), 2);
+    }
+
+    #[test]
+    fn expected_rule_display() {
+        let rule = Expected::Rule(0);
+        assert_eq!(rule.display(None, Some(&["start"]), None), "start");
+        assert_eq!(rule.display(None, None, None), "rule#0");
+    }
+
+    #[test]
+    fn expected_label_display() {
+        let label = Expected::Label(0);
+        assert_eq!(label.display(None, None, Some(&["statement"])), "statement");
+        assert_eq!(label.display(None, None, None), "expected#0");
     }
 }

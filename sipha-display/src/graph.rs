@@ -124,7 +124,10 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
             | Insn::NodeBegin { .. }
             | Insn::NodeEnd
             | Insn::TokenBegin { .. }
-            | Insn::TokenEnd => push(ip + 1),
+            | Insn::TokenEnd
+            | Insn::RecordExpectedLabel { .. }
+            | Insn::RecoverUntil { .. }
+            | Insn::RecoveryResume => push(ip + 1),
         }
     }
     visited
@@ -269,7 +272,7 @@ fn insn_label(insn: &Insn, graph: &BuiltGraph, _ip: InsnId) -> String {
     match insn {
         Insn::Byte { byte, .. } => format!("byte 0x{:02X}", byte),
         Insn::ByteRange { lo, hi, .. } => format!("byte_range 0x{:02X}-0x{:02X}", lo, hi),
-        Insn::Class { .. } => "[class]".to_string(),
+        Insn::Class { label_id, .. } => format!("[class label#{label_id}]"),
         Insn::Literal { lit_id, .. } => {
             let lit = get_literal(graph, *lit_id);
             format!("\"{}\"", escape_literal_display(lit))
@@ -301,6 +304,9 @@ fn insn_label(insn: &Insn, graph: &BuiltGraph, _ip: InsnId) -> String {
         Insn::NodeEnd => "node_end".to_string(),
         Insn::TokenBegin { kind, is_trivia } => format!("token_begin {} trivia={}", kind, is_trivia),
         Insn::TokenEnd => "token_end".to_string(),
+        Insn::RecordExpectedLabel { label_id } => format!("expect_label #{label_id}"),
+        Insn::RecoverUntil { sync_rule, resume } => format!("recover_until rule#{sync_rule} → {resume}"),
+        Insn::RecoveryResume => "recovery_resume".to_string(),
         Insn::Accept => "accept".to_string(),
     }
 }
@@ -319,7 +325,10 @@ fn insn_successors(insn: &Insn, ip: InsnId) -> Vec<InsnId> {
         | Insn::NodeBegin { .. }
         | Insn::NodeEnd
         | Insn::TokenBegin { .. }
-        | Insn::TokenEnd => s.push(ip + 1),
+        | Insn::TokenEnd
+        | Insn::RecordExpectedLabel { .. }
+        | Insn::RecoverUntil { .. }
+        | Insn::RecoveryResume => s.push(ip + 1),
         Insn::Choice { alt } => {
             s.push(ip + 1);
             s.push(*alt);

@@ -32,7 +32,8 @@ pub enum Insn {
 
     Byte      { byte: u8,                on_fail: InsnId },
     ByteRange { lo: u8, hi: u8,          on_fail: InsnId },
-    Class     { class: CharClass,        on_fail: InsnId },
+    /// Index into the grammar's `class_labels` for diagnostics; 0 = default "character class".
+    Class     { class: CharClass, label_id: u32, on_fail: InsnId },
     /// SIMD-accelerated for literals ≥ 16 bytes.
     Literal   { lit_id: u32,             on_fail: InsnId },
     EndOfInput {                         on_fail: InsnId },
@@ -127,6 +128,21 @@ pub enum Insn {
     /// `TreeEvent::Token { start, end, kind, is_trivia }`.
     TokenEnd,
 
+    /// Record an expected label at the current position for diagnostics, then continue.
+    /// Used by [`expect_label`](crate::builder::GrammarBuilder::expect_label).
+    RecordExpectedLabel { label_id: u32 },
+
+    // ── Error recovery ───────────────────────────────────────────────────────
+    //
+    // RecoverUntil: try the following "body"; on failure, skip input until
+    // sync_rule matches (or EOI), then continue at resume. Used by
+    // [`recover_until`](crate::builder::GrammarBuilder::recover_until).
+
+    /// Start a recoverable region. On failure, skip until sync_rule matches, then jump to resume.
+    RecoverUntil { sync_rule: RuleId, resume: InsnId },
+    /// After sync rule matched during recovery; pops the recovery frame and continues.
+    RecoveryResume,
+
     // ── Accept ───────────────────────────────────────────────────────────────
 
     Accept,
@@ -175,13 +191,17 @@ impl FlagMaskTable {
 // ─── Parse graph ─────────────────────────────────────────────────────────────
 
 pub struct ParseGraph {
-    pub insns:       &'static [Insn],
-    pub rule_entry:  &'static [InsnId],
-    pub literals:    LiteralTable,
-    pub jump_tables: &'static [[u32; 256]],
-    pub flag_masks:  FlagMaskTable,
-    pub rule_names:  &'static [&'static str],
-    pub tag_names:   &'static [&'static str],
+    pub insns:        &'static [Insn],
+    pub rule_entry:   &'static [InsnId],
+    pub literals:     LiteralTable,
+    pub jump_tables:  &'static [[u32; 256]],
+    pub flag_masks:   FlagMaskTable,
+    pub rule_names:   &'static [&'static str],
+    pub tag_names:    &'static [&'static str],
+    /// Labels for [`Insn::Class`] diagnostics; index 0 is the default "character class".
+    pub class_labels:     &'static [&'static str],
+    /// Labels for [`Expected::Label`] from [`expect_label`](crate::builder::GrammarBuilder::expect_label).
+    pub expected_labels:  &'static [&'static str],
 }
 
 impl ParseGraph {

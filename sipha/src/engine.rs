@@ -28,8 +28,32 @@ use crate::{
     insn::{Insn, ParseGraph},
     memo::{MemoReplay, MemoTable},
     simd,
-    types::{CaptureEvent, Pos, RuleId, SyntaxKind, TreeEvent},
+    types::{CaptureEvent, InsnId, Pos, RuleId, SyntaxKind, TreeEvent},
 };
+
+/// Close open nodes and insert an error node so the event list is well-nested.
+pub(crate) fn insert_error_node_events(
+    tree_events: &mut Vec<TreeEvent>,
+    furthest: Pos,
+    error_kind: SyntaxKind,
+) {
+    let mut depth = 0u32;
+    for e in tree_events.iter() {
+        match e {
+            TreeEvent::NodeOpen { .. } => depth = depth.saturating_add(1),
+            TreeEvent::NodeClose { .. } => depth = depth.saturating_sub(1),
+            TreeEvent::Token { .. } => {}
+        }
+    }
+    for _ in 0..depth {
+        tree_events.push(TreeEvent::NodeClose { pos: furthest });
+    }
+    tree_events.push(TreeEvent::NodeOpen {
+        kind: error_kind,
+        pos: furthest,
+    });
+    tree_events.push(TreeEvent::NodeClose { pos: furthest });
+}
 
 // ─── Snapshot entry ───────────────────────────────────────────────────────────
 
@@ -52,12 +76,17 @@ enum Frame {
     },
     Return { ret_ip: u32 },
     MemoReturn {
-        ret_ip:      u32,
-        rule:        RuleId,
-        start_pos:   Pos,
-        events_mark: u32,
+        ret_ip:       u32,
+        rule:         RuleId,
+        start_pos:    Pos,
+        events_mark:  u32,
+        tree_mark:    u32,
     },
     ContextSave { snapshot_mark: u32 },
+    /// Error recovery: on failure, skip until sync_rule matches then continue at resume.
+    Recover { sync_rule: RuleId, resume: InsnId },
+    /// Marker when trying the sync rule during recovery; popped by RecoveryResume.
+    RecoverSync { sync_rule: RuleId, resume: InsnId },
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -78,6 +107,20 @@ impl std::fmt::Display for ParseError {
 }
 impl std::error::Error for ParseError {}
 
+/// Result of parsing in multi-error recovery mode: partial output and all collected errors.
+///
+/// Returned by [`Engine::parse_recovering_multi`] when the grammar uses
+/// [`recover_until`](crate::builder::GrammarBuilder::recover_until) and one or more
+/// failures occur. `partial` contains tree events and consumed length up to the last
+/// recovery point; `errors` holds each parse error in order.
+#[derive(Debug)]
+pub struct RecoverMultiResult {
+    /// Partial parse output (events and consumed length) after collecting errors.
+    pub partial: ParseOutput,
+    /// All parse errors collected during recovery (in order of occurrence).
+    pub errors: Vec<ParseError>,
+}
+
 #[cfg(feature = "miette")]
 impl ParseError {
     /// If this is a parse failure ([`NoMatch`](ParseError::NoMatch)), convert it
@@ -88,7 +131,7 @@ impl ParseError {
     ///
     /// ```ignore
     /// if let Err(e) = engine.parse(&graph, &source) {
-    ///     if let Some(report) = e.to_miette_report(&source, "file.txt", Some(&graph.literals)) {
+    ///     if let Some(report) = e.to_miette_report(&source, "file.txt", Some(&graph.literals), Some(&graph.rule_names)) {
     ///         eprintln!("{:?}", report);
     ///     }
     /// }
@@ -98,10 +141,12 @@ impl ParseError {
         source: impl Into<String>,
         name: impl Into<String>,
         literals: Option<&crate::insn::LiteralTable>,
+        rule_names: Option<&[&'static str]>,
+        expected_labels: Option<&[&'static str]>,
     ) -> Option<miette::Report> {
         match self {
             ParseError::NoMatch(diag) => {
-                let m = diag.into_miette(source, name, literals);
+                let m = diag.into_miette(source, name, literals, rule_names, expected_labels);
                 Some(miette::Report::new(m))
             }
             ParseError::BadGraph => None,
@@ -224,6 +269,8 @@ impl Engine {
             &mut self.error_ctx,
             &mut self.flags,
             &mut self.ctx_snapshots,
+            &mut None,
+            0,
         ) {
             Ok(consumed) => Ok(ParseOutput {
                 consumed,
@@ -231,6 +278,159 @@ impl Engine {
                 tree_events: std::mem::take(&mut self.tree_events),
             }),
             Err(e) => Err(e),
+        }
+    }
+
+    /// Parse in recovering mode: on failure, still return a partial [`ParseOutput`]
+    /// built from the parser state at the failure point (e.g. for IDE or multi-error reporting).
+    ///
+    /// On [`Err`], the returned output may contain a partial tree and events; `consumed`
+    /// is set to the error position ([`ErrorContext::furthest`]). Build a green tree from
+    /// the partial `tree_events` with [`ParseOutput::build_green_tree`] (may return `None`
+    /// if the partial events are not well-nested).
+    pub fn parse_recovering_with_context(
+        &mut self,
+        graph:   &ParseGraph,
+        input:   &[u8],
+        context: &ParseContext,
+    ) -> Result<ParseOutput, (ParseOutput, ParseError)> {
+        self.stack.clear();
+        self.events.clear();
+        self.tree_events.clear();
+        self.open_tokens.clear();
+        self.error_ctx.clear();
+        self.ctx_snapshots.clear();
+        if let Some(m) = &mut self.memo { m.clear(); }
+        self.flags.clear();
+        self.flags.extend_from_slice(context.words());
+
+        match run(
+            graph,
+            input,
+            &mut self.stack,
+            &mut self.events,
+            &mut self.tree_events,
+            &mut self.open_tokens,
+            &mut self.memo,
+            &mut self.error_ctx,
+            &mut self.flags,
+            &mut self.ctx_snapshots,
+            &mut None,
+            0,
+        ) {
+            Ok(consumed) => Ok(ParseOutput {
+                consumed,
+                events:      std::mem::take(&mut self.events),
+                tree_events: std::mem::take(&mut self.tree_events),
+            }),
+            Err(e) => {
+                if let Some(kind) = context.error_node_kind() {
+                    insert_error_node_events(
+                        &mut self.tree_events,
+                        self.error_ctx.furthest,
+                        kind,
+                    );
+                }
+                Err((
+                    ParseOutput {
+                        consumed: self.error_ctx.furthest,
+                        events:   std::mem::take(&mut self.events),
+                        tree_events: std::mem::take(&mut self.tree_events),
+                    },
+                    e,
+                ))
+            }
+        }
+    }
+
+    /// Like [`parse_recovering_with_context`] with a default context.
+    pub fn parse_recovering(
+        &mut self,
+        graph: &ParseGraph,
+        input: &[u8],
+    ) -> Result<ParseOutput, (ParseOutput, ParseError)> {
+        self.parse_recovering_with_context(graph, input, &ParseContext::new())
+    }
+
+    /// Parse in multi-error recovery mode: collect multiple errors until EOI or `max_errors`.
+    ///
+    /// Requires the grammar to use [`recover_until`](crate::builder::GrammarBuilder::recover_until)
+    /// so that on each failure the VM can skip to a sync point and continue. Each failure
+    /// is pushed to `errors`; parsing stops when no recovery frame is found, input ends,
+    /// or `errors.len()` reaches `max_errors`.
+    ///
+    /// Returns `Ok(output)` on full success; `Err(RecoverMultiResult { partial, errors })`
+    /// when at least one error was collected.
+    pub fn parse_recovering_multi(
+        &mut self,
+        graph: &ParseGraph,
+        input: &[u8],
+        max_errors: usize,
+    ) -> Result<ParseOutput, RecoverMultiResult> {
+        self.parse_recovering_multi_with_context(graph, input, &ParseContext::new(), max_errors)
+    }
+
+    /// Like [`parse_recovering_multi`] with a custom context (e.g. for error node kind).
+    pub fn parse_recovering_multi_with_context(
+        &mut self,
+        graph: &ParseGraph,
+        input: &[u8],
+        context: &ParseContext,
+        max_errors: usize,
+    ) -> Result<ParseOutput, RecoverMultiResult> {
+        self.stack.clear();
+        self.events.clear();
+        self.tree_events.clear();
+        self.open_tokens.clear();
+        self.error_ctx.clear();
+        self.ctx_snapshots.clear();
+        if let Some(m) = &mut self.memo {
+            m.clear();
+        }
+        self.flags.clear();
+        self.flags.extend_from_slice(context.words());
+
+        let mut errors = Vec::new();
+        let cap = max_errors.max(1);
+        let mut multi_errors = Some(&mut errors);
+
+        match run(
+            graph,
+            input,
+            &mut self.stack,
+            &mut self.events,
+            &mut self.tree_events,
+            &mut self.open_tokens,
+            &mut self.memo,
+            &mut self.error_ctx,
+            &mut self.flags,
+            &mut self.ctx_snapshots,
+            &mut multi_errors,
+            cap,
+        ) {
+            Ok(consumed) => Ok(ParseOutput {
+                consumed,
+                events:      std::mem::take(&mut self.events),
+                tree_events: std::mem::take(&mut self.tree_events),
+            }),
+            Err(e) => {
+                errors.push(e);
+                if let Some(kind) = context.error_node_kind() {
+                    insert_error_node_events(
+                        &mut self.tree_events,
+                        self.error_ctx.furthest,
+                        kind,
+                    );
+                }
+                Err(RecoverMultiResult {
+                    partial: ParseOutput {
+                        consumed: self.error_ctx.furthest,
+                        events:   std::mem::take(&mut self.events),
+                        tree_events: std::mem::take(&mut self.tree_events),
+                    },
+                    errors,
+                })
+            }
         }
     }
 
@@ -256,6 +456,8 @@ fn run(
     error_ctx:     &mut ErrorContext,
     flags:         &mut Vec<u64>,
     ctx_snapshots: &mut Vec<SnapEntry>,
+    multi_errors:  &mut Option<&mut Vec<ParseError>>,
+    max_errors:    usize,
 ) -> Result<Pos, ParseError> {
     let mut ip:  u32 = graph.start();
     let mut pos: Pos = 0;
@@ -265,9 +467,9 @@ fn run(
 
         macro_rules! fail_jump {
             ($on_fail:expr) => {
-                fail_or_jump($on_fail, stack, &mut ip, &mut pos,
+                fail_or_jump($on_fail, graph, input, stack, &mut ip, &mut pos,
                     flags, ctx_snapshots, events, tree_events, open_tokens,
-                    memo, error_ctx)?
+                    memo, error_ctx, multi_errors, max_errors)?
             };
         }
 
@@ -291,12 +493,16 @@ fn run(
                 fail_jump!(on_fail);
             }
 
-            Insn::Class { class, on_fail } => {
+            Insn::Class { class, label_id, on_fail } => {
                 if let Some(b) = input.get(pos as usize).copied() {
                     if class.contains(b) { pos += 1; ip += 1; continue; }
                 }
-                // No per-class label in the instruction; use a generic description.
-                error_ctx.record(pos, Expected::Class("character class"));
+                let label = graph
+                    .class_labels
+                    .get(label_id as usize)
+                    .copied()
+                    .unwrap_or("character class");
+                error_ctx.record(pos, Expected::Class(label));
                 fail_jump!(on_fail);
             }
 
@@ -321,8 +527,9 @@ fn run(
             }
 
             Insn::Fail => {
-                do_fail(stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                        events, tree_events, open_tokens, memo, error_ctx)?;
+                do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
+                        events, tree_events, open_tokens, memo, error_ctx,
+                        multi_errors, max_errors)?;
             }
 
             // ── Unicode codepoint terminals ───────────────────────────────────
@@ -360,17 +567,21 @@ fn run(
                 let entry = graph.rule_entry.get(rule as usize).copied()
                     .ok_or(ParseError::BadGraph)?;
 
+                // Record that we're trying this rule so diagnostics can show "expected <rule>".
+                error_ctx.record(pos, Expected::Rule(rule));
+
                 if let Some(mt) = memo {
-                    match mt.query_replay(rule, pos, events) {
+                    match mt.query_replay(rule, pos, events, tree_events) {
                         MemoReplay::Hit { end_pos } => {
                             pos = end_pos;
                             ip  += 1;
                             continue;
                         }
                         MemoReplay::Miss { furthest } => {
-                            error_ctx.record(furthest, Expected::EndOfInput);
-                            do_fail(stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                                    events, tree_events, open_tokens, memo, error_ctx)?;
+                            error_ctx.record(furthest, Expected::Rule(rule));
+                            do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
+                                    events, tree_events, open_tokens, memo, error_ctx,
+                                    multi_errors, max_errors)?;
                             continue;
                         }
                         MemoReplay::Unknown => {
@@ -379,6 +590,7 @@ fn run(
                                 rule,
                                 start_pos:   pos,
                                 events_mark: events.len() as u32,
+                                tree_mark:   tree_events.len() as u32,
                             });
                             ip = entry;
                         }
@@ -393,10 +605,19 @@ fn run(
                 loop {
                     match stack.pop() {
                         Some(Frame::Return { ret_ip }) => { ip = ret_ip; break; }
-                        Some(Frame::MemoReturn { ret_ip, rule, start_pos, events_mark }) => {
+                        Some(Frame::MemoReturn {
+                            ret_ip,
+                            rule,
+                            start_pos,
+                            events_mark,
+                            tree_mark,
+                        }) => {
                             if let Some(m) = memo {
-                                let stored = events[events_mark as usize..].to_vec().into_boxed_slice();
-                                m.insert_hit(rule, start_pos, pos, stored);
+                                let stored_events =
+                                    events[events_mark as usize..].to_vec().into_boxed_slice();
+                                let stored_tree =
+                                    tree_events[tree_mark as usize..].to_vec().into_boxed_slice();
+                                m.insert_hit(rule, start_pos, pos, stored_events, stored_tree);
                             }
                             ip = ret_ip;
                             break;
@@ -405,6 +626,10 @@ fn run(
                             restore_snapshot(flags, ctx_snapshots, snapshot_mark);
                         }
                         Some(Frame::Backtrack { .. }) => { /* defensive */ }
+                        Some(f @ (Frame::Recover { .. } | Frame::RecoverSync { .. })) => {
+                            stack.push(f);
+                            return Err(ParseError::BadGraph);
+                        }
                         None => return Err(ParseError::BadGraph),
                     }
                 }
@@ -436,8 +661,9 @@ fn run(
             Insn::NegBackCommit { target } => {
                 pos = pop_backtrack_pos(stack)?;
                 ip  = target;
-                do_fail(stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                        events, tree_events, open_tokens, memo, error_ctx)?;
+                do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
+                        events, tree_events, open_tokens, memo, error_ctx,
+                        multi_errors, max_errors)?;
             }
 
             // Fix: PartialCommit must update ALL backtrack marks so that a
@@ -461,8 +687,9 @@ fn run(
                     let target = graph.dispatch(table_id, b);
                     if target != u32::MAX { ip = target; continue; }
                 }
-                do_fail(stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                        events, tree_events, open_tokens, memo, error_ctx)?;
+                do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
+                        events, tree_events, open_tokens, memo, error_ctx,
+                        multi_errors, max_errors)?;
             }
 
             // ── Context flags ─────────────────────────────────────────────────
@@ -545,6 +772,38 @@ fn run(
                 ip += 1;
             }
 
+            Insn::RecordExpectedLabel { label_id } => {
+                error_ctx.record(pos, Expected::Label(label_id));
+                ip += 1;
+            }
+
+            // ── Error recovery ─────────────────────────────────────────────────
+
+            Insn::RecoverUntil { sync_rule, resume } => {
+                stack.push(Frame::Recover { sync_rule, resume });
+                ip += 1;
+            }
+
+            Insn::RecoveryResume => {
+                // Body succeeded or sync rule matched; pop Recover or RecoverSync and continue.
+                let mut put_back = Vec::new();
+                let mut found = false;
+                while let Some(f) = stack.pop() {
+                    if matches!(f, Frame::RecoverSync { .. } | Frame::Recover { .. }) {
+                        found = true;
+                        break;
+                    }
+                    put_back.push(f);
+                }
+                for f in put_back.into_iter().rev() {
+                    stack.push(f);
+                }
+                if !found {
+                    return Err(ParseError::BadGraph);
+                }
+                ip += 1;
+            }
+
             Insn::Accept => return Ok(pos),
         }
     }
@@ -608,6 +867,8 @@ fn restore_snapshot(flags: &mut Vec<u64>, snaps: &mut Vec<SnapEntry>, mark: u32)
 #[inline(always)]
 fn fail_or_jump(
     on_fail:       u32,
+    graph:         &ParseGraph,
+    input:         &[u8],
     stack:         &mut Vec<Frame>,
     ip:            &mut u32,
     pos:           &mut Pos,
@@ -618,19 +879,32 @@ fn fail_or_jump(
     open_tokens:   &mut Vec<(SyntaxKind, bool, Pos)>,
     memo:          &mut Option<MemoTable>,
     error_ctx:     &mut ErrorContext,
+    multi_errors:  &mut Option<&mut Vec<ParseError>>,
+    max_errors:    usize,
 ) -> Result<(), ParseError> {
     if on_fail == u32::MAX {
-        do_fail(stack, ip, pos, flags, ctx_snapshots,
-                events, tree_events, open_tokens, memo, error_ctx)
+        do_fail(graph, input, stack, ip, pos, flags, ctx_snapshots,
+                events, tree_events, open_tokens, memo, error_ctx,
+                multi_errors, max_errors)
     } else {
         *ip = on_fail;
         Ok(())
     }
 }
 
+/// Advance `pos` by one byte (or to end of input). Used during error recovery skip.
+#[inline(always)]
+fn recovery_advance(pos: &mut Pos, input: &[u8]) {
+    if (*pos as usize) < input.len() {
+        *pos += 1;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
 fn do_fail(
+    graph:         &ParseGraph,
+    input:         &[u8],
     stack:         &mut Vec<Frame>,
     ip:            &mut u32,
     pos:           &mut Pos,
@@ -641,6 +915,8 @@ fn do_fail(
     open_tokens:   &mut Vec<(SyntaxKind, bool, Pos)>,
     memo:          &mut Option<MemoTable>,
     error_ctx:     &ErrorContext,
+    multi_errors:  &mut Option<&mut Vec<ParseError>>,
+    max_errors:    usize,
 ) -> Result<(), ParseError> {
     loop {
         match stack.pop() {
@@ -658,6 +934,43 @@ fn do_fail(
             Some(Frame::Return { .. }) => {}
             Some(Frame::MemoReturn { rule, start_pos, .. }) => {
                 if let Some(m) = memo { m.insert_miss(rule, start_pos, error_ctx.furthest); }
+            }
+            Some(Frame::Recover { sync_rule, resume }) => {
+                if let Some(errs) = multi_errors {
+                    errs.push(ParseError::NoMatch(error_ctx.to_diagnostic()));
+                    if errs.len() >= max_errors {
+                        return Err(ParseError::NoMatch(error_ctx.to_diagnostic()));
+                    }
+                }
+                recovery_advance(pos, input);
+                if (*pos as usize) >= input.len() {
+                    // Synced to EOI; don't jump back into the recovery body — keep popping
+                    // so the outer loop (e.g. zero_or_more) can exit.
+                } else {
+                    let entry = *graph.rule_entry.get(sync_rule as usize).ok_or(ParseError::BadGraph)?;
+                    stack.push(Frame::RecoverSync { sync_rule, resume });
+                    stack.push(Frame::Return { ret_ip: resume });
+                    *ip = entry;
+                    return Ok(());
+                }
+            }
+            Some(Frame::RecoverSync { sync_rule, resume }) => {
+                if let Some(errs) = multi_errors {
+                    errs.push(ParseError::NoMatch(error_ctx.to_diagnostic()));
+                    if errs.len() >= max_errors {
+                        return Err(ParseError::NoMatch(error_ctx.to_diagnostic()));
+                    }
+                }
+                recovery_advance(pos, input);
+                if (*pos as usize) >= input.len() {
+                    // Same: synced to EOI, keep popping to exit outer construct.
+                } else {
+                    let entry = *graph.rule_entry.get(sync_rule as usize).ok_or(ParseError::BadGraph)?;
+                    stack.push(Frame::RecoverSync { sync_rule, resume });
+                    stack.push(Frame::Return { ret_ip: resume });
+                    *ip = entry;
+                    return Ok(());
+                }
             }
             None => {
                 return Err(ParseError::NoMatch(error_ctx.to_diagnostic()));
@@ -725,6 +1038,7 @@ mod tests {
     use super::*;
     use crate::builder::GrammarBuilder;
     use crate::error::Expected;
+    use crate::types::classes;
 
     fn minimal_graph() -> crate::builder::BuiltGraph {
         let mut g = GrammarBuilder::new();
@@ -765,5 +1079,33 @@ mod tests {
         let ParseError::NoMatch(diag) = err else { panic!("expected NoMatch"); };
         assert_eq!(diag.furthest, 0);
         assert!(!diag.expected.is_empty());
+    }
+
+    #[test]
+    fn recover_until_skips_to_sync_then_continues() {
+        let mut g = GrammarBuilder::new();
+        g.begin_rule("start");
+        g.zero_or_more(|g| {
+            g.recover_until("semi", |g| {
+                g.call("statement");
+            });
+        });
+        g.end_of_input();
+        g.accept();
+        g.rule("semi", |g| {
+            g.literal(b";");
+        });
+        g.rule("statement", |g| {
+            g.class(classes::LOWER); // one letter
+        });
+        let built = g.finish().expect("grammar valid");
+        let graph = built.as_graph();
+        let mut engine = Engine::new();
+        // "a;b;" parses: statement 'a', then next iteration statement 'b', then eoi.
+        let out = engine.parse(&graph, b"a;b;").expect("parse ok");
+        assert_eq!(out.consumed, 4);
+        // "a x ; b ;" — at ' ' statement fails, skip until ';', then statement 'b', then ';', eoi (9 bytes).
+        let out = engine.parse(&graph, b"a x ; b ;").expect("parse ok");
+        assert_eq!(out.consumed, 9);
     }
 }

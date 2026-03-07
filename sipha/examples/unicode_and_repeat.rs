@@ -30,7 +30,7 @@ fn check(
     } else {
         let ec = engine.error_context();
         let exp: Vec<_> = ec.expected.iter()
-            .map(|e| e.display(Some(&graph.literals))).collect();
+            .map(|e| e.display(Some(&graph.literals), Some(&graph.rule_names), Some(&graph.expected_labels))).collect();
         println!("  [{sym}] {desc:<58} → ERR byte {}: {exp:?}", ec.furthest);
     }
     ok == expect_ok

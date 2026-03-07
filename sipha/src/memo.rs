@@ -31,17 +31,14 @@
 //!
 //! ## Memo and the green/red tree
 //!
-//! Memoisation only stores and replays **legacy capture events** ([`CaptureEvent`]).
-//! On a cache hit, tree events ([`crate::types::TreeEvent`]) are *not* replayed,
-//! so the green/red syntax tree can be incomplete when memo is enabled.  Use
-//! memo when you need guaranteed O(n) time and only rely on the capture tree
-//! ([`crate::capture::CaptureNode::build_forest`]); for full green/red output,
-//! parse without memo or be aware that memoised rule invocations do not
-//! contribute to `tree_events`.
+//! Memoisation stores and replays both **legacy capture events** ([`CaptureEvent`])
+//! and **tree events** ([`crate::types::TreeEvent`]).  On a cache hit both are
+//! replayed, so the green/red syntax tree remains complete and formatters/tree
+//! consumers work correctly with memo enabled.
 
 use std::collections::HashMap;
 
-use crate::types::{CaptureEvent, Pos, RuleId};
+use crate::types::{CaptureEvent, Pos, RuleId, TreeEvent};
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
@@ -49,10 +46,12 @@ use crate::types::{CaptureEvent, Pos, RuleId};
 #[derive(Clone, Debug)]
 pub enum MemoEntry {
     /// The rule matched, consuming input up to `end_pos`.
-    /// `events` holds every [`CaptureEvent`] emitted during the match.
+    /// `events` holds every [`CaptureEvent`], `tree_events` every [`TreeEvent`],
+    /// emitted during the match.
     Hit {
-        end_pos: Pos,
-        events:  Box<[CaptureEvent]>,
+        end_pos:     Pos,
+        events:      Box<[CaptureEvent]>,
+        tree_events: Box<[TreeEvent]>,
     },
     /// The rule failed.  `furthest` is the deepest position reached.
     Miss {
@@ -69,7 +68,11 @@ pub enum MemoQuery {
     /// Cached failure.
     Miss { furthest: Pos },
     /// Cached success — caller should replay these events and advance pos.
-    Hit { end_pos: Pos, events: Vec<CaptureEvent> },
+    Hit {
+        end_pos:     Pos,
+        events:      Vec<CaptureEvent>,
+        tree_events: Vec<TreeEvent>,
+    },
 }
 
 /// Result of a memo lookup that replays events in place (avoids cloning).
@@ -112,36 +115,57 @@ impl MemoTable {
         match self.table.get(&pack(rule, pos)) {
             None => MemoQuery::Unknown,
             Some(MemoEntry::Miss { furthest }) => MemoQuery::Miss { furthest: *furthest },
-            Some(MemoEntry::Hit { end_pos, events }) => MemoQuery::Hit {
-                end_pos: *end_pos,
-                // Clone the event slice into a Vec.  Cheaper than re-parsing.
-                events: events.to_vec(),
+            Some(MemoEntry::Hit { end_pos, events, tree_events }) => MemoQuery::Hit {
+                end_pos:     *end_pos,
+                events:      events.to_vec(),
+                tree_events: tree_events.to_vec(),
             },
         }
     }
 
-    /// Look up a `(rule, pos)` pair and, on hit, extend `events` in place with
-    /// the cached events.  Avoids allocating and copying on hit; use this in
-    /// the hot path when you only need to replay into an existing buffer.
+    /// Look up a `(rule, pos)` pair and, on hit, extend `events` and `tree_events`
+    /// in place with the cached data.  Use this in the hot path for zero-copy replay.
     #[inline]
-    pub fn query_replay(&self, rule: RuleId, pos: Pos, events: &mut Vec<CaptureEvent>) -> MemoReplay {
+    pub fn query_replay(
+        &self,
+        rule: RuleId,
+        pos: Pos,
+        events: &mut Vec<CaptureEvent>,
+        tree_events: &mut Vec<TreeEvent>,
+    ) -> MemoReplay {
         match self.table.get(&pack(rule, pos)) {
             None => MemoReplay::Unknown,
             Some(MemoEntry::Miss { furthest }) => MemoReplay::Miss { furthest: *furthest },
-            Some(MemoEntry::Hit { end_pos, events: cached }) => {
-                events.extend_from_slice(cached);
+            Some(MemoEntry::Hit {
+                end_pos,
+                events: cached_events,
+                tree_events: cached_tree,
+            }) => {
+                events.extend_from_slice(cached_events);
+                tree_events.extend_from_slice(cached_tree);
                 MemoReplay::Hit { end_pos: *end_pos }
             }
         }
     }
 
-    /// Store a successful result.
-    ///
-    /// `events_slice` is the sub-slice of the engine's event buffer that this
-    /// rule produced; it is cloned into a `Box<[_]>` for storage.
+    /// Store a successful result (capture events and tree events produced by the rule).
     #[inline]
-    pub fn insert_hit(&mut self, rule: RuleId, pos: Pos, end_pos: Pos, events: Box<[CaptureEvent]>) {
-        self.table.insert(pack(rule, pos), MemoEntry::Hit { end_pos, events });
+    pub fn insert_hit(
+        &mut self,
+        rule: RuleId,
+        pos: Pos,
+        end_pos: Pos,
+        events: Box<[CaptureEvent]>,
+        tree_events: Box<[TreeEvent]>,
+    ) {
+        self.table.insert(
+            pack(rule, pos),
+            MemoEntry::Hit {
+                end_pos,
+                events,
+                tree_events,
+            },
+        );
     }
 
     /// Store a failed result with the deepest position reached.

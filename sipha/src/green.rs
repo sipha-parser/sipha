@@ -63,6 +63,18 @@ impl GreenToken {
     #[inline]
     pub fn text(&self) -> &str { &self.text }
 
+    /// Build a trivia token containing a single space. Use for normalizing whitespace.
+    #[inline]
+    pub fn space(kind: SyntaxKind) -> Arc<Self> {
+        Self::new(kind, " ", true)
+    }
+
+    /// Build a trivia token containing a single newline.
+    #[inline]
+    pub fn newline(kind: SyntaxKind) -> Arc<Self> {
+        Self::new(kind, "\n", true)
+    }
+
     /// Interpret the stored kind as a custom enum that implements [`FromSyntaxKind`].
     #[inline]
     pub fn kind_as<K: FromSyntaxKind>(&self) -> Option<K> {

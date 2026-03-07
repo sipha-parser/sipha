@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = []
+default = ["walk"]
+walk = []
+emit = ["walk"]
+transform = []
 miette = ["dep:miette"]
 
 [dependencies]

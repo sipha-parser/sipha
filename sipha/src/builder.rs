@@ -128,12 +128,23 @@
 //! [`lookahead`]: GrammarBuilder::lookahead
 //! [`neg_lookahead`]: GrammarBuilder::neg_lookahead
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::{
     context::{FlagId, FlagMaskWord},
     insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph},
     types::{CharClass, InsnId, IntoSyntaxKind, RuleId, Tag},
 };
+
+/// N-way choice without `Vec<Box<dyn FnOnce>>`: `choices!(g, |g| g.literal(b"a"), |g| g.literal(b"b"))`.
+#[macro_export]
+macro_rules! choices {
+    ($g:expr, $first:expr $(, $rest:expr)* $(,)?) => {
+        $g.choices(vec![
+            Box::new($first),
+            $(Box::new($rest),)*
+        ])
+    };
+}
 
 // ─── Repeat ───────────────────────────────────────────────────────────────────
 
@@ -267,6 +278,10 @@ pub struct BuiltGraph {
     pub flag_mask_offsets: Vec<u32>,
     pub rule_names:        Vec<&'static str>,
     pub tag_names:         Vec<&'static str>,
+    /// Labels for [`Insn::Class`] diagnostics; index 0 is the default "character class".
+    pub class_labels:      Vec<&'static str>,
+    /// Labels for [`expect_label`](GrammarBuilder::expect_label).
+    pub expected_labels:   Vec<&'static str>,
 }
 
 impl BuiltGraph {
@@ -303,8 +318,15 @@ impl BuiltGraph {
                     data:    to_static(&self.flag_mask_data),
                     offsets: to_static(&self.flag_mask_offsets),
                 },
-                rule_names: to_static(&self.rule_names),
-                tag_names:  to_static(&self.tag_names),
+                rule_names:    to_static(&self.rule_names),
+                tag_names:     to_static(&self.tag_names),
+                class_labels:    if self.class_labels.is_empty() {
+                    const DEFAULT: &[&'static str] = &["character class"];
+                    DEFAULT
+                } else {
+                    to_static(&self.class_labels)
+                },
+                expected_labels: to_static(&self.expected_labels),
             }
         }
     }
@@ -326,6 +348,8 @@ pub struct GrammarBuilder {
     rule_names:    Vec<&'static str>,
     /// `(insn_addr, rule_name)` pairs resolved during [`finish`](Self::finish).
     pending_calls: Vec<(usize, String)>,
+    /// `(insn_addr, sync_rule_name)` for [`RecoverUntil`](Insn::RecoverUntil); resolved in [`finish`](Self::finish).
+    pending_recover: Vec<(usize, String)>,
 
     // ── Tag registry ──────────────────────────────────────────────────────────
     tag_by_name: HashMap<String, Tag>,
@@ -352,6 +376,22 @@ pub struct GrammarBuilder {
     /// suppressed inside [`token`](Self::token) and [`trivia`](Self::trivia)
     /// bodies.
     auto_trivia: bool,
+
+    /// Labels for [`Insn::Class`] diagnostics; index 0 is "character class".
+    class_labels: Vec<&'static str>,
+
+    /// Labels for [`expect_label`](Self::expect_label).
+    expected_labels: Vec<&'static str>,
+
+    /// If `true`, [`finish`](Self::finish) will not report an error for
+    /// left-recursive or mutually recursive rule cycles. Use when the grammar
+    /// uses packrat memoization and intentionally has indirect recursion
+    /// (e.g. expr → primary → object_pair → expr). Default is `false`.
+    allow_rule_cycles: bool,
+
+    /// If `false`, [`finish`](Self::finish) will return an error when any rule
+    /// is unreachable from the start rule. Default is `true` (allow unreachable).
+    allow_unreachable_rules: bool,
 }
 
 impl GrammarBuilder {
@@ -361,15 +401,39 @@ impl GrammarBuilder {
             rule_entry:    Vec::new(),
             rule_by_name:  HashMap::new(),
             rule_names:    Vec::new(),
-            pending_calls: Vec::new(),
-            tag_by_name:   HashMap::new(),
+            pending_calls:   Vec::new(),
+            pending_recover: Vec::new(),
+            tag_by_name:     HashMap::new(),
             tag_names:     Vec::new(),
             literals:      LiteralInterner::new(),
             flag_masks:    FlagMaskInterner::new(),
-            jump_tables:   Vec::new(),
-            trivia_rule:   None,
-            auto_trivia:   false,
+            jump_tables:       Vec::new(),
+            trivia_rule:       None,
+            auto_trivia:       false,
+            class_labels:      vec!["character class"],
+            expected_labels:       Vec::new(),
+            allow_rule_cycles:     false,
+            allow_unreachable_rules: true,
         }
+    }
+
+    /// Allow rule cycles (left-recursion or mutual recursion) when finishing.
+    ///
+    /// When enabled, [`finish`](Self::finish) will not return an error if the
+    /// call graph contains a cycle. Use for grammars that run with
+    /// [`Engine::with_memo`](crate::engine::Engine::with_memo) and have
+    /// intentional indirect recursion (e.g. expression precedence chains that
+    /// cycle back through primary → object_pair → expr).
+    pub fn allow_rule_cycles(&mut self, allow: bool) -> &mut Self {
+        self.allow_rule_cycles = allow;
+        self
+    }
+
+    /// If `false`, [`finish`](Self::finish) will error when any rule is unreachable
+    /// from the start rule. Default is `true`.
+    pub fn allow_unreachable_rules(&mut self, allow: bool) -> &mut Self {
+        self.allow_unreachable_rules = allow;
+        self
     }
 
     // ── Trivia registration ───────────────────────────────────────────────────
@@ -603,7 +667,7 @@ impl GrammarBuilder {
             // Terminals — patch their failure branch.
             Insn::Byte         { on_fail, .. }
             | Insn::ByteRange  { on_fail, .. }
-            | Insn::Class      { on_fail, .. }
+            | Insn::Class      { on_fail, .. }  // label_id unchanged
             | Insn::Literal    { on_fail, .. }
             | Insn::EndOfInput { on_fail }
             | Insn::AnyChar    { on_fail }
@@ -623,6 +687,9 @@ impl GrammarBuilder {
 
             // Choice — patch its alternate branch.
             Insn::Choice { alt } => *alt = target,
+
+            // Error recovery — patch resume address (after body + RecoveryResume).
+            Insn::RecoverUntil { resume, .. } => *resume = target,
 
             other => panic!("patch: {other:?} at {addr} has no patchable field"),
         }
@@ -649,7 +716,22 @@ impl GrammarBuilder {
 
     /// Match any byte whose bit is set in `class`.
     pub fn class(&mut self, class: CharClass) -> InsnId {
-        self.emit(Insn::Class { class, on_fail: u32::MAX })
+        self.emit(Insn::Class {
+            class,
+            label_id: 0,
+            on_fail:  u32::MAX,
+        })
+    }
+
+    /// Like [`class`](Self::class) but use `label` in diagnostics (e.g. "digit", "whitespace").
+    pub fn class_with_label(&mut self, class: CharClass, label: &'static str) -> InsnId {
+        let label_id = self.class_labels.len() as u32;
+        self.class_labels.push(label);
+        self.emit(Insn::Class {
+            class,
+            label_id,
+            on_fail: u32::MAX,
+        })
     }
 
     /// Match the exact byte string `bytes` (SIMD-accelerated for ≥16 bytes).
@@ -869,6 +951,27 @@ impl GrammarBuilder {
         }
     }
 
+    /// Three-way choice without allocation. Tries `e1`, then `e2`, then `e3`.
+    pub fn choice3<F1, F2, F3>(&mut self, e1: F1, e2: F2, e3: F3)
+    where
+        F1: FnOnce(&mut Self),
+        F2: FnOnce(&mut Self),
+        F3: FnOnce(&mut Self),
+    {
+        self.choice(e1, |g| g.choice(e2, e3));
+    }
+
+    /// Four-way choice without allocation. Tries `e1`, then `e2`, then `e3`, then `e4`.
+    pub fn choice4<F1, F2, F3, F4>(&mut self, e1: F1, e2: F2, e3: F3, e4: F4)
+    where
+        F1: FnOnce(&mut Self),
+        F2: FnOnce(&mut Self),
+        F3: FnOnce(&mut Self),
+        F4: FnOnce(&mut Self),
+    {
+        self.choice(e1, |g| g.choice3(e2, e3, e4));
+    }
+
     /// `e?` — match `body` zero or one time.
     pub fn optional<F>(&mut self, body: F)
     where F: Fn(&mut Self)
@@ -925,6 +1028,67 @@ impl GrammarBuilder {
         let after     = self.current_ip();
         self.patch(choice_ip, after);
         self.patch(neg_ip, after);
+    }
+
+    /// Run `body` and record `label` as the expected value at this position if matching fails.
+    ///
+    /// When a parse fails, the diagnostic will show `label` (e.g. "statement", "expression")
+    /// in the expected set when the failure occurred at the start of this region.
+    pub fn expect_label<F>(&mut self, label: &'static str, body: F)
+    where F: FnOnce(&mut Self)
+    {
+        let label_id = self.expected_labels.len() as u32;
+        self.expected_labels.push(label);
+        self.emit(Insn::RecordExpectedLabel { label_id });
+        body(self);
+    }
+
+    /// Run `body` and commit to this alternative on success (no backtracking past this point).
+    ///
+    /// Like a cut in Prolog or "commit" in PEG: if `body` succeeds, the parser will not
+    /// backtrack to before this point. Use inside a [`choice`](Self::choice) when the
+    /// first successful match should be final. On failure, backtracking proceeds as usual.
+    pub fn cut<F>(&mut self, body: F)
+    where F: FnOnce(&mut Self)
+    {
+        body(self);
+        let commit_ip = self.emit(Insn::Commit { target: u32::MAX });
+        self.patch(commit_ip, self.current_ip()); // target = next instruction after Commit
+    }
+
+    /// Left-associative infix chain: `operand (op operand)*`.
+    ///
+    /// Use for expression precedence: define a primary rule, then build each level
+    /// with this helper. Example: `expr_add` = `infix_left("expr_mul", "add_op")` gives
+    /// `expr_mul (add_op expr_mul)*`; then `expr_mul` = `infix_left("primary", "mul_op")`.
+    pub fn infix_left(&mut self, operand_rule: &str, op_rule: &str) {
+        self.call(operand_rule);
+        self.zero_or_more(|g| {
+            g.call(op_rule);
+            g.call(operand_rule);
+        });
+    }
+
+    /// Error recovery: try `body`; on failure, skip input until `sync_rule` matches (or EOI), then continue.
+    ///
+    /// `sync_rule` must be the name of a rule that matches the sync token (e.g. `;` or `}`).
+    /// It is resolved at [`finish`](Self::finish) like [`call`](Self::call). Use inside a
+    /// list rule to report multiple errors in one pass: after a statement fails, skip to the
+    /// next sync token and keep parsing.
+    pub fn recover_until<F>(&mut self, sync_rule: &str, body: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let recover_ip = self.current_ip();
+        self.emit(Insn::RecoverUntil {
+            sync_rule: 0, // patched at finish()
+            resume:     u32::MAX,
+        });
+        self.pending_recover.push((recover_ip as usize, sync_rule.to_string()));
+        body(self);
+        let resume_ip = self.current_ip();
+        self.patch(recover_ip, resume_ip);
+        self.emit(Insn::RecoveryResume);
     }
 
     // ── Repetition ────────────────────────────────────────────────────────────
@@ -1043,13 +1207,33 @@ impl GrammarBuilder {
     /// Resolve all pending rule references and return the completed [`BuiltGraph`].
     ///
     /// Returns `Err` if any [`call`](Self::call) referred to a rule name that
-    /// was never defined.
+    /// was never defined, or if the grammar contains a left-recursive (or mutually
+    /// recursive) cycle.
     pub fn finish(mut self) -> Result<BuiltGraph, String> {
         for (addr, rule_name) in self.pending_calls.drain(..) {
             let rule_id = self.rule_by_name.get(&rule_name).copied()
                 .ok_or_else(|| format!("undefined rule: {rule_name}"))?;
             if let Insn::Call { rule } = &mut self.insns[addr] {
                 *rule = rule_id;
+            }
+        }
+        for (addr, sync_rule_name) in self.pending_recover.drain(..) {
+            let rule_id = self.rule_by_name.get(&sync_rule_name).copied()
+                .ok_or_else(|| format!("undefined sync rule: {sync_rule_name}"))?;
+            if let Insn::RecoverUntil { sync_rule, .. } = &mut self.insns[addr] {
+                *sync_rule = rule_id;
+            }
+        }
+
+        if !self.allow_rule_cycles {
+            if let Err(msg) = self.check_rule_cycles() {
+                return Err(msg);
+            }
+        }
+
+        if !self.allow_unreachable_rules {
+            if let Err(msg) = self.check_unreachable_rules() {
+                return Err(msg);
             }
         }
 
@@ -1066,10 +1250,277 @@ impl GrammarBuilder {
             flag_mask_offsets: self.flag_masks.offsets,
             rule_names:        self.rule_names,
             tag_names:         self.tag_names,
+            class_labels:      self.class_labels,
+            expected_labels:   self.expected_labels,
         })
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// Build rule→rule call graph and detect cycles (left-recursion or mutual recursion).
+    fn check_rule_cycles(&self) -> Result<(), String> {
+        let num_rules = self.rule_entry.len();
+        if num_rules == 0 {
+            return Ok(());
+        }
+
+        // For each rule r, collect all rules it calls (directly) by walking reachable insns.
+        let mut edges: Vec<Vec<RuleId>> = (0..num_rules).map(|_| Vec::new()).collect();
+        let insns = &self.insns;
+        let rule_entry = &self.rule_entry;
+        let jump_tables = &self.jump_tables;
+
+        for r in 0..num_rules {
+            let start = rule_entry[r] as usize;
+            let mut stack = vec![start];
+            let mut visited = HashSet::new();
+            while let Some(ip) = stack.pop() {
+                if ip >= insns.len() || !visited.insert(ip) {
+                    continue;
+                }
+                match &insns[ip] {
+                    Insn::Call { rule } => {
+                        let callee = *rule;
+                        if (callee as usize) < num_rules && !edges[r].contains(&callee) {
+                            edges[r].push(callee);
+                        }
+                        stack.push(ip + 1);
+                    }
+                    Insn::Return | Insn::Fail | Insn::Accept => {}
+                    Insn::Jump { target } => stack.push(*target as usize),
+                    Insn::Choice { alt } => {
+                        stack.push(ip + 1);
+                        stack.push(*alt as usize);
+                    }
+                    Insn::Commit { target }
+                    | Insn::BackCommit { target }
+                    | Insn::NegBackCommit { target }
+                    | Insn::PartialCommit { target } => stack.push(*target as usize),
+                    Insn::ByteDispatch { table_id } => {
+                        let tid = *table_id as usize;
+                        if tid < jump_tables.len() {
+                            for target in &jump_tables[tid] {
+                                if *target != u32::MAX {
+                                    stack.push(*target as usize);
+                                }
+                            }
+                        }
+                        stack.push(ip + 1);
+                    }
+                    Insn::RecoverUntil { resume, .. } => {
+                        stack.push(ip + 1);
+                        if *resume != u32::MAX {
+                            stack.push(*resume as usize);
+                        }
+                    }
+                    Insn::RecoveryResume => stack.push(ip + 1),
+                    _ => {
+                        stack.push(ip + 1);
+                        if let Some(on_fail) = self.insn_on_fail(ip as u32) {
+                            if on_fail != u32::MAX {
+                                stack.push(on_fail as usize);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Find a cycle with DFS and recursion stack.
+        let mut in_stack = vec![false; num_rules];
+        let mut order = vec![None; num_rules];
+        let mut cycle = Vec::new();
+
+        fn visit(
+            r: RuleId,
+            r_usize: usize,
+            edges: &[Vec<RuleId>],
+            rule_names: &[&'static str],
+            in_stack: &mut [bool],
+            order: &mut [Option<u32>],
+            cycle: &mut Vec<RuleId>,
+            counter: &mut u32,
+        ) -> bool {
+            if order[r_usize].is_some() {
+                if in_stack[r_usize] {
+                    cycle.push(r);
+                    return true;
+                }
+                return false;
+            }
+            in_stack[r_usize] = true;
+            *counter += 1;
+            order[r_usize] = Some(*counter);
+            for &s in &edges[r_usize] {
+                let s_usize = s as usize;
+                if visit(s, s_usize, edges, rule_names, in_stack, order, cycle, counter) {
+                    if cycle.len() == 1 || cycle[0] != r {
+                        cycle.push(r);
+                    }
+                    in_stack[r_usize] = false;
+                    return true;
+                }
+            }
+            in_stack[r_usize] = false;
+            false
+        }
+
+        let mut counter = 0u32;
+        for r in 0..num_rules {
+            if order[r].is_none()
+                && visit(
+                    r as RuleId,
+                    r,
+                    &edges,
+                    &self.rule_names,
+                    &mut in_stack,
+                    &mut order,
+                    &mut cycle,
+                    &mut counter,
+                )
+            {
+                cycle.reverse();
+                let names: Vec<&str> = cycle
+                    .iter()
+                    .map(|&id| {
+                        self.rule_names
+                            .get(id as usize)
+                            .copied()
+                            .unwrap_or("?")
+                    })
+                    .collect();
+                let closed: Vec<&str> = names
+                    .iter()
+                    .copied()
+                    .chain(names.first().copied())
+                    .collect();
+                return Err(format!(
+                    "left-recursive or mutually recursive rules: {}",
+                    closed.join(" -> ")
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Check that every rule is reachable from rule 0 (start). Returns Err with first unreachable rule name.
+    fn check_unreachable_rules(&self) -> Result<(), String> {
+        let num_rules = self.rule_entry.len();
+        if num_rules <= 1 {
+            return Ok(());
+        }
+        let edges = self.build_rule_call_edges();
+        let mut reachable = vec![false; num_rules];
+        let mut stack: Vec<RuleId> = vec![0];
+        reachable[0] = true;
+        while let Some(r) = stack.pop() {
+            let r_usize = r as usize;
+            for &s in &edges[r_usize] {
+                let s_usize = s as usize;
+                if s_usize < num_rules && !reachable[s_usize] {
+                    reachable[s_usize] = true;
+                    stack.push(s);
+                }
+            }
+        }
+        for (r, &ok) in reachable.iter().enumerate() {
+            if !ok {
+                let name = self.rule_names.get(r).copied().unwrap_or("?");
+                return Err(format!("unreachable rule: {name}"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Build direct rule→rule call edges (same logic as cycle check, but no cycle detection).
+    fn build_rule_call_edges(&self) -> Vec<Vec<RuleId>> {
+        let num_rules = self.rule_entry.len();
+        if num_rules == 0 {
+            return vec![];
+        }
+        let mut edges: Vec<Vec<RuleId>> = (0..num_rules).map(|_| Vec::new()).collect();
+        let insns = &self.insns;
+        let rule_entry = &self.rule_entry;
+        let jump_tables = &self.jump_tables;
+
+        for r in 0..num_rules {
+            let start = rule_entry[r] as usize;
+            let mut stack = vec![start];
+            let mut visited = HashSet::new();
+            while let Some(ip) = stack.pop() {
+                if ip >= insns.len() || !visited.insert(ip) {
+                    continue;
+                }
+                match &insns[ip] {
+                    Insn::Call { rule } => {
+                        let callee = *rule;
+                        if (callee as usize) < num_rules && !edges[r].contains(&callee) {
+                            edges[r].push(callee);
+                        }
+                        stack.push(ip + 1);
+                    }
+                    Insn::Return | Insn::Fail | Insn::Accept => {}
+                    Insn::Jump { target } => stack.push(*target as usize),
+                    Insn::Choice { alt } => {
+                        stack.push(ip + 1);
+                        stack.push(*alt as usize);
+                    }
+                    Insn::Commit { target }
+                    | Insn::BackCommit { target }
+                    | Insn::NegBackCommit { target }
+                    | Insn::PartialCommit { target } => stack.push(*target as usize),
+                    Insn::ByteDispatch { table_id } => {
+                        let tid = *table_id as usize;
+                        if tid < jump_tables.len() {
+                            for target in &jump_tables[tid] {
+                                if *target != u32::MAX {
+                                    stack.push(*target as usize);
+                                }
+                            }
+                        }
+                        stack.push(ip + 1);
+                    }
+                    Insn::RecoverUntil { resume, .. } => {
+                        stack.push(ip + 1);
+                        if *resume != u32::MAX {
+                            stack.push(*resume as usize);
+                        }
+                    }
+                    Insn::RecoveryResume => stack.push(ip + 1),
+                    _ => {
+                        stack.push(ip + 1);
+                        if let Some(on_fail) = self.insn_on_fail(ip as u32) {
+                            if on_fail != u32::MAX {
+                                stack.push(on_fail as usize);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        edges
+    }
+
+    /// Return the on_fail target for a terminal-like instruction at the given address.
+    fn insn_on_fail(&self, addr: u32) -> Option<u32> {
+        let ip = addr as usize;
+        if ip >= self.insns.len() {
+            return None;
+        }
+        match &self.insns[ip] {
+            Insn::Byte { on_fail, .. }
+            | Insn::ByteRange { on_fail, .. }
+            | Insn::Class { on_fail, .. }  // label_id unchanged
+            | Insn::Literal { on_fail, .. }
+            | Insn::EndOfInput { on_fail }
+            | Insn::AnyChar { on_fail }
+            | Insn::Char { on_fail, .. }
+            | Insn::CharRange { on_fail, .. }
+            | Insn::IfFlag { on_fail, .. }
+            | Insn::IfNotFlag { on_fail, .. } => Some(*on_fail),
+            _ => None,
+        }
+    }
 
     /// Common implementation for [`parser_rule`] and [`lexer_rule`].
     fn rule_impl<F>(&mut self, name: &'static str, body: F, with_trivia: bool) -> RuleId
@@ -1087,4 +1538,51 @@ impl GrammarBuilder {
 
 impl Default for GrammarBuilder {
     fn default() -> Self { Self::new() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finish_rejects_left_recursive_cycle_by_default() {
+        let mut g = GrammarBuilder::new();
+        g.parser_rule("a", |g| {
+            g.call("a");
+            g.byte(b'x');
+        });
+        let res = g.finish();
+        assert!(res.is_err());
+        let err = res.err().unwrap();
+        assert!(err.contains("left-recursive") && err.contains("a"));
+    }
+
+    #[test]
+    fn finish_accepts_cycle_when_allow_rule_cycles() {
+        let mut g = GrammarBuilder::new();
+        g.allow_rule_cycles(true);
+        g.parser_rule("a", |g| {
+            g.call("a");
+            g.byte(b'x');
+        });
+        assert!(g.finish().is_ok());
+    }
+
+    #[test]
+    fn choices_macro() {
+        use crate::engine::Engine;
+        let mut g = GrammarBuilder::new();
+        g.parser_rule("start", |g| {
+            crate::choices!(g, |g| { g.byte(b'a'); }, |g| { g.byte(b'b'); }, |g| { g.byte(b'c'); });
+            g.end_of_input();
+            g.accept();
+        });
+        let built = g.finish().unwrap();
+        let graph = built.as_graph();
+        let mut engine = Engine::new();
+        assert!(engine.parse(&graph, b"a").is_ok());
+        assert!(engine.parse(&graph, b"b").is_ok());
+        assert!(engine.parse(&graph, b"c").is_ok());
+        assert!(engine.parse(&graph, b"d").is_err());
+    }
 }

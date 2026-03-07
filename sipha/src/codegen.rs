@@ -77,6 +77,12 @@ pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
     writeln!(out, "static TAG_NAMES: &[&str] = &[")?;
     for n in &graph.tag_names { writeln!(out, "    \"{n}\",")?; }
     writeln!(out, "];")?;
+    writeln!(out, "static CLASS_LABELS: &[&str] = &[")?;
+    for n in &graph.class_labels { writeln!(out, "    \"{n}\",")?; }
+    writeln!(out, "];")?;
+    writeln!(out, "static EXPECTED_LABELS: &[&str] = &[")?;
+    for n in &graph.expected_labels { writeln!(out, "    \"{n}\",")?; }
+    writeln!(out, "];")?;
     writeln!(out)?;
 
     // Instructions
@@ -96,8 +102,9 @@ pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
     writeln!(out, "    jump_tables: JUMP_TABLES,")?;
     writeln!(out, "    literals:    LiteralTable {{ data: LIT_DATA, offsets: LIT_OFFSETS }},")?;
     writeln!(out, "    flag_masks:  FlagMaskTable {{ data: FLAG_MASK_DATA, offsets: FLAG_MASK_OFFSETS }},")?;
-    writeln!(out, "    rule_names:  RULE_NAMES,")?;
-    writeln!(out, "    tag_names:   TAG_NAMES,")?;
+    writeln!(out, "    rule_names:   RULE_NAMES,")?;
+    writeln!(out, "    tag_names:    TAG_NAMES,")?;
+    writeln!(out, "    class_labels: CLASS_LABELS,")?;
     writeln!(out, "}};")?;
     Ok(())
 }
@@ -108,9 +115,9 @@ fn emit_insn(out: &mut String, insn: &Insn) -> std::fmt::Result {
             write!(out, "Insn::Byte {{ byte: 0x{byte:02X}, on_fail: {on_fail} }}"),
         Insn::ByteRange { lo, hi, on_fail } =>
             write!(out, "Insn::ByteRange {{ lo: 0x{lo:02X}, hi: 0x{hi:02X}, on_fail: {on_fail} }}"),
-        Insn::Class     { class, on_fail } => {
+        Insn::Class     { class, label_id, on_fail } => {
             let [w0, w1, w2, w3] = class.0;
-            write!(out, "Insn::Class {{ class: CharClass([{w0:#018X}u64, {w1:#018X}u64, {w2:#018X}u64, {w3:#018X}u64]), on_fail: {on_fail} }}")
+            write!(out, "Insn::Class {{ class: CharClass([{w0:#018X}u64, {w1:#018X}u64, {w2:#018X}u64, {w3:#018X}u64]), label_id: {label_id}, on_fail: {on_fail} }}")
         }
         Insn::Literal   { lit_id, on_fail } =>
             write!(out, "Insn::Literal {{ lit_id: {lit_id}, on_fail: {on_fail} }}"),
@@ -145,6 +152,9 @@ fn emit_insn(out: &mut String, insn: &Insn) -> std::fmt::Result {
         Insn::TokenEnd                         => write!(out, "Insn::TokenEnd"),
         Insn::CaptureBegin { tag } => write!(out, "Insn::CaptureBegin {{ tag: {tag} }}"),
         Insn::CaptureEnd   { tag } => write!(out, "Insn::CaptureEnd {{ tag: {tag} }}"),
+        Insn::RecordExpectedLabel { label_id } => write!(out, "Insn::RecordExpectedLabel {{ label_id: {label_id} }}"),
+        Insn::RecoverUntil { sync_rule, resume } => write!(out, "Insn::RecoverUntil {{ sync_rule: {sync_rule}, resume: {resume} }}"),
+        Insn::RecoveryResume => write!(out, "Insn::RecoveryResume"),
         Insn::Accept => write!(out, "Insn::Accept"),
     }
 }

@@ -227,7 +227,7 @@ fn main() {
                     ctx.expected.len(),
                     ctx.expected
                         .iter()
-                        .map(|e| e.display(Some(&graph.literals)))
+                        .map(|e| e.display(Some(&graph.literals), Some(&graph.rule_names), Some(&graph.expected_labels)))
                         .collect::<Vec<_>>()
                 );
             }

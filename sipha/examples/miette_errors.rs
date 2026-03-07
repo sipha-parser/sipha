@@ -74,7 +74,7 @@ fn main() {
     let source_bytes = source.as_bytes();
 
     if let Err(e) = engine.parse(&graph, source_bytes) {
-        if let Some(report) = e.to_miette_report(source, "script.txt", Some(&graph.literals)) {
+        if let Some(report) = e.to_miette_report(source, "script.txt", Some(&graph.literals), Some(&graph.rule_names), Some(&graph.expected_labels)) {
             eprintln!("{:?}", report);
         } else {
             eprintln!("{}", e);

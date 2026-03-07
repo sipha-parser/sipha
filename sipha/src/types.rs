@@ -66,6 +66,38 @@ impl Span {
     pub fn as_slice<'a>(self, input: &'a [u8]) -> &'a [u8] {
         &input[self.start as usize..self.end as usize]
     }
+
+    /// Returns true if the byte offset lies inside this span (start inclusive, end exclusive).
+    #[inline(always)]
+    pub fn contains_offset(self, offset: Pos) -> bool {
+        offset >= self.start && offset < self.end
+    }
+
+    /// Returns true if `other` is entirely inside this span.
+    #[inline(always)]
+    pub fn contains_span(self, other: Span) -> bool {
+        other.start >= self.start && other.end <= self.end
+    }
+
+    /// Merge two spans that touch or overlap into one span covering both.
+    /// Returns `None` if the spans are disjoint (no overlap and not adjacent).
+    #[inline]
+    pub fn merge(self, other: Span) -> Option<Span> {
+        if self.end >= other.start && other.end >= self.start {
+            Some(Span::new(
+                self.start.min(other.start),
+                self.end.max(other.end),
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+/// Sort spans by start offset; overlapping or adjacent spans can then be merged with [`Span::merge`].
+#[inline]
+pub fn sort_spans(spans: &mut [Span]) {
+    spans.sort_by_key(|s| s.start);
 }
 
 /// A 256-bit bitmap for O(1) byte-class membership tests.
