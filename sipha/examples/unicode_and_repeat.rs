@@ -219,6 +219,16 @@ fn main() {
 
     println!();
 
+    // ── AnyChar with Repeat(1..=4) ─────────────────────────────────────────────
+    println!("─── AnyChar{{1,4}}: 1 to 4 codepoints ───");
+    c!(grammar_any_char_repeat(), "",    false, "empty (need at least 1)");
+    c!(grammar_any_char_repeat(), "x",   true,  "1 char");
+    c!(grammar_any_char_repeat(), "ab",  true,  "2 chars");
+    c!(grammar_any_char_repeat(), "🎉xy", true, "4 chars (emoji + ASCII)");
+    c!(grammar_any_char_repeat(), "12345", false, "5 chars (over max 4)");
+
+    println!();
+
     // ── Repeat::Exact ─────────────────────────────────────────────────────────
     println!("─── Repeat::Exact(n) ───");
     c!(grammar_exact(0), "",     true,  "Exact(0): empty");
