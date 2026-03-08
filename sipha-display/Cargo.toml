@@ -1,6 +1,6 @@
 [package]
 name = "sipha-display"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 description = "Utilities to display sipha grammars as PEG text or DOT graphs"
 license = "MIT"
@@ -12,4 +12,4 @@ documentation = "https://docs.rs/sipha-display"
 workspace = true
 
 [dependencies]
-sipha = { path = "../sipha", version = "1.0" }
+sipha = { path = "../sipha", version = "2.0" }

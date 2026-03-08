@@ -1,6 +1,6 @@
 [package]
 name = "sipha-analysis"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 description = "Grammar-agnostic scope extents and definition collection for sipha syntax trees (LSP support)"
 license = "MIT"
@@ -12,4 +12,4 @@ documentation = "https://docs.rs/sipha-analysis"
 workspace = true
 
 [dependencies]
-sipha = { path = "../sipha", version = "1.0", features = ["walk"] }
+sipha = { path = "../sipha", version = "2.0", features = ["walk"] }

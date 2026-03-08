@@ -1,6 +1,6 @@
 [package]
 name = "sipha-sourcemap"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 description = "Build span mappings from sipha transforms (map transformed spans back to original source)"
 license = "MIT"
@@ -12,4 +12,4 @@ documentation = "https://docs.rs/sipha-sourcemap"
 workspace = true
 
 [dependencies]
-sipha = { path = "../sipha", version = "1.0", features = ["transform"] }
+sipha = { path = "../sipha", version = "2.0", features = ["transform"] }
