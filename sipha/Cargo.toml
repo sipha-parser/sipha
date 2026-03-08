@@ -2,6 +2,7 @@
 name = "sipha"
 version = "2.0.0"
 edition = "2021"
+rust-version = "1.70"
 description = "PEG parser, syntax trees, and code generation"
 license = "MIT"
 repository = "https://github.com/sipha-parser/sipha"

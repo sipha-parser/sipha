@@ -165,11 +165,11 @@ impl LineIndex {
         let mut utf16_col = 0u32;
         for (i, c) in line_src.char_indices() {
             if utf16_col >= character {
-                return Some(Pos::try_from(line_start + i).ok()?);
+                return Pos::try_from(line_start + i).ok();
             }
             utf16_col += u32::try_from(c.len_utf16()).ok()?;
         }
-        Some(Pos::try_from(line_start + line_src.len()).ok()?)
+        Pos::try_from(line_start + line_src.len()).ok()
     }
 
     /// Prefix of the line up to (line, character) in UTF-16 code units.

@@ -44,6 +44,7 @@ type BuilderChoice = Box<dyn FnOnce(&mut GrammarBuilder)>;
 ///     None,
 /// );
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn left_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
     g: &mut GrammarBuilder,
     level_name: &'static str,
@@ -59,8 +60,6 @@ pub fn left_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
             g.call(lower_level_name);
             g.zero_or_more({
                 let node_kind = node_kind.clone();
-                let lower_level_name = lower_level_name;
-                let rhs_field = rhs_field;
                 let rhs_wrapper_kind = rhs_wrapper_kind.cloned();
                 move |g: &mut GrammarBuilder| {
                     g.node(node_kind.clone(), |g| {
@@ -68,7 +67,6 @@ pub fn left_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
                         for op in ops {
                             let op = *op;
                             let lower = lower_level_name;
-                            let rhs_field = rhs_field;
                             let rhs_wrapper_kind = rhs_wrapper_kind.clone();
                             alternatives.push(Box::new(move |g| {
                                 g.call(op);
@@ -121,7 +119,6 @@ pub fn right_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
         let op = op_rule;
         let level = level_name;
         let kind = node_kind.clone();
-        let rhs_field = rhs_field;
         let rhs_wrapper_kind = rhs_wrapper_kind.cloned();
         g.choices(vec![
             Box::new(move |g| {

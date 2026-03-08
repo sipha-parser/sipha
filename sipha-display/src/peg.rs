@@ -2,12 +2,15 @@
 //!
 //! Walks the instruction stream and reverse-engineers PEG syntax (e.g. `rule <- a / b "lit"`).
 
+#![allow(clippy::match_same_arms, clippy::doc_markdown, clippy::format_push_string, clippy::uninlined_format_args, clippy::cast_possible_truncation)]
+
 use sipha::builder::BuiltGraph;
 use sipha::insn::Insn;
 use sipha::types::{CharClass, InsnId};
 use std::collections::HashSet;
 
 /// Format the entire grammar as PEG rules, one per line: `rule_name <- expr`.
+#[must_use]
 pub fn to_peg(graph: &BuiltGraph) -> String {
     let mut out = String::new();
     for (r, &name) in graph.rule_names.iter().enumerate() {
@@ -15,10 +18,10 @@ pub fn to_peg(graph: &BuiltGraph) -> String {
         let reachable = reachable_insns(graph, start);
         let (expr, _) = parse_sequence_until(graph, start, &reachable, &mut HashSet::new(), None);
         let expr = expr.trim().to_string();
-        if !expr.is_empty() {
-            out.push_str(&format!("{} <- {}\n", name, expr));
+        if expr.is_empty() {
+            out.push_str(&format!("{name} <- (empty)\n"));
         } else {
-            out.push_str(&format!("{} <- (empty)\n", name));
+            out.push_str(&format!("{name} <- {expr}\n"));
         }
     }
     out
@@ -28,7 +31,7 @@ pub fn to_peg(graph: &BuiltGraph) -> String {
 fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
     let mut visited = HashSet::new();
     let mut stack = vec![start];
-    let n = graph.insns.len() as u32;
+    let n = u32::try_from(graph.insns.len()).unwrap_or(u32::MAX);
 
     while let Some(ip) = stack.pop() {
         if ip >= n || !visited.insert(ip) {
@@ -46,10 +49,8 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
         };
 
         match insn {
-            Insn::Return | Insn::Accept => {}
-            Insn::Fail => {}
+            Insn::Return | Insn::Accept | Insn::Fail => {}
             Insn::Jump { target } => push(target),
-            Insn::Call { .. } => push(ip + 1),
             Insn::Choice { alt } => {
                 push(ip + 1);
                 push(alt);
@@ -68,11 +69,9 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
             | Insn::EndOfInput { on_fail }
             | Insn::AnyChar { on_fail }
             | Insn::Char { on_fail, .. }
-            | Insn::CharRange { on_fail, .. } => {
-                push(ip + 1);
-                push(on_fail);
-            }
-            Insn::IfFlag { on_fail, .. } | Insn::IfNotFlag { on_fail, .. } => {
+            | Insn::CharRange { on_fail, .. }
+            | Insn::IfFlag { on_fail, .. }
+            | Insn::IfNotFlag { on_fail, .. } => {
                 push(ip + 1);
                 push(on_fail);
             }
@@ -92,7 +91,7 @@ fn parse_sequence_until(
     end_before: Option<InsnId>,
 ) -> (String, InsnId) {
     let mut parts = Vec::new();
-    let n = graph.insns.len() as u32;
+    let n = u32::try_from(graph.insns.len()).unwrap_or(u32::MAX);
 
     while ip < n && reachable.contains(&ip) {
         if end_before == Some(ip) {
@@ -104,7 +103,11 @@ fn parse_sequence_until(
         let insn = graph.insns[ip as usize];
 
         match insn {
-            Insn::Return => break,
+            Insn::Return
+            | Insn::Commit { .. }
+            | Insn::BackCommit { .. }
+            | Insn::PartialCommit { .. }
+            |             Insn::NegBackCommit { .. } => break,
             Insn::Choice { .. } => {
                 let (expr, next) = parse_choice(graph, ip, reachable, seen);
                 if !expr.is_empty() {
@@ -121,12 +124,8 @@ fn parse_sequence_until(
                 }
                 ip = target;
             }
-            Insn::Commit { .. }
-            | Insn::BackCommit { .. }
-            | Insn::PartialCommit { .. }
-            | Insn::NegBackCommit { .. } => break,
             Insn::NodeBegin { .. } | Insn::NodeEnd | Insn::TokenBegin { .. } | Insn::TokenEnd => {
-                ip += 1
+                ip += 1;
             }
             Insn::CaptureBegin { .. } | Insn::CaptureEnd { .. } => ip += 1,
             Insn::IfFlag { .. }
@@ -157,9 +156,8 @@ fn parse_choice(
     reachable: &HashSet<InsnId>,
     seen: &mut HashSet<InsnId>,
 ) -> (String, InsnId) {
-    let alt = match graph.insns[ip as usize] {
-        Insn::Choice { alt } => alt,
-        _ => return (String::new(), ip + 1),
+    let Insn::Choice { alt } = graph.insns[ip as usize] else {
+        return (String::new(), ip + 1);
     };
 
     // First branch: from ip+1 until we see Commit, PartialCommit, BackCommit, or NegBackCommit.
@@ -239,7 +237,7 @@ fn parse_sequence_until_sentinel(
             }
             Insn::Jump { target } => ip = target,
             Insn::NodeBegin { .. } | Insn::NodeEnd | Insn::TokenBegin { .. } | Insn::TokenEnd => {
-                ip += 1
+                ip += 1;
             }
             Insn::CaptureBegin { .. } | Insn::CaptureEnd { .. } => ip += 1,
             Insn::IfFlag { .. }
@@ -314,8 +312,7 @@ fn format_char_class(class: CharClass) -> String {
             if ranges.is_empty()
                 || ranges
                     .last()
-                    .map(|(_, e)| *e != b.wrapping_sub(1))
-                    .unwrap_or(true)
+                    .is_none_or(|(_, e)| *e != b.wrapping_sub(1))
             {
                 ranges.push((b, b));
             } else {

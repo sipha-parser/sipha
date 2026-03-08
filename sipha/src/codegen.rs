@@ -10,6 +10,7 @@ use std::fmt::Write;
 /// # Errors
 ///
 /// Returns [`std::fmt::Result`] if writing to `out` fails.
+#[allow(clippy::too_many_lines)]
 pub fn emit_rust(graph: &BuiltGraph, out: &mut String) -> std::fmt::Result {
     writeln!(out, "// AUTO-GENERATED — do not edit by hand.")?;
     writeln!(out, "#![allow(clippy::all, dead_code, unused)]")?;

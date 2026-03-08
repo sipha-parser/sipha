@@ -1092,7 +1092,7 @@ impl GrammarBuilder {
         let alternatives: Vec<GrammarChoiceFn> = rules
             .iter()
             .map(|&r| {
-                Box::new(move |g: &mut GrammarBuilder| {
+                Box::new(move |g: &mut Self| {
                     g.call(r);
                 }) as GrammarChoiceFn
             })

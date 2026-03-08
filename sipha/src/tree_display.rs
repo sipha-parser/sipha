@@ -60,9 +60,8 @@ fn node_id(node: &SyntaxNode) -> (usize, u32) {
 
 /// Elements to show for a node (filtered by `show_trivia`), with `is_last` for tree connectors.
 fn visible_elements(node: &SyntaxNode, options: &TreeDisplayOptions) -> Vec<(SyntaxElement, bool)> {
-    let elements: Vec<SyntaxElement> = node.children().collect();
-    let visible: Vec<_> = elements
-        .into_iter()
+    let visible: Vec<_> = node
+        .children()
         .filter(|e| !matches!(e, SyntaxElement::Token(t) if t.is_trivia() && !options.show_trivia))
         .collect();
     let n = visible.len();
@@ -86,7 +85,7 @@ pub fn format_syntax_tree(
     let mut out = String::new();
     let mut visited = HashSet::new();
     format_node(
-        root.clone(),
+        root,
         options,
         &kind_name,
         "",
@@ -110,7 +109,7 @@ fn format_node_header(prefix: &str, is_last: bool, kind_str: &str, out: &mut Str
 }
 
 fn format_node(
-    node: SyntaxNode,
+    node: &SyntaxNode,
     options: &TreeDisplayOptions,
     kind_name: &impl Fn(SyntaxKind) -> String,
     prefix: &str,
@@ -118,7 +117,7 @@ fn format_node(
     out: &mut String,
     visited: &mut HashSet<(usize, u32)>,
 ) {
-    let id = node_id(&node);
+    let id = node_id(node);
     let kind_str = kind_name(node.kind());
     if !visited.insert(id) {
         format_node_header(prefix, is_last, &kind_str, out, true);
@@ -138,7 +137,7 @@ fn format_node(
 }
 
 fn format_node_children(
-    node: SyntaxNode,
+    node: &SyntaxNode,
     options: &TreeDisplayOptions,
     kind_name: &impl Fn(SyntaxKind) -> String,
     new_prefix: &str,
@@ -146,13 +145,13 @@ fn format_node_children(
     visited: &mut HashSet<(usize, u32)>,
 ) {
     if options.show_tokens {
-        for (elem, is_last) in visible_elements(&node, options) {
+        for (elem, is_last) in visible_elements(node, options) {
             match elem {
                 SyntaxElement::Node(n) => {
-                    format_node(n, options, kind_name, new_prefix, is_last, out, visited)
+                    format_node(&n, options, kind_name, new_prefix, is_last, out, visited);
                 }
                 SyntaxElement::Token(t) => {
-                    format_token(&t, options, kind_name, new_prefix, is_last, out)
+                    format_token(&t, options, kind_name, new_prefix, is_last, out);
                 }
             }
         }
@@ -161,7 +160,7 @@ fn format_node_children(
         let last_idx = child_nodes.len().saturating_sub(1);
         for (i, child) in child_nodes.into_iter().enumerate() {
             format_node(
-                child,
+                &child,
                 options,
                 kind_name,
                 new_prefix,

@@ -371,6 +371,7 @@ impl SyntaxNode {
     }
 
     /// Iterate all descendant nodes in depth-first order (children before siblings).
+    #[must_use]
     pub fn descendant_nodes(&self) -> DescendantNodes {
         DescendantNodes::new(self)
     }

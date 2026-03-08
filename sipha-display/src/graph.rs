@@ -1,5 +1,7 @@
 //! Graph export for sipha grammars: rule dependency graph and control-flow graph (DOT).
 
+#![allow(clippy::format_push_string, clippy::uninlined_format_args)]
+
 use sipha::builder::BuiltGraph;
 use sipha::insn::Insn;
 use sipha::types::{InsnId, RuleId};
@@ -48,6 +50,22 @@ fn reachable_rules_from(graph: &BuiltGraph, start_rule: usize) -> HashSet<usize>
     seen
 }
 
+const TERMINAL_NAMES: &[&str] = &[
+    "ident",
+    "lparen",
+    "rparen",
+    "lbracket",
+    "rbracket",
+    "lbrace",
+    "rbrace",
+    "comma",
+    "semicolon",
+    "dot",
+    "dot_dot",
+    "arrow",
+    "op_colon",
+];
+
 /// Heuristic: rule name looks like a terminal/token rule (lexer-level).
 fn is_token_like(name: &str) -> bool {
     if name == "ws" {
@@ -56,21 +74,6 @@ fn is_token_like(name: &str) -> bool {
     if name.ends_with("_lit") || name.ends_with("_kw") || name.starts_with("op_") {
         return true;
     }
-    const TERMINAL_NAMES: &[&str] = &[
-        "ident",
-        "lparen",
-        "rparen",
-        "lbracket",
-        "rbracket",
-        "lbrace",
-        "rbrace",
-        "comma",
-        "semicolon",
-        "dot",
-        "dot_dot",
-        "arrow",
-        "op_colon",
-    ];
     TERMINAL_NAMES.contains(&name)
 }
 
@@ -83,7 +86,7 @@ fn escape_dot_id(s: &str) -> String {
 fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
     let mut visited = HashSet::new();
     let mut stack = vec![start];
-    let n = graph.insns.len() as u32;
+    let n = u32::try_from(graph.insns.len()).unwrap_or(u32::MAX);
 
     while let Some(ip) = stack.pop() {
         if ip >= n || !visited.insert(ip) {
@@ -98,8 +101,7 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
         };
 
         match insn {
-            Insn::Return | Insn::Accept => {}
-            Insn::Fail => {}
+            Insn::Return | Insn::Accept | Insn::Fail => {}
             Insn::Jump { target } => push(target),
             Insn::Call { .. } => {
                 push(ip + 1);
@@ -122,11 +124,9 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
             | Insn::EndOfInput { on_fail }
             | Insn::AnyChar { on_fail }
             | Insn::Char { on_fail, .. }
-            | Insn::CharRange { on_fail, .. } => {
-                push(ip + 1);
-                push(on_fail);
-            }
-            Insn::IfFlag { on_fail, .. } | Insn::IfNotFlag { on_fail, .. } => {
+            | Insn::CharRange { on_fail, .. }
+            | Insn::IfFlag { on_fail, .. }
+            | Insn::IfNotFlag { on_fail, .. } => {
                 push(ip + 1);
                 push(on_fail);
             }
@@ -148,12 +148,14 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
 }
 
 /// Emit a DOT digraph of rule dependencies with default options (reachable-only, styled).
+#[must_use]
 pub fn to_rule_dep_dot(graph: &BuiltGraph) -> String {
     to_rule_dep_dot_with_options(graph, &RuleDepDotOptions::default())
 }
 
 /// Emit a DOT digraph of rule dependencies: node per rule, edge A → B when rule A calls rule B.
 /// Edges are deduplicated. With options, can restrict to reachable rules and apply styling.
+#[must_use]
 pub fn to_rule_dep_dot_with_options(graph: &BuiltGraph, opts: &RuleDepDotOptions) -> String {
     let start_rule = graph
         .rule_names
@@ -243,6 +245,7 @@ pub fn to_rule_dep_dot_with_options(graph: &BuiltGraph, opts: &RuleDepDotOptions
 }
 
 /// Emit a DOT digraph of the control-flow for one rule: nodes are instruction indices, edges are next/jump/choice targets.
+#[must_use]
 pub fn to_cfg_dot(graph: &BuiltGraph, rule_id: RuleId) -> String {
     let r = rule_id as usize;
     if r >= graph.rule_entry.len() {
@@ -370,11 +373,9 @@ fn insn_successors(insn: &Insn, ip: InsnId) -> Vec<InsnId> {
         | Insn::EndOfInput { on_fail }
         | Insn::AnyChar { on_fail }
         | Insn::Char { on_fail, .. }
-        | Insn::CharRange { on_fail, .. } => {
-            s.push(ip + 1);
-            s.push(*on_fail);
-        }
-        Insn::IfFlag { on_fail, .. } | Insn::IfNotFlag { on_fail, .. } => {
+        | Insn::CharRange { on_fail, .. }
+        | Insn::IfFlag { on_fail, .. }
+        | Insn::IfNotFlag { on_fail, .. } => {
             s.push(ip + 1);
             s.push(*on_fail);
         }

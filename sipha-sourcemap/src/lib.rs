@@ -15,8 +15,8 @@ pub use sipha::source_map::{map_offset, SpanMap, SpanMapping};
 
 /// Run the transformer and build a span mapping from the new tree to the original.
 ///
-/// For each node that was **kept** (not replaced), records a (new_span, old_span)
-/// pair. Replaced nodes are not mapped. The new root has offset 0; new_span
+/// For each node that was **kept** (not replaced), records a (`new_span`, `old_span`)
+/// pair. Replaced nodes are not mapped. The new root has offset 0; `new_span`
 /// positions reflect the transformed text.
 pub fn transform_with_mapping(
     root: &SyntaxNode,

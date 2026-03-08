@@ -11,7 +11,7 @@ use sipha::red::SyntaxNode;
 use sipha::types::Span;
 use sipha::walk::{Visitor, WalkOptions, WalkResult};
 
-/// Collect (name, kind) -> (path, start_byte, end_byte) from multiple roots.
+/// Collect (name, kind) -> (path, `start_byte`, `end_byte`) from multiple roots.
 ///
 /// For each `(path, root)` the tree is walked; for each node, `extract(node, root)` is called.
 /// When it returns `Some((name, kind, span))`, the definition is recorded. First occurrence
@@ -51,7 +51,7 @@ impl<K: Eq + std::hash::Hash, F: Fn(&SyntaxNode, &SyntaxNode) -> Option<(String,
         if let Some((name, kind, span)) = (self.extract)(node, &self.root) {
             self.map
                 .entry((name, kind))
-                .or_insert((self.path.clone(), span.start, span.end));
+                .or_insert_with(|| (self.path.clone(), span.start, span.end));
         }
         WalkResult::Continue(())
     }

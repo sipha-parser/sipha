@@ -1,12 +1,12 @@
 //! Scope extents: map from byte offset to scope for LSP (go-to-def, references, completion).
 //!
-//! Walks the tree and records (ScopeId, extent) for each scope-creating node.
+//! Walks the tree and records (`ScopeId`, extent) for each scope-creating node.
 //! Grammar-agnostic: the caller supplies a predicate that identifies which nodes create scopes.
 
 use sipha::red::SyntaxNode;
 use sipha::walk::{Visitor, WalkOptions, WalkResult};
 
-/// Build list of (scope_id, extent) where extent is (start_byte, end_byte).
+/// Build list of (`scope_id`, extent) where extent is (`start_byte`, `end_byte`).
 ///
 /// Root scope is always first with extent `(0, source_len)`. Remaining entries
 /// are in walk order, matching `scope_id_sequence`. `is_scope_creating` is
@@ -25,7 +25,10 @@ pub fn build_scope_extents<S: Copy>(
     source_len: usize,
     is_scope_creating: impl Fn(&SyntaxNode) -> bool,
 ) -> Vec<(S, (u32, u32))> {
-    let mut extents = vec![(root_scope_id, (0u32, source_len as u32))];
+    let mut extents = vec![(
+        root_scope_id,
+        (0u32, u32::try_from(source_len).unwrap_or(u32::MAX)),
+    )];
     let mut index = 0usize;
     let mut visitor = ScopeExtentVisitor {
         scope_id_sequence,
@@ -51,7 +54,7 @@ pub fn scope_at_offset<S: Copy>(extents: &[(S, (u32, u32))], offset: u32, defaul
     for (scope_id, (start, end)) in extents {
         if *start <= offset && offset < *end {
             let len = end - start;
-            if best.map_or(true, |(_, best_len)| len < best_len) {
+            if best.is_none_or(|(_, best_len)| len < best_len) {
                 best = Some((*scope_id, len));
             }
         }

@@ -14,18 +14,21 @@ pub use sipha::sexp::{syntax_node_to_sexp, SexpOptions};
 
 /// Returns true if both trees emit the same string (same tokens and trivia).
 #[inline]
+#[must_use]
 pub fn trees_equal(a: &SyntaxNode, b: &SyntaxNode) -> bool {
     syntax_root_to_string(a, &EmitOptions::full()) == syntax_root_to_string(b, &EmitOptions::full())
 }
 
 /// Returns true if both trees have the same semantic content (ignoring trivia).
 #[inline]
+#[must_use]
 pub fn trees_equal_semantic(a: &SyntaxNode, b: &SyntaxNode) -> bool {
     syntax_root_to_string(a, &EmitOptions::semantic_only())
         == syntax_root_to_string(b, &EmitOptions::semantic_only())
 }
 
 /// Format a short diff message: "expected" vs "got" (full round-trip).
+#[must_use]
 pub fn format_diff(expected: &SyntaxNode, got: &SyntaxNode) -> String {
     let expected_str = syntax_root_to_string(expected, &EmitOptions::full());
     let got_str = syntax_root_to_string(got, &EmitOptions::full());
@@ -56,6 +59,11 @@ fn truncate_for_display(s: &str, max: usize) -> String {
 ///
 /// `parse_result` is typically `parse(input)` or `parse_expression(input)` returning
 /// `Result<Option<SyntaxNode>, E>`. On failure prints expected vs got S-expression.
+///
+/// # Panics
+///
+/// Panics if `parse_result` is `Err` or `Ok(None)`, or if the S-expression does not match.
+#[allow(clippy::missing_panics_doc)]
 pub fn assert_parse_eq<E: std::fmt::Debug>(
     parse_result: Result<Option<SyntaxNode>, E>,
     _input: &str,
@@ -63,13 +71,12 @@ pub fn assert_parse_eq<E: std::fmt::Debug>(
     options: &SexpOptions,
 ) {
     let root = parse_result
-        .unwrap_or_else(|e| panic!("parse failed: {:?}", e))
+        .unwrap_or_else(|e| panic!("parse failed: {e:?}"))
         .expect("parse returned None (no root)");
     let got = syntax_node_to_sexp(&root, options);
     assert_eq!(
         got, expected_sexp,
-        "S-expression mismatch:\nexpected:\n  {}\ngot:\n  {}",
-        expected_sexp, got
+        "S-expression mismatch:\nexpected:\n  {expected_sexp}\ngot:\n  {got}"
     );
 }
 
