@@ -1,6 +1,6 @@
 [package]
 name = "sipha-fmt"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 description = "Formatter options and helpers for sipha syntax trees"
 license = "MIT"
@@ -12,4 +12,4 @@ documentation = "https://docs.rs/sipha-fmt"
 workspace = true
 
 [dependencies]
-sipha = { path = "../sipha", version = "1.0", features = ["emit"] }
+sipha = { path = "../sipha", version = "2.0", features = ["emit"] }
