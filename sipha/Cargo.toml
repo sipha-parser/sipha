@@ -2,6 +2,11 @@
 name = "sipha"
 version = "1.0.0"
 edition = "2021"
+description = "PEG parser, syntax trees, and code generation"
+license = "MIT"
+repository = "https://github.com/sipha-parser/sipha"
+homepage = "https://github.com/sipha-parser/sipha"
+documentation = "https://docs.rs/sipha"
 
 [lints]
 workspace = true
@@ -15,7 +20,7 @@ miette = ["dep:miette"]
 utf16 = []
 
 [dependencies]
-sipha-macros = { path = "../sipha-macros" }
+sipha-macros = { path = "../sipha-macros", version = "1.0" }
 miette = { version = "7", optional = true }
 
 [dev-dependencies]

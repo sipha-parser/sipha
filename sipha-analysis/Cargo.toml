@@ -3,9 +3,13 @@ name = "sipha-analysis"
 version = "1.0.0"
 edition = "2021"
 description = "Grammar-agnostic scope extents and definition collection for sipha syntax trees (LSP support)"
+license = "MIT"
+repository = "https://github.com/sipha-parser/sipha"
+homepage = "https://github.com/sipha-parser/sipha"
+documentation = "https://docs.rs/sipha-analysis"
 
 [lints]
 workspace = true
 
 [dependencies]
-sipha = { path = "../sipha", features = ["walk"] }
+sipha = { path = "../sipha", version = "1.0", features = ["walk"] }

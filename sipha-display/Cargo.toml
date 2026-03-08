@@ -3,9 +3,13 @@ name = "sipha-display"
 version = "1.0.0"
 edition = "2021"
 description = "Utilities to display sipha grammars as PEG text or DOT graphs"
+license = "MIT"
+repository = "https://github.com/sipha-parser/sipha"
+homepage = "https://github.com/sipha-parser/sipha"
+documentation = "https://docs.rs/sipha-display"
 
 [lints]
 workspace = true
 
 [dependencies]
-sipha = { path = "../sipha" }
+sipha = { path = "../sipha", version = "1.0" }

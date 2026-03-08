@@ -3,6 +3,10 @@ name = "sipha-macros"
 version = "1.0.0"
 edition = "2021"
 description = "Procedural macros for defining sipha PEG grammars"
+license = "MIT"
+repository = "https://github.com/sipha-parser/sipha"
+homepage = "https://github.com/sipha-parser/sipha"
+documentation = "https://docs.rs/sipha-macros"
 
 [lints]
 workspace = true

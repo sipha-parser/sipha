@@ -3,9 +3,13 @@ name = "sipha-diff"
 version = "1.0.0"
 edition = "2021"
 description = "Tree diff and comparison utilities for sipha syntax trees"
+license = "MIT"
+repository = "https://github.com/sipha-parser/sipha"
+homepage = "https://github.com/sipha-parser/sipha"
+documentation = "https://docs.rs/sipha-diff"
 
 [lints]
 workspace = true
 
 [dependencies]
-sipha = { path = "../sipha", features = ["emit"] }
+sipha = { path = "../sipha", version = "1.0", features = ["emit"] }
