@@ -35,6 +35,22 @@ sipha-macros = "2"
 
 See the [**sipha** crate README](sipha/README.md) for features, examples, and API overview.
 
+## Repository
+
+sipha may be developed in a standalone repo (e.g. `sipha-parser/sipha`) or as part of a larger **parsing** monorepo. When in a monorepo, run `cargo build` and `cargo test` from the **monorepo root** so the workspace uses the local sipha crates.
+
+## Development
+
+From the appropriate root (this repo or the monorepo root):
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-features -- -D warnings
+cargo test --workspace --all-features
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and conventions, and [ARCHITECTURE.md](ARCHITECTURE.md) for crate layout and where to edit.
+
 ## License
 
 MIT
