@@ -1,6 +1,10 @@
 name: Release to crates.io
 
 on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
   release:
     types: [published]
   workflow_dispatch:
@@ -9,9 +13,54 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check-tag-on-main:
+    name: Ensure tag is on main
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag is on main
+        run: |
+          git fetch origin main master 2>/dev/null || true
+          if git show-ref -q refs/remotes/origin/main; then
+            BRANCH=main
+          else
+            BRANCH=master
+          fi
+          COMMIT=$(git rev-parse ${{ github.ref_name }}^{commit})
+          if ! git branch -r --contains "$COMMIT" | grep -q "origin/$BRANCH"; then
+            echo "::error::Tag ${{ github.ref_name }} is not on $BRANCH. Push the tag only from main."
+            exit 1
+          fi
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [check-tag-on-main]
+    if: always() && (needs.check-tag-on-main.result == 'success' || needs.check-tag-on-main.result == 'skipped')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+
   release:
     name: Publish to crates.io
     runs-on: ubuntu-latest
+    needs: [create-release]
+    if: always() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
     environment: sipha
     permissions:
       contents: read
@@ -24,10 +73,24 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: [rustfmt, clippy]
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Verify formatting
         run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-features -- -D warnings
 
       - name: Run tests
         run: cargo test --workspace --all-features
