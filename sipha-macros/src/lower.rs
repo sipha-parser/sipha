@@ -155,12 +155,10 @@ fn lower_expr(node: &ExprNode) -> TokenStream {
         }
         ExprNode::Node { kind, field, inner } => {
             let body = lower_expr(inner);
-            field
-                .as_ref()
-                .map_or_else(
-                    || quote! { g.node(#kind, |g| { #body }); },
-                    |f| quote! { g.node_with_field(#kind, #f, |g| { #body }); },
-                )
+            field.as_ref().map_or_else(
+                || quote! { g.node(#kind, |g| { #body }); },
+                |f| quote! { g.node_with_field(#kind, #f, |g| { #body }); },
+            )
         }
         ExprNode::Token { kind, inner } => {
             let body = lower_expr(inner);

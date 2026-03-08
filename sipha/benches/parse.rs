@@ -17,7 +17,9 @@ fn build_digit_list_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
     // start = digit+ ; digit = [0-9]
     g.rule("start", |g| {
-        g.repeat(1.., |g| { g.call("digit"); });
+        g.repeat(1.., |g| {
+            g.call("digit");
+        });
         g.end_of_input();
         g.accept();
     });
@@ -36,17 +38,29 @@ fn build_memo_heavy_grammar() -> BuiltGraph {
     g.rule("start", |g| {
         g.repeat(1.., |g| {
             g.choices(vec![
-                Box::new(|g: &mut GrammarBuilder| { g.call("a"); }),
-                Box::new(|g: &mut GrammarBuilder| { g.call("b"); }),
-                Box::new(|g: &mut GrammarBuilder| { g.call("c"); }),
+                Box::new(|g: &mut GrammarBuilder| {
+                    g.call("a");
+                }),
+                Box::new(|g: &mut GrammarBuilder| {
+                    g.call("b");
+                }),
+                Box::new(|g: &mut GrammarBuilder| {
+                    g.call("c");
+                }),
             ]);
         });
         g.end_of_input();
         g.accept();
     });
-    g.rule("a", |g| { g.literal(b"aaa"); });
-    g.rule("b", |g| { g.literal(b"bbb"); });
-    g.rule("c", |g| { g.literal(b"ccc"); });
+    g.rule("a", |g| {
+        g.literal(b"aaa");
+    });
+    g.rule("b", |g| {
+        g.literal(b"bbb");
+    });
+    g.rule("c", |g| {
+        g.literal(b"ccc");
+    });
     g.finish().expect("memo grammar valid")
 }
 

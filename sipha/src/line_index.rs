@@ -156,12 +156,7 @@ impl LineIndex {
     /// Useful for LSP (client sends line/character; server needs byte offset).
     #[cfg(feature = "utf16")]
     #[must_use]
-    pub fn line_col_utf16_to_byte(
-        &self,
-        source: &str,
-        line: u32,
-        character: u32,
-    ) -> Option<Pos> {
+    pub fn line_col_utf16_to_byte(&self, source: &str, line: u32, character: u32) -> Option<Pos> {
         let line_start = self.line_start(line) as usize;
         let source_len = source.len();
         let line_span = self.line_range(line, source_len);
@@ -182,12 +177,7 @@ impl LineIndex {
     /// Returns `None` if the line is out of range. Useful for completion (prefix before cursor).
     #[cfg(feature = "utf16")]
     #[must_use]
-    pub fn line_prefix_utf16(
-        &self,
-        source: &str,
-        line: u32,
-        character: u32,
-    ) -> Option<String> {
+    pub fn line_prefix_utf16(&self, source: &str, line: u32, character: u32) -> Option<String> {
         let line_start = self.line_start(line) as usize;
         let line_span = self.line_range(line, source.len());
         let line_end = line_span.end as usize;
@@ -228,7 +218,11 @@ mod tests {
         assert_eq!(idx.line_col(1), (0, 1));
         assert_eq!(idx.line_col(2), (1, 0));
         // offset 5 = first byte of third line "ccc"
-        assert_eq!(idx.line_col(5).0, 2, "offset 5 should be on line 2 (third line)");
+        assert_eq!(
+            idx.line_col(5).0,
+            2,
+            "offset 5 should be on line 2 (third line)"
+        );
         assert_eq!(idx.line_col(6), (2, 1));
     }
 

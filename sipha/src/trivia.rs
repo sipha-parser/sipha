@@ -10,14 +10,14 @@ use crate::types::SyntaxKind;
 
 /// Build a trivia token containing a single space.
 #[inline]
-#[must_use] 
+#[must_use]
 pub fn space(kind: SyntaxKind) -> Arc<GreenToken> {
     GreenToken::space(kind)
 }
 
 /// Build a trivia token containing a single newline.
 #[inline]
-#[must_use] 
+#[must_use]
 pub fn newline(kind: SyntaxKind) -> Arc<GreenToken> {
     GreenToken::newline(kind)
 }
@@ -46,7 +46,10 @@ pub fn replace_leading_trivia(
         .map(|s| GreenElement::Token(GreenToken::new(trivia_kind, s, true)))
         .collect();
     let text_len_new: u32 = new_trivia.iter().map(GreenElement::text_len).sum::<u32>()
-        + children[i..].iter().map(GreenElement::text_len).sum::<u32>();
+        + children[i..]
+            .iter()
+            .map(GreenElement::text_len)
+            .sum::<u32>();
     let mut out = new_trivia;
     out.extend(children.drain(i..));
     Arc::new(GreenNode {
@@ -79,7 +82,10 @@ pub fn replace_trailing_trivia(
         .iter()
         .map(|s| GreenElement::Token(GreenToken::new(trivia_kind, s, true)))
         .collect();
-    let text_len_new: u32 = children[..trail_start].iter().map(GreenElement::text_len).sum::<u32>()
+    let text_len_new: u32 = children[..trail_start]
+        .iter()
+        .map(GreenElement::text_len)
+        .sum::<u32>()
         + new_trivia.iter().map(GreenElement::text_len).sum::<u32>();
     let mut out: Vec<GreenElement> = children.drain(..trail_start).collect();
     out.extend(new_trivia);

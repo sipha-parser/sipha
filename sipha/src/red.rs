@@ -31,11 +31,11 @@
 //! returns a `&[u8]` zero-copy slice) or [`SyntaxNode::collect_text`]
 //! (source-independent, allocates).
 
-use std::sync::Arc;
 use crate::{
     green::{GreenElement, GreenNode, GreenToken},
-    types::{FieldId, FromSyntaxKind, Span, SyntaxKind},
+    types::{FieldId, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind},
 };
+use std::sync::Arc;
 
 // ─── SyntaxElement ────────────────────────────────────────────────────────────
 
@@ -80,22 +80,38 @@ impl SyntaxElement {
 
     #[must_use]
     pub fn into_node(self) -> Option<SyntaxNode> {
-        if let Self::Node(n) = self { Some(n) } else { None }
+        if let Self::Node(n) = self {
+            Some(n)
+        } else {
+            None
+        }
     }
 
     #[must_use]
     pub fn into_token(self) -> Option<SyntaxToken> {
-        if let Self::Token(t) = self { Some(t) } else { None }
+        if let Self::Token(t) = self {
+            Some(t)
+        } else {
+            None
+        }
     }
 
     #[must_use]
     pub const fn as_node(&self) -> Option<&SyntaxNode> {
-        if let Self::Node(n) = self { Some(n) } else { None }
+        if let Self::Node(n) = self {
+            Some(n)
+        } else {
+            None
+        }
     }
 
     #[must_use]
     pub const fn as_token(&self) -> Option<&SyntaxToken> {
-        if let Self::Token(t) = self { Some(t) } else { None }
+        if let Self::Token(t) = self {
+            Some(t)
+        } else {
+            None
+        }
     }
 }
 
@@ -107,7 +123,7 @@ impl SyntaxElement {
 /// is required to call [`text`](SyntaxToken::text).
 #[derive(Clone, Debug)]
 pub struct SyntaxToken {
-    green:  Arc<GreenToken>,
+    green: Arc<GreenToken>,
     offset: u32,
 }
 
@@ -194,7 +210,7 @@ impl SyntaxToken {
 /// Cloning is cheap.
 #[derive(Clone, Debug)]
 pub struct SyntaxNode {
-    green:  Arc<GreenNode>,
+    green: Arc<GreenNode>,
     offset: u32,
 }
 
@@ -287,7 +303,9 @@ impl SyntaxNode {
             off += child.text_len();
             match child {
                 GreenElement::Node(n) => SyntaxElement::Node(Self::new(Arc::clone(n), start)),
-                GreenElement::Token(t) => SyntaxElement::Token(SyntaxToken::new(Arc::clone(t), start)),
+                GreenElement::Token(t) => {
+                    SyntaxElement::Token(SyntaxToken::new(Arc::clone(t), start))
+                }
             }
         })
     }
@@ -297,13 +315,25 @@ impl SyntaxNode {
         self.children().filter_map(SyntaxElement::into_node)
     }
 
+    /// First direct child that is a node, if any.
+    #[must_use]
+    pub fn first_child_node(&self) -> Option<Self> {
+        self.child_nodes().next()
+    }
+
     /// First direct child **node** with the given kind, if any.
     ///
     /// Only considers child nodes (not tokens). Useful in visitors when a node
     /// has a known structure and you want one child by kind.
-    #[must_use] 
+    #[must_use]
     pub fn child_by_kind(&self, kind: SyntaxKind) -> Option<Self> {
         self.child_nodes().find(|n| n.kind() == kind)
+    }
+
+    /// First direct child **node** with the given kind (convenience for passing a `Kind` enum).
+    #[must_use]
+    pub fn child_node_by_kind<K: IntoSyntaxKind>(&self, kind: K) -> Option<Self> {
+        self.child_by_kind(kind.into_syntax_kind())
     }
 
     /// First direct child **node** with the given field id (named child).
@@ -328,6 +358,23 @@ impl SyntaxNode {
         None
     }
 
+    /// First direct child **node** with the given field name.
+    ///
+    /// `field_names` is the grammar's field name list (e.g. `built.field_names` or
+    /// `graph.field_names`); the name is resolved to a [`FieldId`] and then
+    /// [`field_by_id`](Self::field_by_id) is used.
+    #[must_use]
+    pub fn field_by_name(&self, field_names: &[&str], name: &str) -> Option<Self> {
+        let id = field_names.iter().position(|&n| n == name)?;
+        let id = FieldId::try_from(id).ok()?;
+        self.field_by_id(id)
+    }
+
+    /// Iterate all descendant nodes in depth-first order (children before siblings).
+    pub fn descendant_nodes(&self) -> DescendantNodes {
+        DescendantNodes::new(self)
+    }
+
     /// Iterate all direct child **tokens** including trivia.
     pub fn child_tokens(&self) -> impl Iterator<Item = SyntaxToken> + '_ {
         self.children().filter_map(SyntaxElement::into_token)
@@ -342,11 +389,15 @@ impl SyntaxNode {
 
     /// Leading trivia of this node: trivia tokens at the very start before the
     /// first non-trivia token in the node's direct children.
-    #[must_use] 
+    #[must_use]
     pub fn leading_trivia(&self) -> Vec<SyntaxToken> {
         let mut trivia = Vec::new();
         for tok in self.child_tokens() {
-            if tok.is_trivia() { trivia.push(tok); } else { break; }
+            if tok.is_trivia() {
+                trivia.push(tok);
+            } else {
+                break;
+            }
         }
         trivia
     }
@@ -358,7 +409,11 @@ impl SyntaxNode {
         let all: Vec<SyntaxToken> = self.child_tokens().collect();
         let mut trivia = Vec::new();
         for tok in all.iter().rev() {
-            if tok.is_trivia() { trivia.push(tok.clone()); } else { break; }
+            if tok.is_trivia() {
+                trivia.push(tok.clone());
+            } else {
+                break;
+            }
         }
         trivia.reverse();
         trivia
@@ -410,7 +465,11 @@ impl SyntaxNode {
             let trivia_end = next_semantic_rel.map_or(tokens.len(), |rel| i + rel);
             let trailing: Vec<SyntaxToken> = tokens[i..trivia_end].to_vec();
             i = trivia_end; // do NOT advance past the next semantic token
-            groups.push(TokenWithTrivia { leading, token, trailing });
+            groups.push(TokenWithTrivia {
+                leading,
+                token,
+                trailing,
+            });
         }
 
         groups
@@ -421,7 +480,9 @@ impl SyntaxNode {
     /// Find the first descendant node (or self) with the given `kind`.
     #[must_use]
     pub fn find_node(&self, kind: SyntaxKind) -> Option<Self> {
-        if self.kind() == kind { return Some(self.clone()); }
+        if self.kind() == kind {
+            return Some(self.clone());
+        }
         self.child_nodes().find_map(|n| n.find_node(kind))
     }
 
@@ -434,8 +495,12 @@ impl SyntaxNode {
     }
 
     fn collect_nodes(&self, kind: SyntaxKind, out: &mut Vec<Self>) {
-        if self.kind() == kind { out.push(self.clone()); }
-        for child in self.child_nodes() { child.collect_nodes(kind, out); }
+        if self.kind() == kind {
+            out.push(self.clone());
+        }
+        for child in self.child_nodes() {
+            child.collect_nodes(kind, out);
+        }
     }
 
     /// Find all descendant **tokens** (including trivia) in document order.
@@ -458,7 +523,10 @@ impl SyntaxNode {
     /// Find all descendant **semantic** (non-trivia) tokens in document order.
     #[must_use]
     pub fn descendant_semantic_tokens(&self) -> Vec<SyntaxToken> {
-        self.descendant_tokens().into_iter().filter(|t| !t.is_trivia()).collect()
+        self.descendant_tokens()
+            .into_iter()
+            .filter(|t| !t.is_trivia())
+            .collect()
     }
 
     /// First semantic (non-trivia) token in this node's subtree, in document order.
@@ -538,14 +606,16 @@ impl SyntaxNode {
     #[must_use]
     pub fn token_at_offset(&self, offset: u32) -> Option<SyntaxToken> {
         let range = self.text_range();
-        if offset < range.start || offset >= range.end { return None; }
+        if offset < range.start || offset >= range.end {
+            return None;
+        }
         let mut off = self.offset;
         for child in &self.green.children {
             let end = off + child.text_len();
             if offset < end {
                 return match child {
                     GreenElement::Token(t) => Some(SyntaxToken::new(Arc::clone(t), off)),
-                    GreenElement::Node(n)  => Self::new(Arc::clone(n), off).token_at_offset(offset),
+                    GreenElement::Node(n) => Self::new(Arc::clone(n), off).token_at_offset(offset),
                 };
             }
             off = end;
@@ -572,23 +642,32 @@ impl SyntaxNode {
     #[must_use]
     pub fn ancestors(&self, root: &Self) -> Vec<Self> {
         let mut path = Vec::new();
-        find_path(root, self.offset, self.green.kind, self.text_len(), &mut path);
+        find_path(
+            root,
+            self.offset,
+            self.green.kind,
+            self.text_len(),
+            &mut path,
+        );
         path
     }
 }
 
 /// Walk downward collecting nodes that are ancestors of the target span.
 fn find_path(
-    node:       &SyntaxNode,
+    node: &SyntaxNode,
     target_off: u32,
     target_kind: SyntaxKind,
-    target_len:  u32,
-    path:       &mut Vec<SyntaxNode>,
+    target_len: u32,
+    path: &mut Vec<SyntaxNode>,
 ) -> bool {
     for child in node.child_nodes() {
         let r = child.text_range();
         if r.start <= target_off && target_off + target_len <= r.end {
-            if child.offset == target_off && child.kind() == target_kind && child.text_len() == target_len {
+            if child.offset == target_off
+                && child.kind() == target_kind
+                && child.text_len() == target_len
+            {
                 return true; // found the target
             }
             if find_path(&child, target_off, target_kind, target_len, path) {
@@ -598,6 +677,32 @@ fn find_path(
         }
     }
     false
+}
+
+/// Depth-first iterator over descendant nodes of a [`SyntaxNode`].
+#[derive(Clone)]
+pub struct DescendantNodes {
+    stack: Vec<SyntaxNode>,
+}
+
+impl DescendantNodes {
+    fn new(node: &SyntaxNode) -> Self {
+        let mut stack: Vec<SyntaxNode> = node.child_nodes().collect();
+        stack.reverse();
+        Self { stack }
+    }
+}
+
+impl Iterator for DescendantNodes {
+    type Item = SyntaxNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.stack.pop()?;
+        let mut children: Vec<SyntaxNode> = node.child_nodes().collect();
+        children.reverse();
+        self.stack.extend(children);
+        Some(node)
+    }
 }
 
 // ─── TokenWithTrivia ─────────────────────────────────────────────────────────
@@ -611,9 +716,9 @@ fn find_path(
 #[derive(Debug)]
 pub struct TokenWithTrivia {
     /// Trivia tokens immediately before `token`.
-    pub leading:  Vec<SyntaxToken>,
+    pub leading: Vec<SyntaxToken>,
     /// The semantic (non-trivia) token.
-    pub token:    SyntaxToken,
+    pub token: SyntaxToken,
     /// Trivia tokens immediately after `token` and before the next semantic token.
     pub trailing: Vec<SyntaxToken>,
 }
@@ -622,9 +727,11 @@ impl TokenWithTrivia {
     /// Total byte range: start of leading trivia → end of trailing trivia.
     #[must_use]
     pub fn full_range(&self) -> Span {
-        let start = self.leading.first()
-            .map_or(self.token.offset, |t| t.offset);
-        let end = self.trailing.last().map_or_else(|| self.token.offset + self.token.green.text_len, |t| t.offset + t.green.text_len);
+        let start = self.leading.first().map_or(self.token.offset, |t| t.offset);
+        let end = self.trailing.last().map_or_else(
+            || self.token.offset + self.token.green.text_len,
+            |t| t.offset + t.green.text_len,
+        );
         Span::new(start, end)
     }
 
@@ -632,9 +739,13 @@ impl TokenWithTrivia {
     #[must_use]
     pub fn full_text(&self) -> String {
         let mut s = String::new();
-        for t in &self.leading  { s.push_str(t.text()); }
+        for t in &self.leading {
+            s.push_str(t.text());
+        }
         s.push_str(self.token.text());
-        for t in &self.trailing { s.push_str(t.text()); }
+        for t in &self.trailing {
+            s.push_str(t.text());
+        }
         s
     }
 }

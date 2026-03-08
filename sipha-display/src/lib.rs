@@ -19,8 +19,12 @@ mod tests {
         });
         g.rule("start", |g| {
             g.choice(
-                |g| { g.call("a"); },
-                |g| { g.literal(b"b"); },
+                |g| {
+                    g.call("a");
+                },
+                |g| {
+                    g.literal(b"b");
+                },
             );
             g.end_of_input();
             g.accept();

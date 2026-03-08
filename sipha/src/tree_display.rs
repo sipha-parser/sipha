@@ -59,16 +59,11 @@ fn node_id(node: &SyntaxNode) -> (usize, u32) {
 }
 
 /// Elements to show for a node (filtered by `show_trivia`), with `is_last` for tree connectors.
-fn visible_elements(
-    node: &SyntaxNode,
-    options: &TreeDisplayOptions,
-) -> Vec<(SyntaxElement, bool)> {
+fn visible_elements(node: &SyntaxNode, options: &TreeDisplayOptions) -> Vec<(SyntaxElement, bool)> {
     let elements: Vec<SyntaxElement> = node.children().collect();
     let visible: Vec<_> = elements
         .into_iter()
-        .filter(|e| {
-            !matches!(e, SyntaxElement::Token(t) if t.is_trivia() && !options.show_trivia)
-        })
+        .filter(|e| !matches!(e, SyntaxElement::Token(t) if t.is_trivia() && !options.show_trivia))
         .collect();
     let n = visible.len();
     visible
@@ -90,17 +85,19 @@ pub fn format_syntax_tree(
 ) -> String {
     let mut out = String::new();
     let mut visited = HashSet::new();
-    format_node(root.clone(), options, &kind_name, "", true, &mut out, &mut visited);
+    format_node(
+        root.clone(),
+        options,
+        &kind_name,
+        "",
+        true,
+        &mut out,
+        &mut visited,
+    );
     out
 }
 
-fn format_node_header(
-    prefix: &str,
-    is_last: bool,
-    kind_str: &str,
-    out: &mut String,
-    cycle: bool,
-) {
+fn format_node_header(prefix: &str, is_last: bool, kind_str: &str, out: &mut String, cycle: bool) {
     let connector = if is_last { "└── " } else { "├── " };
     out.push_str(prefix);
     out.push_str(connector);
@@ -163,7 +160,15 @@ fn format_node_children(
         let child_nodes: Vec<SyntaxNode> = node.child_nodes().collect();
         let last_idx = child_nodes.len().saturating_sub(1);
         for (i, child) in child_nodes.into_iter().enumerate() {
-            format_node(child, options, kind_name, new_prefix, i == last_idx, out, visited);
+            format_node(
+                child,
+                options,
+                kind_name,
+                new_prefix,
+                i == last_idx,
+                out,
+                visited,
+            );
         }
     }
 }

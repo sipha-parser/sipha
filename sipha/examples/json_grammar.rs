@@ -10,13 +10,13 @@ use sipha::types::classes;
 
 // ─── Tag constants ────────────────────────────────────────────────────────────
 
-const T_VALUE:  Tag = 0;
+const T_VALUE: Tag = 0;
 const T_OBJECT: Tag = 1;
-const T_ARRAY:  Tag = 2;
+const T_ARRAY: Tag = 2;
 const T_STRING: Tag = 3;
 const T_NUMBER: Tag = 4;
-const T_BOOL:   Tag = 5;
-const T_NULL:   Tag = 6;
+const T_BOOL: Tag = 5;
+const T_NULL: Tag = 6;
 const T_MEMBER: Tag = 7;
 
 // ─── Build the grammar ───────────────────────────────────────────────────────
@@ -39,36 +39,74 @@ fn build_json_grammar() -> BuiltGraph {
     g.begin_rule("value");
     g.capture(T_VALUE, |g| {
         // Class sets for the dispatch table.
-        let class_quote  = CharClass::EMPTY.with_byte(b'"');
+        let class_quote = CharClass::EMPTY.with_byte(b'"');
         let class_lbrace = CharClass::EMPTY.with_byte(b'{');
         let class_lbrack = CharClass::EMPTY.with_byte(b'[');
         let class_number = classes::DIGIT.with_byte(b'-');
-        let class_t      = CharClass::EMPTY.with_byte(b't');
-        let class_f      = CharClass::EMPTY.with_byte(b'f');
-        let class_n      = CharClass::EMPTY.with_byte(b'n');
+        let class_t = CharClass::EMPTY.with_byte(b't');
+        let class_f = CharClass::EMPTY.with_byte(b'f');
+        let class_n = CharClass::EMPTY.with_byte(b'n');
 
-        g.byte_dispatch(vec![
-            // ── string ──────────────────────────────────────────────
-            (class_quote,  Box::new(|g: &mut GrammarBuilder| { g.call("string"); })),
-            // ── object ──────────────────────────────────────────────
-            (class_lbrace, Box::new(|g: &mut GrammarBuilder| { g.call("object"); })),
-            // ── array ───────────────────────────────────────────────
-            (class_lbrack, Box::new(|g: &mut GrammarBuilder| { g.call("array");  })),
-            // ── number ──────────────────────────────────────────────
-            (class_number, Box::new(|g: &mut GrammarBuilder| { g.call("number"); })),
-            // ── true ────────────────────────────────────────────────
-            (class_t,      Box::new(|g: &mut GrammarBuilder| {
-                g.capture(T_BOOL, |g| { g.literal(b"true"); });
-            })),
-            // ── false ───────────────────────────────────────────────
-            (class_f,      Box::new(|g: &mut GrammarBuilder| {
-                g.capture(T_BOOL, |g| { g.literal(b"false"); });
-            })),
-            // ── null ────────────────────────────────────────────────
-            (class_n,      Box::new(|g: &mut GrammarBuilder| {
-                g.capture(T_NULL, |g| { g.literal(b"null"); });
-            })),
-        ], None);
+        g.byte_dispatch(
+            vec![
+                // ── string ──────────────────────────────────────────────
+                (
+                    class_quote,
+                    Box::new(|g: &mut GrammarBuilder| {
+                        g.call("string");
+                    }),
+                ),
+                // ── object ──────────────────────────────────────────────
+                (
+                    class_lbrace,
+                    Box::new(|g: &mut GrammarBuilder| {
+                        g.call("object");
+                    }),
+                ),
+                // ── array ───────────────────────────────────────────────
+                (
+                    class_lbrack,
+                    Box::new(|g: &mut GrammarBuilder| {
+                        g.call("array");
+                    }),
+                ),
+                // ── number ──────────────────────────────────────────────
+                (
+                    class_number,
+                    Box::new(|g: &mut GrammarBuilder| {
+                        g.call("number");
+                    }),
+                ),
+                // ── true ────────────────────────────────────────────────
+                (
+                    class_t,
+                    Box::new(|g: &mut GrammarBuilder| {
+                        g.capture(T_BOOL, |g| {
+                            g.literal(b"true");
+                        });
+                    }),
+                ),
+                // ── false ───────────────────────────────────────────────
+                (
+                    class_f,
+                    Box::new(|g: &mut GrammarBuilder| {
+                        g.capture(T_BOOL, |g| {
+                            g.literal(b"false");
+                        });
+                    }),
+                ),
+                // ── null ────────────────────────────────────────────────
+                (
+                    class_n,
+                    Box::new(|g: &mut GrammarBuilder| {
+                        g.capture(T_NULL, |g| {
+                            g.literal(b"null");
+                        });
+                    }),
+                ),
+            ],
+            None,
+        );
     });
     g.end_rule();
 
@@ -126,10 +164,16 @@ fn build_json_grammar() -> BuiltGraph {
     g.capture(T_STRING, |g| {
         g.byte(b'"');
         g.zero_or_more(|g| {
-            g.neg_lookahead(|g| { g.byte(b'"'); });
+            g.neg_lookahead(|g| {
+                g.byte(b'"');
+            });
             g.choice(
-                |g| { g.call("escape"); },
-                |g| { g.class(CharClass::ANY); },
+                |g| {
+                    g.call("escape");
+                },
+                |g| {
+                    g.class(CharClass::ANY);
+                },
             );
         });
         g.byte(b'"');
@@ -166,31 +210,57 @@ fn build_json_grammar() -> BuiltGraph {
     // ── number ────────────────────────────────────────────────────────────────
     g.begin_rule("number");
     g.capture(T_NUMBER, |g| {
-        g.optional(|g| { g.byte(b'-'); });
+        g.optional(|g| {
+            g.byte(b'-');
+        });
         g.choice(
-            |g| { g.byte(b'0'); },
+            |g| {
+                g.byte(b'0');
+            },
             |g| {
                 g.byte_range(b'1', b'9');
-                g.zero_or_more(|g| { g.class(classes::DIGIT); });
+                g.zero_or_more(|g| {
+                    g.class(classes::DIGIT);
+                });
             },
         );
         g.optional(|g| {
             g.byte(b'.');
-            g.one_or_more(|g| { g.class(classes::DIGIT); });
+            g.one_or_more(|g| {
+                g.class(classes::DIGIT);
+            });
         });
         g.optional(|g| {
-            g.choice(|g| { g.byte(b'e'); }, |g| { g.byte(b'E'); });
+            g.choice(
+                |g| {
+                    g.byte(b'e');
+                },
+                |g| {
+                    g.byte(b'E');
+                },
+            );
             g.optional(|g| {
-                g.choice(|g| { g.byte(b'+'); }, |g| { g.byte(b'-'); });
+                g.choice(
+                    |g| {
+                        g.byte(b'+');
+                    },
+                    |g| {
+                        g.byte(b'-');
+                    },
+                );
             });
-            g.one_or_more(|g| { g.class(classes::DIGIT); });
+            g.one_or_more(|g| {
+                g.class(classes::DIGIT);
+            });
         });
     });
     g.end_rule();
 
     // ── ws ────────────────────────────────────────────────────────────────────
     g.begin_rule("ws");
-    g.zero_or_more(|g| { g.class(classes::WHITESPACE); });
+    g.zero_or_more(|g| {
+        g.class(classes::WHITESPACE);
+    });
     g.end_rule();
 
     g.finish().expect("grammar must be valid")
@@ -200,7 +270,7 @@ fn build_json_grammar() -> BuiltGraph {
 
 fn main() {
     let graph_data = build_json_grammar();
-    let graph      = graph_data.as_graph();
+    let graph = graph_data.as_graph();
 
     println!("=== Extension 1: SIMD literal matching ===");
     println!("  Transparent — Insn::Literal uses SSE2/AVX2 on x86_64.");
@@ -212,8 +282,8 @@ fn main() {
     {
         let mut engine = Engine::new();
         let inputs: &[(&[u8], &str)] = &[
-            (b"",         "empty input"),
-            (b"invalid",  "unknown token"),
+            (b"", "empty input"),
+            (b"invalid", "unknown token"),
             (b"{\"x\": }", "missing value after colon"),
             (b"[1, 2, ]", "trailing comma"),
         ];
@@ -227,7 +297,11 @@ fn main() {
                     ctx.expected.len(),
                     ctx.expected
                         .iter()
-                        .map(|e| e.display(Some(&graph.literals), Some(graph.rule_names), Some(graph.expected_labels)))
+                        .map(|e| e.display(
+                            Some(&graph.literals),
+                            Some(graph.rule_names),
+                            Some(graph.expected_labels)
+                        ))
                         .collect::<Vec<_>>()
                 );
             }
@@ -285,29 +359,34 @@ fn main() {
     println!("=== Correctness suite ===");
     let mut engine = Engine::new().with_memo();
     let cases: &[(&[u8], bool)] = &[
-        (b"null",                             true),
-        (b"true",                             true),
-        (b"false",                            true),
-        (b"42",                               true),
-        (b"-3.14e+10",                        true),
-        (b"\"hello\"",                        true),
-        (b"\"escape \\n \\u0041\"",           true),
-        (b"[]",                               true),
-        (b"[1, 2, 3]",                        true),
-        (b"{}",                               true),
-        (b"{\"a\": 1, \"b\": [true, null]}",  true),
-        (b"  [ 1 , { \"k\" : false } ]  ",    true),
-        (b"",                                 false),
-        (b"invalid",                          false),
-        (b"{\"x\": }",                        false),
+        (b"null", true),
+        (b"true", true),
+        (b"false", true),
+        (b"42", true),
+        (b"-3.14e+10", true),
+        (b"\"hello\"", true),
+        (b"\"escape \\n \\u0041\"", true),
+        (b"[]", true),
+        (b"[1, 2, 3]", true),
+        (b"{}", true),
+        (b"{\"a\": 1, \"b\": [true, null]}", true),
+        (b"  [ 1 , { \"k\" : false } ]  ", true),
+        (b"", false),
+        (b"invalid", false),
+        (b"{\"x\": }", false),
     ];
     let mut passed = 0;
     for &(input, expect_ok) in cases {
         let ok = engine.parse(&graph, input).is_ok();
         let check = ok == expect_ok;
-        println!("  [{}] {:?}", if check { "✓" } else { "✗" },
-                 std::str::from_utf8(input).unwrap_or("<binary>"));
-        if check { passed += 1; }
+        println!(
+            "  [{}] {:?}",
+            if check { "✓" } else { "✗" },
+            std::str::from_utf8(input).unwrap_or("<binary>")
+        );
+        if check {
+            passed += 1;
+        }
     }
     println!("\n  {passed}/{} passed.", cases.len());
 

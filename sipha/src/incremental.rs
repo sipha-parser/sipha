@@ -14,7 +14,11 @@ use crate::red::SyntaxNode;
 use crate::types::{FieldId, Pos, SyntaxKind, TreeEvent};
 
 /// Stack element when building green tree from events (with or without reuse).
-type IncrementalStackEntry = (SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>);
+type IncrementalStackEntry = (
+    SyntaxKind,
+    Option<FieldId>,
+    Vec<(Option<FieldId>, GreenElement)>,
+);
 /// Root or child element: (optional field id, node or token).
 type IncrementalRootElem = (Option<FieldId>, GreenElement);
 
@@ -31,10 +35,13 @@ pub struct TextEdit {
 
 impl TextEdit {
     /// Build the new source buffer after applying this edit.
-    #[must_use] 
+    #[must_use]
     pub fn apply(&self, old_source: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(
-            old_source.len().saturating_sub((self.end - self.start) as usize) + self.new_text.len(),
+            old_source
+                .len()
+                .saturating_sub((self.end - self.start) as usize)
+                + self.new_text.len(),
         );
         out.extend_from_slice(&old_source[..self.start as usize]);
         out.extend_from_slice(&self.new_text);
@@ -64,8 +71,25 @@ const fn new_span_to_old(
     }
 }
 
+/// Remove and return trailing trivia from `children` (from the end, while elements are trivia).
+/// Must match `green::drain_trailing_trivia` so incremental tree structure matches full parse.
+fn drain_trailing_trivia(children: &mut Vec<IncrementalRootElem>) -> Vec<IncrementalRootElem> {
+    let n = children
+        .iter()
+        .rev()
+        .take_while(|(_, el)| el.is_trivia())
+        .count();
+    if n == 0 {
+        return Vec::new();
+    }
+    children.drain(children.len() - n..).collect()
+}
+
 /// Build a map from (`old_start`, `old_end`) to the green token at that span by walking the tree.
-fn old_tree_token_map(root: &GreenNode, _old_source: &[u8]) -> HashMap<(Pos, Pos), Arc<GreenToken>> {
+fn old_tree_token_map(
+    root: &GreenNode,
+    _old_source: &[u8],
+) -> HashMap<(Pos, Pos), Arc<GreenToken>> {
     let mut map = HashMap::new();
     let mut stack: Vec<(&GreenNode, Pos)> = vec![(root, 0)];
     while let Some((node, offset)) = stack.pop() {
@@ -88,7 +112,7 @@ fn old_tree_token_map(root: &GreenNode, _old_source: &[u8]) -> HashMap<(Pos, Pos
 
 /// Build a green tree from events, reusing tokens (and optionally nodes) from the old tree
 /// when the new parse produces the same span in an unchanged region.
-#[must_use] 
+#[must_use]
 pub fn build_green_tree_with_reuse(
     new_source: &[u8],
     events: &[TreeEvent],
@@ -107,7 +131,14 @@ pub fn build_green_tree_with_reuse(
     for ev in events {
         match *ev {
             TreeEvent::NodeOpen { kind, field, .. } => {
-                stack.push((kind, field, Vec::new()));
+                // Move trailing trivia from the current top node into the new node as leading trivia.
+                // Must match build_green_tree so tree structure (and thus token positions) is identical to full parse.
+                let leading = if let Some((_, _, children)) = stack.last_mut() {
+                    drain_trailing_trivia(children)
+                } else {
+                    Vec::new()
+                };
+                stack.push((kind, field, leading));
             }
 
             TreeEvent::NodeClose { .. } => {
@@ -116,17 +147,18 @@ pub fn build_green_tree_with_reuse(
                 push_element(&mut stack, &mut roots, (my_field, GreenElement::Node(node)));
             }
 
-            TreeEvent::Token { kind, start, end, is_trivia } => {
+            TreeEvent::Token {
+                kind,
+                start,
+                end,
+                is_trivia,
+            } => {
                 if start == end {
                     continue;
                 }
-                let tok_arc = if let Some((old_s, old_e)) = new_span_to_old(
-                    start,
-                    end,
-                    edit_start,
-                    edit_end,
-                    new_text_len,
-                ) {
+                let tok_arc = if let Some((old_s, old_e)) =
+                    new_span_to_old(start, end, edit_start, edit_end, new_text_len)
+                {
                     token_map.get(&(old_s, old_e)).cloned()
                 } else {
                     None
@@ -230,7 +262,11 @@ mod tests {
     fn reparse_reuses_unchanged_tokens() {
         let old_source = b"ab";
         let events_old = [
-            TreeEvent::NodeOpen { kind: 1, field: None, pos: 0 },
+            TreeEvent::NodeOpen {
+                kind: 1,
+                field: None,
+                pos: 0,
+            },
             TreeEvent::Token {
                 kind: 10,
                 start: 0,
@@ -254,7 +290,11 @@ mod tests {
         let new_source = edit.apply(old_source);
         assert_eq!(new_source.as_slice(), b"axy");
         let events_new = [
-            TreeEvent::NodeOpen { kind: 1, field: None, pos: 0 },
+            TreeEvent::NodeOpen {
+                kind: 1,
+                field: None,
+                pos: 0,
+            },
             TreeEvent::Token {
                 kind: 10,
                 start: 0,
@@ -286,7 +326,10 @@ mod tests {
         if let (GreenElement::Token(new_t), GreenElement::Token(old_t)) =
             (&new_root.children[0], &old_root.children[0])
         {
-            assert!(Arc::ptr_eq(new_t, old_t), "first token (unchanged span) should be reused");
+            assert!(
+                Arc::ptr_eq(new_t, old_t),
+                "first token (unchanged span) should be reused"
+            );
         }
     }
 }

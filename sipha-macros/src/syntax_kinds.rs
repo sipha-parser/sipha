@@ -40,12 +40,9 @@ pub fn derive_syntax_kinds(input: TokenStream) -> TokenStream {
     let variants = match &input.data {
         Data::Enum(data) => &data.variants,
         _ => {
-            return Error::new_spanned(
-                name,
-                "SyntaxKinds can only be derived for enums",
-            )
-            .to_compile_error()
-            .into()
+            return Error::new_spanned(name, "SyntaxKinds can only be derived for enums")
+                .to_compile_error()
+                .into()
         }
     };
 
@@ -54,12 +51,9 @@ pub fn derive_syntax_kinds(input: TokenStream) -> TokenStream {
         match &v.fields {
             Fields::Unit => unit_variants.push(v),
             _ => {
-                return Error::new_spanned(
-                    v,
-                    "SyntaxKinds only supports unit variants (no fields)",
-                )
-                .to_compile_error()
-                .into()
+                return Error::new_spanned(v, "SyntaxKinds only supports unit variants (no fields)")
+                    .to_compile_error()
+                    .into()
             }
         }
     }

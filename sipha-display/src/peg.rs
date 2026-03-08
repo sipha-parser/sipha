@@ -121,10 +121,18 @@ fn parse_sequence_until(
                 }
                 ip = target;
             }
-            Insn::Commit { .. } | Insn::BackCommit { .. } | Insn::PartialCommit { .. } | Insn::NegBackCommit { .. } => break,
-            Insn::NodeBegin { .. } | Insn::NodeEnd | Insn::TokenBegin { .. } | Insn::TokenEnd => ip += 1,
+            Insn::Commit { .. }
+            | Insn::BackCommit { .. }
+            | Insn::PartialCommit { .. }
+            | Insn::NegBackCommit { .. } => break,
+            Insn::NodeBegin { .. } | Insn::NodeEnd | Insn::TokenBegin { .. } | Insn::TokenEnd => {
+                ip += 1
+            }
             Insn::CaptureBegin { .. } | Insn::CaptureEnd { .. } => ip += 1,
-            Insn::IfFlag { .. } | Insn::IfNotFlag { .. } | Insn::PushFlags { .. } | Insn::PopFlags => ip += 1,
+            Insn::IfFlag { .. }
+            | Insn::IfNotFlag { .. }
+            | Insn::PushFlags { .. }
+            | Insn::PopFlags => ip += 1,
             _ => {
                 let (expr, next) = parse_atom(graph, ip);
                 if !expr.is_empty() {
@@ -155,7 +163,8 @@ fn parse_choice(
     };
 
     // First branch: from ip+1 until we see Commit, PartialCommit, BackCommit, or NegBackCommit.
-    let (first, sentinel_ip, sentinel) = parse_sequence_until_sentinel(graph, ip + 1, reachable, seen);
+    let (first, sentinel_ip, sentinel) =
+        parse_sequence_until_sentinel(graph, ip + 1, reachable, seen);
 
     match sentinel {
         Sentinel::Commit(target) => {
@@ -229,9 +238,14 @@ fn parse_sequence_until_sentinel(
                 ip = next;
             }
             Insn::Jump { target } => ip = target,
-            Insn::NodeBegin { .. } | Insn::NodeEnd | Insn::TokenBegin { .. } | Insn::TokenEnd => ip += 1,
+            Insn::NodeBegin { .. } | Insn::NodeEnd | Insn::TokenBegin { .. } | Insn::TokenEnd => {
+                ip += 1
+            }
             Insn::CaptureBegin { .. } | Insn::CaptureEnd { .. } => ip += 1,
-            Insn::IfFlag { .. } | Insn::IfNotFlag { .. } | Insn::PushFlags { .. } | Insn::PopFlags => ip += 1,
+            Insn::IfFlag { .. }
+            | Insn::IfNotFlag { .. }
+            | Insn::PushFlags { .. }
+            | Insn::PopFlags => ip += 1,
             _ => {
                 if !seen.insert(ip) {
                     break;
@@ -297,7 +311,12 @@ fn format_char_class(class: CharClass) -> String {
     let mut ranges = Vec::new();
     for b in 0u8..=255 {
         if class.contains(b) {
-            if ranges.is_empty() || ranges.last().map(|(_, e)| *e != b.wrapping_sub(1)).unwrap_or(true) {
+            if ranges.is_empty()
+                || ranges
+                    .last()
+                    .map(|(_, e)| *e != b.wrapping_sub(1))
+                    .unwrap_or(true)
+            {
                 ranges.push((b, b));
             } else {
                 let last = ranges.last_mut().unwrap();

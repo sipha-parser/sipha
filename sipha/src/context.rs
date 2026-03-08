@@ -63,7 +63,7 @@ impl ParseContext {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            words:          Vec::new(),
+            words: Vec::new(),
             error_node_kind: None,
         }
     }
@@ -74,7 +74,7 @@ impl ParseContext {
     pub fn with_capacity_for(max_flag_id: FlagId) -> Self {
         let n = word_index(max_flag_id) + 1;
         Self {
-            words:          vec![0u64; n],
+            words: vec![0u64; n],
             error_node_kind: None,
         }
     }
@@ -185,9 +185,9 @@ pub(crate) const fn bit_index(id: FlagId) -> u32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlagMaskWord {
     /// Which word in the flags bank this entry applies to.
-    pub word:       u32,
+    pub word: u32,
     /// Bits to set in that word.
-    pub set_bits:   u64,
+    pub set_bits: u64,
     /// Bits to clear in that word.
     pub clear_bits: u64,
 }

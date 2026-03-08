@@ -49,14 +49,12 @@ pub enum MemoEntry {
     /// `events` holds every [`CaptureEvent`], `tree_events` every [`TreeEvent`],
     /// emitted during the match.
     Hit {
-        end_pos:     Pos,
-        events:      Box<[CaptureEvent]>,
+        end_pos: Pos,
+        events: Box<[CaptureEvent]>,
         tree_events: Box<[TreeEvent]>,
     },
     /// The rule failed.  `furthest` is the deepest position reached.
-    Miss {
-        furthest: Pos,
-    },
+    Miss { furthest: Pos },
 }
 
 // ─── Query result returned to the caller ─────────────────────────────────────
@@ -69,8 +67,8 @@ pub enum MemoQuery {
     Miss { furthest: Pos },
     /// Cached success — caller should replay these events and advance pos.
     Hit {
-        end_pos:     Pos,
-        events:      Vec<CaptureEvent>,
+        end_pos: Pos,
+        events: Vec<CaptureEvent>,
         tree_events: Vec<TreeEvent>,
     },
 }
@@ -116,10 +114,16 @@ impl MemoTable {
     pub fn query(&self, rule: RuleId, pos: Pos) -> MemoQuery {
         match self.table.get(&pack(rule, pos)) {
             None => MemoQuery::Unknown,
-            Some(MemoEntry::Miss { furthest }) => MemoQuery::Miss { furthest: *furthest },
-            Some(MemoEntry::Hit { end_pos, events, tree_events }) => MemoQuery::Hit {
-                end_pos:     *end_pos,
-                events:      events.to_vec(),
+            Some(MemoEntry::Miss { furthest }) => MemoQuery::Miss {
+                furthest: *furthest,
+            },
+            Some(MemoEntry::Hit {
+                end_pos,
+                events,
+                tree_events,
+            }) => MemoQuery::Hit {
+                end_pos: *end_pos,
+                events: events.to_vec(),
                 tree_events: tree_events.to_vec(),
             },
         }
@@ -138,7 +142,9 @@ impl MemoTable {
     ) -> MemoReplay {
         match self.table.get(&pack(rule, pos)) {
             None => MemoReplay::Unknown,
-            Some(MemoEntry::Miss { furthest }) => MemoReplay::Miss { furthest: *furthest },
+            Some(MemoEntry::Miss { furthest }) => MemoReplay::Miss {
+                furthest: *furthest,
+            },
             Some(MemoEntry::Hit {
                 end_pos,
                 events: cached_events,
@@ -174,7 +180,8 @@ impl MemoTable {
     /// Store a failed result with the deepest position reached.
     #[inline]
     pub fn insert_miss(&mut self, rule: RuleId, pos: Pos, furthest: Pos) {
-        self.table.insert(pack(rule, pos), MemoEntry::Miss { furthest });
+        self.table
+            .insert(pack(rule, pos), MemoEntry::Miss { furthest });
     }
 
     /// Number of cached entries (for diagnostics / benchmarks).

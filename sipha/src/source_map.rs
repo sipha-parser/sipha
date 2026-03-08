@@ -30,7 +30,7 @@ pub struct SpanMap {
 
 impl SpanMap {
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn new() -> Self {
         Self { pairs: Vec::new() }
     }
@@ -45,7 +45,7 @@ impl SpanMap {
     }
 
     /// Build from a list of (new, old) pairs and sort.
-    #[must_use] 
+    #[must_use]
     pub fn from_pairs(mut pairs: Vec<(Span, Span)>) -> Self {
         pairs.sort_by_key(|(s, _)| s.start);
         Self { pairs }
@@ -80,5 +80,7 @@ impl SpanMapping for SpanMap {
 /// offset in the new text.
 #[inline]
 pub fn map_offset(mapping: &impl SpanMapping, new_offset: Pos) -> Option<Pos> {
-    mapping.map_span(Span::new(new_offset, new_offset + 1)).map(|s| s.start)
+    mapping
+        .map_span(Span::new(new_offset, new_offset + 1))
+        .map(|s| s.start)
 }

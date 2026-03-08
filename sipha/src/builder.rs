@@ -128,12 +128,12 @@
 //! [`lookahead`]: GrammarBuilder::lookahead
 //! [`neg_lookahead`]: GrammarBuilder::neg_lookahead
 
-use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::{
     context::{FlagId, FlagMaskWord},
     insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph},
     types::{CharClass, FieldId, InsnId, IntoSyntaxKind, RuleId, Tag},
 };
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Single choice closure for [`GrammarBuilder::choices`] and related.
 type GrammarChoiceFn = Box<dyn FnOnce(&mut GrammarBuilder)>;
@@ -175,17 +175,25 @@ pub enum Repeat {
     Between(u32, u32),
 }
 
-impl From<u32>                             for Repeat {
-    fn from(n: u32) -> Self { Self::Exact(n) }
+impl From<u32> for Repeat {
+    fn from(n: u32) -> Self {
+        Self::Exact(n)
+    }
 }
-impl From<std::ops::RangeFrom<u32>>        for Repeat {
-    fn from(r: std::ops::RangeFrom<u32>) -> Self { Self::AtLeast(r.start) }
+impl From<std::ops::RangeFrom<u32>> for Repeat {
+    fn from(r: std::ops::RangeFrom<u32>) -> Self {
+        Self::AtLeast(r.start)
+    }
 }
 impl From<std::ops::RangeToInclusive<u32>> for Repeat {
-    fn from(r: std::ops::RangeToInclusive<u32>) -> Self { Self::AtMost(r.end) }
+    fn from(r: std::ops::RangeToInclusive<u32>) -> Self {
+        Self::AtMost(r.end)
+    }
 }
-impl From<std::ops::RangeInclusive<u32>>   for Repeat {
-    fn from(r: std::ops::RangeInclusive<u32>) -> Self { Self::Between(*r.start(), *r.end()) }
+impl From<std::ops::RangeInclusive<u32>> for Repeat {
+    fn from(r: std::ops::RangeInclusive<u32>) -> Self {
+        Self::Between(*r.start(), *r.end())
+    }
 }
 
 // ─── Internal: LiteralInterner ────────────────────────────────────────────────
@@ -194,20 +202,24 @@ impl From<std::ops::RangeInclusive<u32>>   for Repeat {
 ///
 /// Layout: `data[offsets[i]..offsets[i+1]]` is the bytes for literal `i`.
 struct LiteralInterner {
-    data:    Vec<u8>,
+    data: Vec<u8>,
     offsets: Vec<u32>,
 }
 
 impl LiteralInterner {
     fn new() -> Self {
-        Self { data: Vec::new(), offsets: vec![0] }
+        Self {
+            data: Vec::new(),
+            offsets: vec![0],
+        }
     }
 
     /// Append `bytes` and return the id of the new literal.
     fn intern(&mut self, bytes: &[u8]) -> u32 {
         let id = u32::try_from(self.offsets.len().saturating_sub(1)).unwrap_or(0);
         self.data.extend_from_slice(bytes);
-        self.offsets.push(u32::try_from(self.data.len()).unwrap_or(0));
+        self.offsets
+            .push(u32::try_from(self.data.len()).unwrap_or(0));
         id
     }
 
@@ -228,13 +240,16 @@ impl LiteralInterner {
 /// IDs by their 64-bit word, appends the resulting [`FlagMaskWord`] entries,
 /// and records the slice offset.
 struct FlagMaskInterner {
-    data:    Vec<FlagMaskWord>,
+    data: Vec<FlagMaskWord>,
     offsets: Vec<u32>,
 }
 
 impl FlagMaskInterner {
     fn new() -> Self {
-        Self { data: Vec::new(), offsets: vec![0] }
+        Self {
+            data: Vec::new(),
+            offsets: vec![0],
+        }
     }
 
     /// Intern a mask defined by `set_ids` and `clear_ids` and return its id.
@@ -253,9 +268,14 @@ impl FlagMaskInterner {
 
         let id = u32::try_from(self.offsets.len().saturating_sub(1)).unwrap_or(0);
         for (word, (set_bits, clear_bits)) in by_word {
-            self.data.push(FlagMaskWord { word, set_bits, clear_bits });
+            self.data.push(FlagMaskWord {
+                word,
+                set_bits,
+                clear_bits,
+            });
         }
-        self.offsets.push(u32::try_from(self.data.len()).unwrap_or(0));
+        self.offsets
+            .push(u32::try_from(self.data.len()).unwrap_or(0));
         id
     }
 
@@ -276,21 +296,21 @@ impl FlagMaskInterner {
 /// borrows from this value.  Keep `BuiltGraph` alive for as long as the
 /// `ParseGraph` (or any derived references) are in use.
 pub struct BuiltGraph {
-    pub insns:             Vec<Insn>,
-    pub rule_entry:        Vec<InsnId>,
-    pub literal_data:      Vec<u8>,
-    pub literal_offsets:   Vec<u32>,
-    pub jump_tables:       Vec<[u32; 256]>,
-    pub flag_mask_data:    Vec<FlagMaskWord>,
+    pub insns: Vec<Insn>,
+    pub rule_entry: Vec<InsnId>,
+    pub literal_data: Vec<u8>,
+    pub literal_offsets: Vec<u32>,
+    pub jump_tables: Vec<[u32; 256]>,
+    pub flag_mask_data: Vec<FlagMaskWord>,
     pub flag_mask_offsets: Vec<u32>,
-    pub rule_names:        Vec<&'static str>,
-    pub tag_names:         Vec<&'static str>,
+    pub rule_names: Vec<&'static str>,
+    pub tag_names: Vec<&'static str>,
     /// Labels for [`Insn::Class`] diagnostics; index 0 is the default "character class".
-    pub class_labels:      Vec<&'static str>,
+    pub class_labels: Vec<&'static str>,
     /// Labels for [`expect_label`](GrammarBuilder::expect_label).
-    pub expected_labels:   Vec<&'static str>,
+    pub expected_labels: Vec<&'static str>,
     /// Names for named child fields (indexed by [`FieldId`]); used by `field_by_id` / name resolution.
-    pub field_names:       Vec<&'static str>,
+    pub field_names: Vec<&'static str>,
 }
 
 impl BuiltGraph {
@@ -309,7 +329,7 @@ impl BuiltGraph {
     /// Violating these conditions is undefined behavior.  In typical usage
     /// the `BuiltGraph` is stored in a variable that outlives the parse
     /// call (e.g. `let built = g.finish()?; let graph = built.as_graph();`).
-    #[must_use] 
+    #[must_use]
     pub fn as_graph(&self) -> ParseGraph {
         // SAFETY: see doc comment above.
         const unsafe fn to_static<T>(v: &[T]) -> &'static [T] {
@@ -317,29 +337,39 @@ impl BuiltGraph {
         }
         unsafe {
             ParseGraph {
-                insns:       to_static(&self.insns),
-                rule_entry:  to_static(&self.rule_entry),
+                insns: to_static(&self.insns),
+                rule_entry: to_static(&self.rule_entry),
                 jump_tables: to_static(&self.jump_tables),
                 literals: LiteralTable {
-                    data:    to_static(&self.literal_data),
+                    data: to_static(&self.literal_data),
                     offsets: to_static(&self.literal_offsets),
                 },
                 flag_masks: FlagMaskTable {
-                    data:    to_static(&self.flag_mask_data),
+                    data: to_static(&self.flag_mask_data),
                     offsets: to_static(&self.flag_mask_offsets),
                 },
-                rule_names:    to_static(&self.rule_names),
-                tag_names:     to_static(&self.tag_names),
-                class_labels:    if self.class_labels.is_empty() {
+                rule_names: to_static(&self.rule_names),
+                tag_names: to_static(&self.tag_names),
+                class_labels: if self.class_labels.is_empty() {
                     const DEFAULT: &[&str] = &["character class"];
                     DEFAULT
                 } else {
                     to_static(&self.class_labels)
                 },
                 expected_labels: to_static(&self.expected_labels),
-                field_names:     to_static(&self.field_names),
+                field_names: to_static(&self.field_names),
             }
         }
+    }
+
+    /// Resolve a field name to its [`FieldId`]. Returns the index of the first
+    /// matching name in `field_names`, or `None` if not found.
+    #[must_use]
+    pub fn field_id(&self, name: &str) -> Option<FieldId> {
+        self.field_names
+            .iter()
+            .position(|&n| n == name)
+            .and_then(|i| FieldId::try_from(i).ok())
     }
 }
 
@@ -354,9 +384,9 @@ pub struct GrammarBuilder {
     insns: Vec<Insn>,
 
     // ── Rule registry ─────────────────────────────────────────────────────────
-    rule_entry:    Vec<InsnId>,
-    rule_by_name:  HashMap<String, RuleId>,
-    rule_names:    Vec<&'static str>,
+    rule_entry: Vec<InsnId>,
+    rule_by_name: HashMap<String, RuleId>,
+    rule_names: Vec<&'static str>,
     /// `(insn_addr, rule_name)` pairs resolved during [`finish`](Self::finish).
     pending_calls: Vec<(usize, String)>,
     /// `(insn_addr, sync_rule_name)` for [`RecoverUntil`](Insn::RecoverUntil); resolved in [`finish`](Self::finish).
@@ -364,13 +394,13 @@ pub struct GrammarBuilder {
 
     // ── Tag registry ──────────────────────────────────────────────────────────
     tag_by_name: HashMap<String, Tag>,
-    tag_names:   Vec<&'static str>,
+    tag_names: Vec<&'static str>,
 
     // ── Field names (for named child access) ─────────────────────────────────
     field_by_name: HashMap<String, FieldId>,
 
     // ── Interners ─────────────────────────────────────────────────────────────
-    literals:   LiteralInterner,
+    literals: LiteralInterner,
     flag_masks: FlagMaskInterner,
 
     // ── Jump tables (for ByteDispatch) ────────────────────────────────────────
@@ -412,27 +442,27 @@ pub struct GrammarBuilder {
 }
 
 impl GrammarBuilder {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
-            insns:         Vec::with_capacity(1024),
-            rule_entry:    Vec::new(),
-            rule_by_name:  HashMap::new(),
-            rule_names:    Vec::new(),
-            pending_calls:   Vec::new(),
+            insns: Vec::with_capacity(1024),
+            rule_entry: Vec::new(),
+            rule_by_name: HashMap::new(),
+            rule_names: Vec::new(),
+            pending_calls: Vec::new(),
             pending_recover: Vec::new(),
-            tag_by_name:     HashMap::new(),
-            tag_names:     Vec::new(),
-            field_by_name:   HashMap::new(),
-            literals:      LiteralInterner::new(),
-            flag_masks:    FlagMaskInterner::new(),
-            jump_tables:       Vec::new(),
-            trivia_rule:       None,
-            auto_trivia:       false,
-            class_labels:      vec!["character class"],
-            expected_labels:       Vec::new(),
-            field_names:       Vec::new(),
-            allow_rule_cycles:     false,
+            tag_by_name: HashMap::new(),
+            tag_names: Vec::new(),
+            field_by_name: HashMap::new(),
+            literals: LiteralInterner::new(),
+            flag_masks: FlagMaskInterner::new(),
+            jump_tables: Vec::new(),
+            trivia_rule: None,
+            auto_trivia: false,
+            class_labels: vec!["character class"],
+            expected_labels: Vec::new(),
+            field_names: Vec::new(),
+            allow_rule_cycles: false,
             allow_unreachable_rules: true,
         }
     }
@@ -559,7 +589,8 @@ impl GrammarBuilder {
     /// [`neg_lookahead`]: Self::neg_lookahead
     /// [`node`]: Self::node
     pub fn parser_rule<F>(&mut self, name: &'static str, body: F) -> RuleId
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         self.rule_impl(name, body, true)
     }
@@ -579,7 +610,8 @@ impl GrammarBuilder {
     /// });
     /// ```
     pub fn lexer_rule<F>(&mut self, name: &'static str, body: F) -> RuleId
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         self.rule_impl(name, body, false)
     }
@@ -596,7 +628,8 @@ impl GrammarBuilder {
     /// });
     /// ```
     pub fn rule<F>(&mut self, name: &'static str, body: F) -> RuleId
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         let id = self.begin_rule(name);
         body(self);
@@ -610,7 +643,8 @@ impl GrammarBuilder {
     /// [`end_rule`](Self::end_rule).
     pub fn begin_rule(&mut self, name: &'static str) -> RuleId {
         let id = RuleId::try_from(self.rule_entry.len()).unwrap_or(0);
-        self.rule_entry.push(InsnId::try_from(self.insns.len()).unwrap_or(0));
+        self.rule_entry
+            .push(InsnId::try_from(self.insns.len()).unwrap_or(0));
         self.rule_by_name.insert(name.to_string(), id);
         self.rule_names.push(name);
         id
@@ -642,7 +676,8 @@ impl GrammarBuilder {
     /// });
     /// ```
     pub fn no_skip<F>(&mut self, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         let prev = self.auto_trivia;
         self.auto_trivia = false;
@@ -727,12 +762,19 @@ impl GrammarBuilder {
 
     /// Match exactly one byte value.
     pub fn byte(&mut self, b: u8) -> InsnId {
-        self.emit(Insn::Byte { byte: b, on_fail: u32::MAX })
+        self.emit(Insn::Byte {
+            byte: b,
+            on_fail: u32::MAX,
+        })
     }
 
     /// Match any byte in the inclusive range `[lo, hi]`.
     pub fn byte_range(&mut self, lo: u8, hi: u8) -> InsnId {
-        self.emit(Insn::ByteRange { lo, hi, on_fail: u32::MAX })
+        self.emit(Insn::ByteRange {
+            lo,
+            hi,
+            on_fail: u32::MAX,
+        })
     }
 
     /// Match any byte whose bit is set in `class`.
@@ -740,7 +782,7 @@ impl GrammarBuilder {
         self.emit(Insn::Class {
             class,
             label_id: 0,
-            on_fail:  u32::MAX,
+            on_fail: u32::MAX,
         })
     }
 
@@ -758,7 +800,10 @@ impl GrammarBuilder {
     /// Match the exact byte string `bytes` (SIMD-accelerated for ≥16 bytes).
     pub fn literal(&mut self, bytes: &[u8]) -> InsnId {
         let lit_id = self.literals.intern(bytes);
-        self.emit(Insn::Literal { lit_id, on_fail: u32::MAX })
+        self.emit(Insn::Literal {
+            lit_id,
+            on_fail: u32::MAX,
+        })
     }
 
     /// Match end-of-input.
@@ -785,7 +830,10 @@ impl GrammarBuilder {
     /// For ASCII codepoints (U+0000–U+007F), `byte(c as u8)` is equivalent
     /// and avoids the UTF-8 decode.
     pub fn char(&mut self, c: char) -> InsnId {
-        self.emit(Insn::Char { codepoint: u32::from(c), on_fail: u32::MAX })
+        self.emit(Insn::Char {
+            codepoint: u32::from(c),
+            on_fail: u32::MAX,
+        })
     }
 
     /// Match any codepoint in the inclusive range `[lo, hi]`.
@@ -826,7 +874,9 @@ impl GrammarBuilder {
     /// Inside a [`parser_rule`](Self::parser_rule), a [`skip()`](Self::skip)
     /// is emitted **before** the call.
     pub fn call(&mut self, rule_name: impl Into<String>) -> InsnId {
-        if self.auto_trivia { self.skip(); }
+        if self.auto_trivia {
+            self.skip();
+        }
         let addr = self.current_ip();
         self.pending_calls.push((addr as usize, rule_name.into()));
         self.emit(Insn::Call { rule: u16::MAX })
@@ -837,7 +887,9 @@ impl GrammarBuilder {
     /// Inside a [`parser_rule`](Self::parser_rule), a [`skip()`](Self::skip)
     /// is emitted **before** the call.
     pub fn call_id(&mut self, rule: RuleId) -> InsnId {
-        if self.auto_trivia { self.skip(); }
+        if self.auto_trivia {
+            self.skip();
+        }
         self.emit(Insn::Call { rule })
     }
 
@@ -849,7 +901,8 @@ impl GrammarBuilder {
     /// they produce the green/red tree.  `capture` is retained for grammars
     /// that use the flat [`CaptureEvent`](crate::types::CaptureEvent) log.
     pub fn capture<F>(&mut self, tag: Tag, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         self.emit(Insn::CaptureBegin { tag });
         body(self);
@@ -872,9 +925,13 @@ impl GrammarBuilder {
     /// });
     /// ```
     pub fn node<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
-        self.emit(Insn::NodeBegin { kind: kind.into_syntax_kind(), field: None });
+        self.emit(Insn::NodeBegin {
+            kind: kind.into_syntax_kind(),
+            field: None,
+        });
         body(self);
         self.emit(Insn::NodeEnd);
     }
@@ -885,10 +942,14 @@ impl GrammarBuilder {
     /// [`SyntaxNode::field_by_id`](crate::red::SyntaxNode::field_by_id) with the
     /// corresponding [`FieldId`](crate::types::FieldId) to access this child by name.
     pub fn node_with_field<K: IntoSyntaxKind, F>(&mut self, kind: K, field: &'static str, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         let field_id = self.intern_field(field);
-        self.emit(Insn::NodeBegin { kind: kind.into_syntax_kind(), field: Some(field_id) });
+        self.emit(Insn::NodeBegin {
+            kind: kind.into_syntax_kind(),
+            field: Some(field_id),
+        });
         body(self);
         self.emit(Insn::NodeEnd);
     }
@@ -917,10 +978,16 @@ impl GrammarBuilder {
     /// });
     /// ```
     pub fn token<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
-        if self.auto_trivia { self.skip(); }
-        self.emit(Insn::TokenBegin { kind: kind.into_syntax_kind(), is_trivia: false });
+        if self.auto_trivia {
+            self.skip();
+        }
+        self.emit(Insn::TokenBegin {
+            kind: kind.into_syntax_kind(),
+            is_trivia: false,
+        });
         // Token interiors are always lexer-level: no auto-skip inside.
         let prev = self.auto_trivia;
         self.auto_trivia = false;
@@ -943,16 +1010,28 @@ impl GrammarBuilder {
     /// });
     /// ```
     pub fn trivia<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         // Never inject a skip before trivia, and always run the body in
         // lexer mode — trivia patterns are byte-level by definition.
-        self.emit(Insn::TokenBegin { kind: kind.into_syntax_kind(), is_trivia: true });
+        self.emit(Insn::TokenBegin {
+            kind: kind.into_syntax_kind(),
+            is_trivia: true,
+        });
         let prev = self.auto_trivia;
         self.auto_trivia = false;
         body(self);
         self.auto_trivia = prev;
         self.emit(Insn::TokenEnd);
+    }
+
+    /// Shorthand for a keyword token: `token(kind, |g| g.literal(word))`.
+    /// Use for single-literals like `var`, `return`, `if`.
+    pub fn keyword<K: IntoSyntaxKind>(&mut self, kind: K, word: &'static [u8]) {
+        self.token(kind, |g| {
+            g.literal(word);
+        });
     }
 
     // ── PEG combinators ───────────────────────────────────────────────────────
@@ -962,12 +1041,14 @@ impl GrammarBuilder {
     /// Auto-skip mode is passed through transparently to both branches.
     /// For many alternatives, use [`choices`](Self::choices) with a vec.
     pub fn choice<F1, F2>(&mut self, e1: F1, e2: F2)
-    where F1: FnOnce(&mut Self), F2: FnOnce(&mut Self)
+    where
+        F1: FnOnce(&mut Self),
+        F2: FnOnce(&mut Self),
     {
         let choice_ip = self.emit(Insn::Choice { alt: u32::MAX });
         e1(self);
         let commit_ip = self.emit(Insn::Commit { target: u32::MAX });
-        let e2_start  = self.current_ip();
+        let e2_start = self.current_ip();
         self.patch(choice_ip, e2_start);
         e2(self);
         let after = self.current_ip();
@@ -1005,6 +1086,20 @@ impl GrammarBuilder {
         }
     }
 
+    /// N-way choice where each alternative is a single rule call.
+    /// Equivalent to `choices(rules.iter().map(|r| Box::new(|g| g.call(r))).collect())`.
+    pub fn choice_rules(&mut self, rules: &[&'static str]) {
+        let alternatives: Vec<GrammarChoiceFn> = rules
+            .iter()
+            .map(|&r| {
+                Box::new(move |g: &mut GrammarBuilder| {
+                    g.call(r);
+                }) as GrammarChoiceFn
+            })
+            .collect();
+        self.choices(alternatives);
+    }
+
     /// Three-way choice without allocation. Tries `e1`, then `e2`, then `e3`.
     pub fn choice3<F1, F2, F3>(&mut self, e1: F1, e2: F2, e3: F3)
     where
@@ -1028,21 +1123,23 @@ impl GrammarBuilder {
 
     /// `e?` — match `body` zero or one time.
     pub fn optional<F>(&mut self, body: F)
-    where F: Fn(&mut Self)
+    where
+        F: Fn(&mut Self),
     {
         let choice_ip = self.emit(Insn::Choice { alt: u32::MAX });
         body(self);
         let commit_ip = self.emit(Insn::Commit { target: u32::MAX });
-        let after     = self.current_ip();
+        let after = self.current_ip();
         self.patch(choice_ip, after);
         self.patch(commit_ip, after);
     }
 
     /// `e*` — match `body` zero or more times.
     pub fn zero_or_more<F>(&mut self, body: F)
-    where F: Fn(&mut Self)
+    where
+        F: Fn(&mut Self),
     {
-        let choice_ip  = self.emit(Insn::Choice { alt: u32::MAX });
+        let choice_ip = self.emit(Insn::Choice { alt: u32::MAX });
         let loop_start = self.current_ip();
         body(self);
         self.emit(Insn::PartialCommit { target: loop_start });
@@ -1052,7 +1149,8 @@ impl GrammarBuilder {
 
     /// `e+` — match `body` one or more times.
     pub fn one_or_more<F>(&mut self, body: F)
-    where F: Fn(&mut Self)
+    where
+        F: Fn(&mut Self),
     {
         body(self);
         self.zero_or_more(body);
@@ -1060,12 +1158,13 @@ impl GrammarBuilder {
 
     /// `&e` — succeed iff `body` matches, without consuming input.
     pub fn lookahead<F>(&mut self, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
-        let choice_ip  = self.emit(Insn::Choice { alt: u32::MAX });
+        let choice_ip = self.emit(Insn::Choice { alt: u32::MAX });
         body(self);
         let backcommit = self.emit(Insn::BackCommit { target: u32::MAX });
-        let fail_ip    = self.current_ip();
+        let fail_ip = self.current_ip();
         self.patch(choice_ip, fail_ip);
         self.emit(Insn::Fail);
         let after = self.current_ip();
@@ -1074,12 +1173,13 @@ impl GrammarBuilder {
 
     /// `!e` — succeed iff `body` does **not** match, without consuming input.
     pub fn neg_lookahead<F>(&mut self, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         let choice_ip = self.emit(Insn::Choice { alt: u32::MAX });
         body(self);
-        let neg_ip    = self.emit(Insn::NegBackCommit { target: u32::MAX });
-        let after     = self.current_ip();
+        let neg_ip = self.emit(Insn::NegBackCommit { target: u32::MAX });
+        let after = self.current_ip();
         self.patch(choice_ip, after);
         self.patch(neg_ip, after);
     }
@@ -1089,7 +1189,8 @@ impl GrammarBuilder {
     /// When a parse fails, the diagnostic will show `label` (e.g. "statement", "expression")
     /// in the expected set when the failure occurred at the start of this region.
     pub fn expect_label<F>(&mut self, label: &'static str, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         let label_id = u32::try_from(self.expected_labels.len()).unwrap_or(0);
         self.expected_labels.push(label);
@@ -1103,7 +1204,8 @@ impl GrammarBuilder {
     /// backtrack to before this point. Use inside a [`choice`](Self::choice) when the
     /// first successful match should be final. On failure, backtracking proceeds as usual.
     pub fn cut<F>(&mut self, body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         body(self);
         let commit_ip = self.emit(Insn::Commit { target: u32::MAX });
@@ -1136,9 +1238,10 @@ impl GrammarBuilder {
         let recover_ip = self.current_ip();
         self.emit(Insn::RecoverUntil {
             sync_rule: 0, // patched at finish()
-            resume:     u32::MAX,
+            resume: u32::MAX,
         });
-        self.pending_recover.push((recover_ip as usize, sync_rule.to_string()));
+        self.pending_recover
+            .push((recover_ip as usize, sync_rule.to_string()));
         body(self);
         let resume_ip = self.current_ip();
         self.patch(recover_ip, resume_ip);
@@ -1167,12 +1270,29 @@ impl GrammarBuilder {
         R: Into<Repeat>,
     {
         match range.into() {
-            Repeat::Exact(n)       => { for _ in 0..n { body(self); } }
-            Repeat::AtLeast(n)     => { for _ in 0..n { body(self); } self.zero_or_more(body); }
-            Repeat::AtMost(n)      => { for _ in 0..n { self.optional(&body); } }
+            Repeat::Exact(n) => {
+                for _ in 0..n {
+                    body(self);
+                }
+            }
+            Repeat::AtLeast(n) => {
+                for _ in 0..n {
+                    body(self);
+                }
+                self.zero_or_more(body);
+            }
+            Repeat::AtMost(n) => {
+                for _ in 0..n {
+                    self.optional(&body);
+                }
+            }
             Repeat::Between(lo, hi) => {
-                for _ in 0..lo                    { body(self); }
-                for _ in 0..hi.saturating_sub(lo) { self.optional(&body); }
+                for _ in 0..lo {
+                    body(self);
+                }
+                for _ in 0..hi.saturating_sub(lo) {
+                    self.optional(&body);
+                }
             }
         }
     }
@@ -1181,12 +1301,18 @@ impl GrammarBuilder {
 
     /// Succeed iff flag `id` is **set**; does not consume input.
     pub fn if_flag(&mut self, id: FlagId) -> InsnId {
-        self.emit(Insn::IfFlag { flag_id: id, on_fail: u32::MAX })
+        self.emit(Insn::IfFlag {
+            flag_id: id,
+            on_fail: u32::MAX,
+        })
     }
 
     /// Succeed iff flag `id` is **clear**; does not consume input.
     pub fn if_not_flag(&mut self, id: FlagId) -> InsnId {
-        self.emit(Insn::IfNotFlag { flag_id: id, on_fail: u32::MAX })
+        self.emit(Insn::IfNotFlag {
+            flag_id: id,
+            on_fail: u32::MAX,
+        })
     }
 
     /// Run `body` with `set_ids` set and `clear_ids` cleared, then restore.
@@ -1194,7 +1320,8 @@ impl GrammarBuilder {
     /// On any exit — success or backtrack — the previous flag values are
     /// automatically restored via the snapshot arena.
     pub fn with_flags<F>(&mut self, set_ids: &[FlagId], clear_ids: &[FlagId], body: F)
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         let mask_id = self.flag_masks.intern(set_ids, clear_ids);
         self.emit(Insn::PushFlags { mask_id });
@@ -1214,25 +1341,25 @@ impl GrammarBuilder {
     /// is emitted before the dispatch table lookup.  The arm bodies themselves
     /// always run without auto-skip (since trivia before them was already
     /// consumed before the dispatch).
-    pub fn byte_dispatch(
-        &mut self,
-        arms:     Vec<ByteDispatchArm>,
-        fallback: Option<GrammarChoiceFn>,
-    ) {
-        if self.auto_trivia { self.skip(); }
+    pub fn byte_dispatch(&mut self, arms: Vec<ByteDispatchArm>, fallback: Option<GrammarChoiceFn>) {
+        if self.auto_trivia {
+            self.skip();
+        }
         // Arm bodies run without auto-skip: trivia is already consumed above,
         // and the dispatch table peeks at the next byte after trivia.
         let prev = self.auto_trivia;
         self.auto_trivia = false;
 
         let dispatch_ip = self.emit(Insn::ByteDispatch { table_id: u32::MAX });
-        let mut table   = [u32::MAX; 256];
-        let mut exits   = Vec::new();
+        let mut table = [u32::MAX; 256];
+        let mut exits = Vec::new();
 
         for (class, body) in arms {
             let arm_start = self.current_ip();
             for b in 0u8..=255 {
-                if class.contains(b) { table[b as usize] = arm_start; }
+                if class.contains(b) {
+                    table[b as usize] = arm_start;
+                }
             }
             body(self);
             exits.push(self.emit(Insn::Jump { target: u32::MAX }));
@@ -1241,15 +1368,19 @@ impl GrammarBuilder {
         if let Some(body) = fallback {
             let fallback_start = self.current_ip();
             for slot in &mut table {
-                if *slot == u32::MAX { *slot = fallback_start; }
+                if *slot == u32::MAX {
+                    *slot = fallback_start;
+                }
             }
             body(self);
             exits.push(self.emit(Insn::Jump { target: u32::MAX }));
         }
 
-        let after    = self.current_ip();
+        let after = self.current_ip();
         let table_id = u32::try_from(self.jump_tables.len()).unwrap_or(0);
-        for jmp in exits { self.patch(jmp, after); }
+        for jmp in exits {
+            self.patch(jmp, after);
+        }
         self.jump_tables.push(table);
         self.patch_table_id(dispatch_ip, table_id);
 
@@ -1267,14 +1398,20 @@ impl GrammarBuilder {
     /// recursive) cycle.
     pub fn finish(mut self) -> Result<BuiltGraph, String> {
         for (addr, rule_name) in self.pending_calls.drain(..) {
-            let rule_id = self.rule_by_name.get(&rule_name).copied()
+            let rule_id = self
+                .rule_by_name
+                .get(&rule_name)
+                .copied()
                 .ok_or_else(|| format!("undefined rule: {rule_name}"))?;
             if let Insn::Call { rule } = &mut self.insns[addr] {
                 *rule = rule_id;
             }
         }
         for (addr, sync_rule_name) in self.pending_recover.drain(..) {
-            let rule_id = self.rule_by_name.get(&sync_rule_name).copied()
+            let rule_id = self
+                .rule_by_name
+                .get(&sync_rule_name)
+                .copied()
                 .ok_or_else(|| format!("undefined sync rule: {sync_rule_name}"))?;
             if let Insn::RecoverUntil { sync_rule, .. } = &mut self.insns[addr] {
                 *sync_rule = rule_id;
@@ -1293,18 +1430,18 @@ impl GrammarBuilder {
         self.flag_masks.seal();
 
         Ok(BuiltGraph {
-            insns:             self.insns,
-            rule_entry:        self.rule_entry,
-            literal_data:      self.literals.data,
-            literal_offsets:   self.literals.offsets,
-            jump_tables:       self.jump_tables,
-            flag_mask_data:    self.flag_masks.data,
+            insns: self.insns,
+            rule_entry: self.rule_entry,
+            literal_data: self.literals.data,
+            literal_offsets: self.literals.offsets,
+            jump_tables: self.jump_tables,
+            flag_mask_data: self.flag_masks.data,
             flag_mask_offsets: self.flag_masks.offsets,
-            rule_names:        self.rule_names,
-            tag_names:         self.tag_names,
-            class_labels:      self.class_labels,
-            expected_labels:   self.expected_labels,
-            field_names:       self.field_names,
+            rule_names: self.rule_names,
+            tag_names: self.tag_names,
+            class_labels: self.class_labels,
+            expected_labels: self.expected_labels,
+            field_names: self.field_names,
         })
     }
 
@@ -1315,11 +1452,11 @@ impl GrammarBuilder {
     fn check_rule_cycles(&self) -> Result<(), String> {
         /// DFS state for cycle detection; keeps args to one struct for the recursive visit.
         struct CycleDfsState<'a> {
-            edges:    &'a [Vec<RuleId>],
+            edges: &'a [Vec<RuleId>],
             in_stack: &'a mut [bool],
-            order:    &'a mut [Option<u32>],
-            cycle:    &'a mut Vec<RuleId>,
-            counter:  &'a mut u32,
+            order: &'a mut [Option<u32>],
+            cycle: &'a mut Vec<RuleId>,
+            counter: &'a mut u32,
         }
         fn visit(state: &mut CycleDfsState<'_>, r_usize: usize) -> bool {
             let r = RuleId::try_from(r_usize).unwrap_or(0);
@@ -1424,23 +1561,18 @@ impl GrammarBuilder {
                 continue;
             }
             let mut state = CycleDfsState {
-                edges:    &edges,
+                edges: &edges,
                 in_stack: &mut in_stack,
-                order:    &mut order,
-                cycle:    &mut cycle,
-                counter:  &mut counter,
+                order: &mut order,
+                cycle: &mut cycle,
+                counter: &mut counter,
             };
             if visit(&mut state, r) {
                 state.cycle.reverse();
                 let names: Vec<&str> = state
                     .cycle
                     .iter()
-                    .map(|&id| {
-                        self.rule_names
-                            .get(id as usize)
-                            .copied()
-                            .unwrap_or("?")
-                    })
+                    .map(|&id| self.rule_names.get(id as usize).copied().unwrap_or("?"))
                     .collect();
                 let closed: Vec<&str> = names
                     .iter()
@@ -1578,7 +1710,8 @@ impl GrammarBuilder {
 
     /// Common implementation for [`parser_rule`] and [`lexer_rule`].
     fn rule_impl<F>(&mut self, name: &'static str, body: F, with_trivia: bool) -> RuleId
-    where F: FnOnce(&mut Self)
+    where
+        F: FnOnce(&mut Self),
     {
         let prev = self.auto_trivia;
         self.auto_trivia = with_trivia;
@@ -1591,7 +1724,9 @@ impl GrammarBuilder {
 }
 
 impl Default for GrammarBuilder {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -1627,7 +1762,18 @@ mod tests {
         use crate::engine::Engine;
         let mut g = GrammarBuilder::new();
         g.parser_rule("start", |g| {
-            crate::choices!(g, |g| { g.byte(b'a'); }, |g| { g.byte(b'b'); }, |g| { g.byte(b'c'); });
+            crate::choices!(
+                g,
+                |g| {
+                    g.byte(b'a');
+                },
+                |g| {
+                    g.byte(b'b');
+                },
+                |g| {
+                    g.byte(b'c');
+                }
+            );
             g.end_of_input();
             g.accept();
         });

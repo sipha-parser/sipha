@@ -67,11 +67,9 @@ pub fn assert_parse_eq<E: std::fmt::Debug>(
         .expect("parse returned None (no root)");
     let got = syntax_node_to_sexp(&root, options);
     assert_eq!(
-        got,
-        expected_sexp,
+        got, expected_sexp,
         "S-expression mismatch:\nexpected:\n  {}\ngot:\n  {}",
-        expected_sexp,
-        got
+        expected_sexp, got
     );
 }
 

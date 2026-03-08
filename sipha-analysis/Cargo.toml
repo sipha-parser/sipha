@@ -1,6 +1,6 @@
 [package]
 name = "sipha-analysis"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "Grammar-agnostic scope extents and definition collection for sipha syntax trees (LSP support)"
 

@@ -34,7 +34,7 @@ impl Default for WalkOptions {
 
 impl WalkOptions {
     /// Only visit syntax nodes (no tokens). Useful for structure-only analysis.
-    #[must_use] 
+    #[must_use]
     pub const fn nodes_only() -> Self {
         Self {
             visit_tokens: false,
@@ -43,13 +43,13 @@ impl WalkOptions {
     }
 
     /// Visit nodes and semantic tokens only (no trivia).
-    #[must_use] 
+    #[must_use]
     pub fn semantic_only() -> Self {
         Self::default()
     }
 
     /// Visit nodes and all tokens including trivia. Useful for formatting.
-    #[must_use] 
+    #[must_use]
     pub const fn full() -> Self {
         Self {
             visit_tokens: true,
@@ -99,11 +99,7 @@ pub trait Visitor {
     }
 }
 
-fn walk_node(
-    node: &SyntaxNode,
-    visitor: &mut impl Visitor,
-    options: &WalkOptions,
-) -> WalkResult {
+fn walk_node(node: &SyntaxNode, visitor: &mut impl Visitor, options: &WalkOptions) -> WalkResult {
     if visitor.enter_node(node) == WalkResult::Break(()) {
         return WalkResult::Break(());
     }
@@ -147,11 +143,7 @@ impl SyntaxNode {
     /// Walks the subtree rooted at this node with the given visitor and options.
     ///
     /// Returns `ControlFlow::Break(())` if the visitor requested early termination.
-    pub fn walk(
-        &self,
-        visitor: &mut impl Visitor,
-        options: &WalkOptions,
-    ) -> WalkResult {
+    pub fn walk(&self, visitor: &mut impl Visitor, options: &WalkOptions) -> WalkResult {
         walk_node(self, visitor, options)
     }
 }

@@ -111,13 +111,14 @@ impl Expected {
             Self::CharRange(lo, hi) => {
                 let fmt = |cp: u32| -> String {
                     char::from_u32(cp)
-                        .filter(|c| c.is_alphanumeric() || c.is_ascii_punctuation()).map_or_else(|| format!("U+{cp:04X}"), |c| format!("'{c}'"))
+                        .filter(|c| c.is_alphanumeric() || c.is_ascii_punctuation())
+                        .map_or_else(|| format!("U+{cp:04X}"), |c| format!("'{c}'"))
                 };
                 format!("{}–{}", fmt(*lo), fmt(*hi))
             }
             Self::Flag { id, required } => {
                 let word = id >> 6;
-                let bit  = id & 63;
+                let bit = id & 63;
                 if *required {
                     format!("flag {id} (word {word} bit {bit}) to be set")
                 } else {
@@ -155,7 +156,10 @@ pub(crate) fn format_expected_list(items: &[String]) -> String {
     let (display, more) = if items.len() <= MAX_EXPECTED_DISPLAY {
         (items, 0)
     } else {
-        (&items[..MAX_EXPECTED_DISPLAY], items.len() - MAX_EXPECTED_DISPLAY)
+        (
+            &items[..MAX_EXPECTED_DISPLAY],
+            items.len() - MAX_EXPECTED_DISPLAY,
+        )
     };
     let list = if display.len() == 1 {
         display[0].clone()
@@ -293,7 +297,12 @@ impl Diagnostic {
         expected_labels: Option<&[&'static str]>,
     ) -> crate::miette_support::MietteParseDiagnostic {
         crate::miette_support::MietteParseDiagnostic::new(
-            self, source, name, literals, rule_names, expected_labels,
+            self,
+            source,
+            name,
+            literals,
+            rule_names,
+            expected_labels,
         )
     }
 }
@@ -316,9 +325,9 @@ impl ErrorContext {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            furthest:  0,
-            expected:  Vec::with_capacity(8),
-            seen:      std::collections::HashSet::with_capacity(8),
+            furthest: 0,
+            expected: Vec::with_capacity(8),
+            seen: std::collections::HashSet::with_capacity(8),
         }
     }
 
@@ -379,6 +388,15 @@ pub enum Severity {
     Note,
 }
 
+/// Related location for a diagnostic (e.g. "first declared here" for duplicate name).
+#[derive(Clone, Debug)]
+pub struct RelatedLocation {
+    /// Span of the related occurrence.
+    pub span: Span,
+    /// Short message to show at that location (e.g. "first declared here").
+    pub message: String,
+}
+
 /// A single diagnostic from semantic analysis or validation (e.g. undefined
 /// variable, type error).
 ///
@@ -397,6 +415,8 @@ pub struct SemanticDiagnostic {
     pub code: Option<String>,
     /// Optional file id or path for multi-file compilers (e.g. `"src/main.leek"`).
     pub file_id: Option<String>,
+    /// Optional related locations (e.g. first declaration for duplicate name errors).
+    pub related: Vec<RelatedLocation>,
 }
 
 impl SemanticDiagnostic {
@@ -406,11 +426,7 @@ impl SemanticDiagnostic {
     /// appends the line of source and a caret. Callers can use [`ParsedDoc`]
     /// to get `source` and `line_index` from a successful parse.
     #[must_use]
-    pub fn format_with_source(
-        &self,
-        source: &[u8],
-        line_index: &LineIndex,
-    ) -> String {
+    pub fn format_with_source(&self, source: &[u8], line_index: &LineIndex) -> String {
         let (line_1, col_1) = line_index.line_col_1based(self.span.start);
         let severity_label = match self.severity {
             Severity::Error => "error",
@@ -423,15 +439,13 @@ impl SemanticDiagnostic {
             .as_deref()
             .map(|c| format!(" [{c}]"))
             .unwrap_or_default();
-        let location = self
-            .file_id
-            .as_deref().map_or_else(|| format!("{line_1}:{col_1}"), |f| format!("{f}:{line_1}:{col_1}"));
+        let location = self.file_id.as_deref().map_or_else(
+            || format!("{line_1}:{col_1}"),
+            |f| format!("{f}:{line_1}:{col_1}"),
+        );
         let header = format!(
             "{}: {}{}: {}",
-            location,
-            severity_label,
-            code_part,
-            self.message
+            location, severity_label, code_part, self.message
         );
 
         if source.is_empty() || self.span.start as usize >= source.len() {
@@ -450,6 +464,7 @@ impl SemanticDiagnostic {
             severity: Severity::Error,
             code: None,
             file_id: None,
+            related: Vec::new(),
         }
     }
 
@@ -461,6 +476,7 @@ impl SemanticDiagnostic {
             severity: Severity::Warning,
             code: None,
             file_id: None,
+            related: Vec::new(),
         }
     }
 
@@ -472,6 +488,7 @@ impl SemanticDiagnostic {
             severity: Severity::Deprecation,
             code: None,
             file_id: None,
+            related: Vec::new(),
         }
     }
 
@@ -486,6 +503,13 @@ impl SemanticDiagnostic {
     #[must_use]
     pub fn with_file_id(mut self, file_id: impl Into<String>) -> Self {
         self.file_id = Some(file_id.into());
+        self
+    }
+
+    /// Add related locations (e.g. "first declared here" for duplicate name errors).
+    #[must_use]
+    pub fn with_related(mut self, related: Vec<RelatedLocation>) -> Self {
+        self.related = related;
         self
     }
 }

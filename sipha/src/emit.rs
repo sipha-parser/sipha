@@ -31,7 +31,7 @@ impl Default for EmitOptions {
 
 impl EmitOptions {
     /// Emit only semantic tokens (no trivia).
-    #[must_use] 
+    #[must_use]
     pub const fn semantic_only() -> Self {
         Self {
             include_trivia: false,
@@ -40,7 +40,7 @@ impl EmitOptions {
     }
 
     /// Emit all tokens including trivia.
-    #[must_use] 
+    #[must_use]
     pub fn full() -> Self {
         Self::default()
     }

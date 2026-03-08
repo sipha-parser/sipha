@@ -26,8 +26,8 @@
 //! such as [`crate::red::SyntaxNode::non_trivia_tokens`] and
 //! [`crate::red::SyntaxNode::token_groups`].
 
-use std::sync::Arc;
 use crate::types::{FieldId, FromSyntaxKind, SyntaxKind, TreeEvent};
+use std::sync::Arc;
 
 // ─── GreenToken ───────────────────────────────────────────────────────────────
 
@@ -39,13 +39,13 @@ use crate::types::{FieldId, FromSyntaxKind, SyntaxKind, TreeEvent};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GreenToken {
     /// Grammar-defined kind.
-    pub kind:      SyntaxKind,
+    pub kind: SyntaxKind,
     /// Byte length of [`text`].  Equal to `text.len() as u32`.
-    pub text_len:  u32,
+    pub text_len: u32,
     /// `true` for whitespace, comments, and other trivia.
     pub is_trivia: bool,
     /// Raw source text of this token (UTF-8).
-    pub text:      Arc<str>,
+    pub text: Arc<str>,
 }
 
 impl GreenToken {
@@ -95,7 +95,7 @@ impl GreenToken {
 #[derive(Clone, Debug)]
 pub struct GreenNode {
     /// Grammar-defined kind.
-    pub kind:     SyntaxKind,
+    pub kind: SyntaxKind,
     /// Total byte length of all descendants (including trivia).
     pub text_len: u32,
     /// Ordered children.
@@ -123,10 +123,7 @@ impl GreenNode {
         kind: SyntaxKind,
         children_with_fields: Vec<(Option<FieldId>, GreenElement)>,
     ) -> Arc<Self> {
-        let text_len = children_with_fields
-            .iter()
-            .map(|(_, e)| e.text_len())
-            .sum();
+        let text_len = children_with_fields.iter().map(|(_, e)| e.text_len()).sum();
         let child_fields: Box<[Option<FieldId>]> = children_with_fields
             .iter()
             .map(|(f, _)| *f)
@@ -142,7 +139,11 @@ impl GreenNode {
             kind,
             text_len,
             children,
-            child_fields: if has_any_field { Some(child_fields) } else { None },
+            child_fields: if has_any_field {
+                Some(child_fields)
+            } else {
+                None
+            },
         })
     }
 
@@ -255,7 +256,11 @@ impl GreenElement {
 #[must_use]
 pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenNode>> {
     // Stack: (kind, this node's field when closed, children with their field labels)
-    type StackEntry = (SyntaxKind, Option<FieldId>, Vec<(Option<FieldId>, GreenElement)>);
+    type StackEntry = (
+        SyntaxKind,
+        Option<FieldId>,
+        Vec<(Option<FieldId>, GreenElement)>,
+    );
     let mut stack: Vec<StackEntry> = Vec::new();
     let mut roots: Vec<(Option<FieldId>, GreenElement)> = Vec::new();
 
@@ -279,9 +284,17 @@ pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenN
                 push_element(&mut stack, &mut roots, (my_field, GreenElement::Node(node)));
             }
 
-            TreeEvent::Token { kind, start, end, is_trivia } => {
-                if start == end { continue; }
-                let text = input.get(start as usize..end as usize)
+            TreeEvent::Token {
+                kind,
+                start,
+                end,
+                is_trivia,
+            } => {
+                if start == end {
+                    continue;
+                }
+                let text = input
+                    .get(start as usize..end as usize)
                     .and_then(|b| std::str::from_utf8(b).ok())
                     .unwrap_or("");
                 let tok = GreenToken::new(kind, text, is_trivia);
@@ -290,7 +303,9 @@ pub fn build_green_tree(input: &[u8], events: &[TreeEvent]) -> Option<Arc<GreenN
         }
     }
 
-    if !stack.is_empty() { return None; }
+    if !stack.is_empty() {
+        return None;
+    }
 
     match roots.len() {
         0 => None,
@@ -368,7 +383,11 @@ mod tests {
     fn build_green_tree_node_with_token() {
         let input = b"x";
         let events = [
-            TreeEvent::NodeOpen { kind: 10, field: None, pos: 0 },
+            TreeEvent::NodeOpen {
+                kind: 10,
+                field: None,
+                pos: 0,
+            },
             TreeEvent::Token {
                 kind: 2,
                 start: 0,

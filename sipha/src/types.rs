@@ -55,7 +55,7 @@ impl FromSyntaxKind for SyntaxKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
     pub start: Pos,
-    pub end:   Pos,
+    pub end: Pos,
 }
 
 impl Span {
@@ -187,7 +187,10 @@ impl CharClass {
     pub const fn from_chars(chars: &[u8]) -> Self {
         let mut cls = Self::EMPTY;
         let mut i = 0;
-        while i < chars.len() { cls = cls.with_byte(chars[i]); i += 1; }
+        while i < chars.len() {
+            cls = cls.with_byte(chars[i]);
+            i += 1;
+        }
         cls
     }
 }
@@ -243,14 +246,14 @@ mod tests {
 /// Common pre-built character classes (all `const`).
 pub mod classes {
     use super::CharClass;
-    pub const DIGIT:       CharClass = CharClass::EMPTY.with_range(b'0', b'9');
-    pub const LOWER:       CharClass = CharClass::EMPTY.with_range(b'a', b'z');
-    pub const UPPER:       CharClass = CharClass::EMPTY.with_range(b'A', b'Z');
-    pub const ALPHA:       CharClass = LOWER.union(UPPER);
-    pub const ALNUM:       CharClass = ALPHA.union(DIGIT);
+    pub const DIGIT: CharClass = CharClass::EMPTY.with_range(b'0', b'9');
+    pub const LOWER: CharClass = CharClass::EMPTY.with_range(b'a', b'z');
+    pub const UPPER: CharClass = CharClass::EMPTY.with_range(b'A', b'Z');
+    pub const ALPHA: CharClass = LOWER.union(UPPER);
+    pub const ALNUM: CharClass = ALPHA.union(DIGIT);
     pub const IDENT_START: CharClass = ALPHA.union(CharClass::EMPTY.with_byte(b'_'));
-    pub const IDENT_CONT:  CharClass = ALNUM.union(CharClass::EMPTY.with_byte(b'_'));
-    pub const WHITESPACE:  CharClass = CharClass::from_chars(b" \t\n\r");
+    pub const IDENT_CONT: CharClass = ALNUM.union(CharClass::EMPTY.with_byte(b'_'));
+    pub const WHITESPACE: CharClass = CharClass::from_chars(b" \t\n\r");
     pub const HEX_DIGIT: CharClass = DIGIT
         .union(CharClass::EMPTY.with_range(b'a', b'f'))
         .union(CharClass::EMPTY.with_range(b'A', b'F'));
@@ -268,7 +271,7 @@ pub mod classes {
 /// (Legacy system — use [`TreeEvent`] for the green/red tree.)
 #[derive(Clone, Copy, Debug)]
 pub enum CaptureEvent {
-    Open  { tag: Tag, pos: Pos },
+    Open { tag: Tag, pos: Pos },
     Close { tag: Tag, pos: Pos },
 }
 
@@ -282,12 +285,21 @@ pub enum CaptureEvent {
 pub enum TreeEvent {
     /// Open a syntax node.  Matched by the next balanced [`TreeEvent::NodeClose`].
     /// `field` labels this node as a named child of its parent (for [`crate::red::SyntaxNode::field_by_id`]).
-    NodeOpen  { kind: SyntaxKind, field: Option<FieldId>, pos: Pos },
+    NodeOpen {
+        kind: SyntaxKind,
+        field: Option<FieldId>,
+        pos: Pos,
+    },
     /// Close the innermost open node.
     NodeClose { pos: Pos },
     /// A complete leaf token `[start, end)`.
     ///
     /// `is_trivia = true` for whitespace and comments — they are kept in the
     /// tree but skipped by semantic iterators.
-    Token { kind: SyntaxKind, start: Pos, end: Pos, is_trivia: bool },
+    Token {
+        kind: SyntaxKind,
+        start: Pos,
+        end: Pos,
+        is_trivia: bool,
+    },
 }

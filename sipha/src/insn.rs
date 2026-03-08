@@ -20,8 +20,8 @@
 //! inline — this supports masks that span many words without bloating the
 //! instruction.
 
-use crate::types::{CharClass, FieldId, InsnId, RuleId, SyntaxKind, Tag};
 use crate::context::FlagMaskWord;
+use crate::types::{CharClass, FieldId, InsnId, RuleId, SyntaxKind, Tag};
 
 // ─── Instruction enum ─────────────────────────────────────────────────────────
 
@@ -29,14 +29,29 @@ use crate::context::FlagMaskWord;
 #[repr(u8)]
 pub enum Insn {
     // ── Terminals ────────────────────────────────────────────────────────────
-
-    Byte      { byte: u8,                on_fail: InsnId },
-    ByteRange { lo: u8, hi: u8,          on_fail: InsnId },
+    Byte {
+        byte: u8,
+        on_fail: InsnId,
+    },
+    ByteRange {
+        lo: u8,
+        hi: u8,
+        on_fail: InsnId,
+    },
     /// Index into the grammar's `class_labels` for diagnostics; 0 = default "character class".
-    Class     { class: CharClass, label_id: u32, on_fail: InsnId },
+    Class {
+        class: CharClass,
+        label_id: u32,
+        on_fail: InsnId,
+    },
     /// SIMD-accelerated for literals ≥ 16 bytes.
-    Literal   { lit_id: u32,             on_fail: InsnId },
-    EndOfInput {                         on_fail: InsnId },
+    Literal {
+        lit_id: u32,
+        on_fail: InsnId,
+    },
+    EndOfInput {
+        on_fail: InsnId,
+    },
     Fail,
 
     // ── Unicode codepoint terminals ───────────────────────────────────────────
@@ -46,63 +61,94 @@ pub enum Insn {
     //
     // For ASCII-only matching, prefer the byte-level instructions above —
     // they skip the UTF-8 decode and are marginally faster.
-
     /// Consume any single valid UTF-8 codepoint (1–4 bytes).
     /// Fails on invalid UTF-8 or end-of-input.
-    AnyChar { on_fail: InsnId },
+    AnyChar {
+        on_fail: InsnId,
+    },
 
     /// Match exactly the Unicode codepoint `codepoint`.
     /// Advances `pos` by the codepoint's UTF-8 byte length (1–4).
-    Char { codepoint: u32, on_fail: InsnId },
+    Char {
+        codepoint: u32,
+        on_fail: InsnId,
+    },
 
     /// Match any codepoint in the inclusive range `[lo, hi]`.
     /// Fails if the decoded codepoint is outside the range, or on invalid UTF-8.
-    CharRange { lo: u32, hi: u32, on_fail: InsnId },
+    CharRange {
+        lo: u32,
+        hi: u32,
+        on_fail: InsnId,
+    },
 
     // ── Control flow ──────────────────────────────────────────────────────────
-
-    Jump   { target: InsnId },
-    Call   { rule: RuleId },
+    Jump {
+        target: InsnId,
+    },
+    Call {
+        rule: RuleId,
+    },
     Return,
 
     // ── Backtracking ──────────────────────────────────────────────────────────
-
-    Choice        { alt:    InsnId },
-    Commit        { target: InsnId },
-    BackCommit    { target: InsnId },
-    NegBackCommit { target: InsnId },
-    PartialCommit { target: InsnId },
+    Choice {
+        alt: InsnId,
+    },
+    Commit {
+        target: InsnId,
+    },
+    BackCommit {
+        target: InsnId,
+    },
+    NegBackCommit {
+        target: InsnId,
+    },
+    PartialCommit {
+        target: InsnId,
+    },
 
     // ── O(1) Dispatch ────────────────────────────────────────────────────────
-
-    ByteDispatch { table_id: u32 },
+    ByteDispatch {
+        table_id: u32,
+    },
 
     // ── Context flags ─────────────────────────────────────────────────────────
     //
     // Flag addressing: word = flag_id >> 6,  bit = flag_id & 63.
     // Supports up to 65,535 flags (FlagId = u16).
-
     /// Succeed iff `flags[flag_id >> 6] & (1 << (flag_id & 63)) != 0`.
     /// Does not consume input.
-    IfFlag    { flag_id: u16, on_fail: InsnId },
+    IfFlag {
+        flag_id: u16,
+        on_fail: InsnId,
+    },
 
     /// Succeed iff the named flag is **clear**.
-    IfNotFlag { flag_id: u16, on_fail: InsnId },
+    IfNotFlag {
+        flag_id: u16,
+        on_fail: InsnId,
+    },
 
     /// Push a snapshot of the affected words onto the context-save arena,
     /// then apply `graph.flag_masks.get(mask_id)` to the live flag bank.
     ///
     /// Uses a table reference instead of inline masks so that masks spanning
     /// many words do not bloat the instruction array.
-    PushFlags { mask_id: u32 },
+    PushFlags {
+        mask_id: u32,
+    },
 
     /// Restore the words saved by the matching `PushFlags`.
     PopFlags,
 
     // ── Captures ─────────────────────────────────────────────────────────────
-
-    CaptureBegin { tag: Tag },
-    CaptureEnd   { tag: Tag },
+    CaptureBegin {
+        tag: Tag,
+    },
+    CaptureEnd {
+        tag: Tag,
+    },
 
     // ── Green/Red tree ───────────────────────────────────────────────────────
     //
@@ -113,17 +159,22 @@ pub enum Insn {
     // Backtracking discards uncommitted events exactly as it does CaptureEvents.
     // `PartialCommit` (used by loops) updates the tree mark so each successful
     // loop iteration is permanently committed.
-
     /// Open a syntax node.  Emits `TreeEvent::NodeOpen`.
     /// `field` labels this node as a named child of its parent when present.
-    NodeBegin { kind: SyntaxKind, field: Option<FieldId> },
+    NodeBegin {
+        kind: SyntaxKind,
+        field: Option<FieldId>,
+    },
 
     /// Close the current syntax node.  Emits `TreeEvent::NodeClose`.
     NodeEnd,
 
     /// Begin a leaf token; saves `(kind, is_trivia, pos)` on the token-open
     /// side-stack.  Does **not** emit a `TreeEvent` yet.
-    TokenBegin { kind: SyntaxKind, is_trivia: bool },
+    TokenBegin {
+        kind: SyntaxKind,
+        is_trivia: bool,
+    },
 
     /// End a leaf token; pops the token-open side-stack and emits
     /// `TreeEvent::Token { start, end, kind, is_trivia }`.
@@ -131,28 +182,31 @@ pub enum Insn {
 
     /// Record an expected label at the current position for diagnostics, then continue.
     /// Used by [`expect_label`](crate::builder::GrammarBuilder::expect_label).
-    RecordExpectedLabel { label_id: u32 },
+    RecordExpectedLabel {
+        label_id: u32,
+    },
 
     // ── Error recovery ───────────────────────────────────────────────────────
     //
     // RecoverUntil: try the following "body"; on failure, skip input until
     // sync_rule matches (or EOI), then continue at resume. Used by
     // [`recover_until`](crate::builder::GrammarBuilder::recover_until).
-
     /// Start a recoverable region. On failure, skip until `sync_rule` matches, then jump to resume.
-    RecoverUntil { sync_rule: RuleId, resume: InsnId },
+    RecoverUntil {
+        sync_rule: RuleId,
+        resume: InsnId,
+    },
     /// After sync rule matched during recovery; pops the recovery frame and continues.
     RecoveryResume,
 
     // ── Accept ───────────────────────────────────────────────────────────────
-
     Accept,
 }
 
 // ─── Literal table ────────────────────────────────────────────────────────────
 
 pub struct LiteralTable {
-    pub data:    &'static [u8],
+    pub data: &'static [u8],
     pub offsets: &'static [u32],
 }
 
@@ -160,7 +214,7 @@ impl LiteralTable {
     #[must_use]
     #[inline]
     pub fn get(&self, id: u32) -> &[u8] {
-        let s = self.offsets[id as usize]     as usize;
+        let s = self.offsets[id as usize] as usize;
         let e = self.offsets[id as usize + 1] as usize;
         &self.data[s..e]
     }
@@ -175,7 +229,7 @@ impl LiteralTable {
 /// for mask `m`.
 pub struct FlagMaskTable {
     /// All `FlagMaskWord` entries concatenated.
-    pub data:    &'static [FlagMaskWord],
+    pub data: &'static [FlagMaskWord],
     /// Offset into `data` for each mask.  Length = `num_masks` + 1.
     pub offsets: &'static [u32],
 }
@@ -185,7 +239,7 @@ impl FlagMaskTable {
     #[must_use]
     #[inline]
     pub fn get(&self, id: u32) -> &[FlagMaskWord] {
-        let s = self.offsets[id as usize]     as usize;
+        let s = self.offsets[id as usize] as usize;
         let e = self.offsets[id as usize + 1] as usize;
         &self.data[s..e]
     }
@@ -194,19 +248,19 @@ impl FlagMaskTable {
 // ─── Parse graph ─────────────────────────────────────────────────────────────
 
 pub struct ParseGraph {
-    pub insns:        &'static [Insn],
-    pub rule_entry:   &'static [InsnId],
-    pub literals:     LiteralTable,
-    pub jump_tables:  &'static [[u32; 256]],
-    pub flag_masks:   FlagMaskTable,
-    pub rule_names:   &'static [&'static str],
-    pub tag_names:    &'static [&'static str],
+    pub insns: &'static [Insn],
+    pub rule_entry: &'static [InsnId],
+    pub literals: LiteralTable,
+    pub jump_tables: &'static [[u32; 256]],
+    pub flag_masks: FlagMaskTable,
+    pub rule_names: &'static [&'static str],
+    pub tag_names: &'static [&'static str],
     /// Labels for [`Insn::Class`] diagnostics; index 0 is the default "character class".
-    pub class_labels:     &'static [&'static str],
+    pub class_labels: &'static [&'static str],
     /// Labels for [`Expected::Label`] from [`expect_label`](crate::builder::GrammarBuilder::expect_label).
-    pub expected_labels:  &'static [&'static str],
+    pub expected_labels: &'static [&'static str],
     /// Names for named child fields (indexed by [`crate::types::FieldId`]); used by `field_by_id` / name resolution.
-    pub field_names:      &'static [&'static str],
+    pub field_names: &'static [&'static str],
 }
 
 impl ParseGraph {
@@ -226,7 +280,8 @@ impl ParseGraph {
     #[inline]
     pub fn dispatch(&self, table_id: u32, byte: u8) -> InsnId {
         unsafe {
-            *self.jump_tables
+            *self
+                .jump_tables
                 .get_unchecked(table_id as usize)
                 .get_unchecked(byte as usize)
         }

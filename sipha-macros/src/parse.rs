@@ -37,11 +37,13 @@ impl Parse for Grammar {
             let rule_attrs = attrs
                 .iter()
                 .filter_map(|a| {
-                    a.path().get_ident().and_then(|i| match i.to_string().as_str() {
-                        "parser" => Some(RuleAttr::Parser),
-                        "lexer" => Some(RuleAttr::Lexer),
-                        _ => None,
-                    })
+                    a.path()
+                        .get_ident()
+                        .and_then(|i| match i.to_string().as_str() {
+                            "parser" => Some(RuleAttr::Parser),
+                            "lexer" => Some(RuleAttr::Lexer),
+                            _ => None,
+                        })
                 })
                 .collect();
 
@@ -52,10 +54,7 @@ impl Parse for Grammar {
             });
         }
 
-        Ok(Self {
-            directives,
-            rules,
-        })
+        Ok(Self { directives, rules })
     }
 }
 

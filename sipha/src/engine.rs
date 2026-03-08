@@ -61,35 +61,48 @@ pub(crate) fn insert_error_node_events(
 // ─── Snapshot entry ───────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy)]
-struct SnapEntry { word: u32, val: u64 }
+struct SnapEntry {
+    word: u32,
+    val: u64,
+}
 
 // ─── Frame ────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug)]
 enum Frame {
     Backtrack {
-        alt:              u32,
-        saved_pos:        Pos,
+        alt: u32,
+        saved_pos: Pos,
         /// Mark into `engine.events` (legacy captures).
-        capture_mark:     u32,
+        capture_mark: u32,
         /// Mark into `engine.tree_events` (green/red tree events).
-        tree_mark:        u32,
+        tree_mark: u32,
         /// Mark into `engine.open_tokens` (in-progress token spans).
         open_tokens_mark: u32,
     },
-    Return { ret_ip: u32 },
-    MemoReturn {
-        ret_ip:       u32,
-        rule:         RuleId,
-        start_pos:    Pos,
-        events_mark:  u32,
-        tree_mark:    u32,
+    Return {
+        ret_ip: u32,
     },
-    ContextSave { snapshot_mark: u32 },
+    MemoReturn {
+        ret_ip: u32,
+        rule: RuleId,
+        start_pos: Pos,
+        events_mark: u32,
+        tree_mark: u32,
+    },
+    ContextSave {
+        snapshot_mark: u32,
+    },
     /// Error recovery: on failure, skip until `sync_rule` matches then continue at resume.
-    Recover { sync_rule: RuleId, resume: InsnId },
+    Recover {
+        sync_rule: RuleId,
+        resume: InsnId,
+    },
     /// Marker when trying the sync rule during recovery; popped by `RecoveryResume`.
-    RecoverSync { sync_rule: RuleId, resume: InsnId },
+    RecoverSync {
+        sync_rule: RuleId,
+        resume: InsnId,
+    },
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -163,10 +176,10 @@ impl ParseError {
 pub struct ParseOutput {
     /// Number of input bytes consumed (always equals `input.len()` if the
     /// grammar ends with `end_of_input`).
-    pub consumed:    Pos,
+    pub consumed: Pos,
     /// Legacy flat capture events.  Use `CaptureNode::build_forest` to get
     /// the capture tree.
-    pub events:      Vec<CaptureEvent>,
+    pub events: Vec<CaptureEvent>,
     /// Green/red tree events.  Pass to `green::build_green_tree` and wrap
     /// the result in `red::SyntaxNode::new_root`.
     pub tree_events: Vec<TreeEvent>,
@@ -180,7 +193,10 @@ impl ParseOutput {
     ///
     /// Returns `None` if `tree_events` is empty or malformed.
     #[must_use]
-    pub fn build_green_tree(&self, input: &[u8]) -> Option<std::sync::Arc<crate::green::GreenNode>> {
+    pub fn build_green_tree(
+        &self,
+        input: &[u8],
+    ) -> Option<std::sync::Arc<crate::green::GreenNode>> {
         crate::green::build_green_tree(input, &self.tree_events)
     }
 
@@ -198,22 +214,23 @@ impl ParseOutput {
     /// ```
     #[must_use]
     pub fn syntax_root(&self, input: &[u8]) -> Option<crate::red::SyntaxNode> {
-        self.build_green_tree(input).map(crate::red::SyntaxNode::new_root)
+        self.build_green_tree(input)
+            .map(crate::red::SyntaxNode::new_root)
     }
 }
 
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
 pub struct Engine {
-    stack:         Vec<Frame>,
-    events:        Vec<CaptureEvent>,
-    tree_events:   Vec<TreeEvent>,
+    stack: Vec<Frame>,
+    events: Vec<CaptureEvent>,
+    tree_events: Vec<TreeEvent>,
     /// In-progress token spans: `(kind, is_trivia, start_pos)`.
     /// Pushed by `TokenBegin`, popped by `TokenEnd`.
-    open_tokens:   Vec<(SyntaxKind, bool, Pos)>,
-    memo:          Option<MemoTable>,
-    error_ctx:     ErrorContext,
-    flags:         Vec<u64>,
+    open_tokens: Vec<(SyntaxKind, bool, Pos)>,
+    memo: Option<MemoTable>,
+    error_ctx: ErrorContext,
+    flags: Vec<u64>,
     ctx_snapshots: Vec<SnapEntry>,
 }
 
@@ -226,13 +243,13 @@ impl Engine {
     #[must_use]
     pub fn with_capacity(stack_cap: usize, capture_cap: usize) -> Self {
         Self {
-            stack:         Vec::with_capacity(stack_cap),
-            events:        Vec::with_capacity(capture_cap),
-            tree_events:   Vec::with_capacity(capture_cap),
-            open_tokens:   Vec::with_capacity(16),
-            memo:          None,
-            error_ctx:     ErrorContext::new(),
-            flags:         Vec::with_capacity(4),
+            stack: Vec::with_capacity(stack_cap),
+            events: Vec::with_capacity(capture_cap),
+            tree_events: Vec::with_capacity(capture_cap),
+            open_tokens: Vec::with_capacity(16),
+            memo: None,
+            error_ctx: ErrorContext::new(),
+            flags: Vec::with_capacity(4),
             ctx_snapshots: Vec::with_capacity(64),
         }
     }
@@ -249,11 +266,7 @@ impl Engine {
     ///
     /// Returns `Err(ParseError::NoMatch(diagnostic))` on parse failure, or
     /// `Err(ParseError::BadGraph)` if the graph is invalid.
-    pub fn parse(
-        &mut self,
-        graph: &ParseGraph,
-        input: &[u8],
-    ) -> Result<ParseOutput, ParseError> {
+    pub fn parse(&mut self, graph: &ParseGraph, input: &[u8]) -> Result<ParseOutput, ParseError> {
         self.parse_with_context(graph, input, &ParseContext::new())
     }
 
@@ -265,8 +278,8 @@ impl Engine {
     /// match the grammar. Returns `Err(ParseError::BadGraph)` if the graph is invalid.
     pub fn parse_with_context(
         &mut self,
-        graph:   &ParseGraph,
-        input:   &[u8],
+        graph: &ParseGraph,
+        input: &[u8],
         context: &ParseContext,
     ) -> Result<ParseOutput, ParseError> {
         self.stack.clear();
@@ -275,7 +288,9 @@ impl Engine {
         self.open_tokens.clear();
         self.error_ctx.clear();
         self.ctx_snapshots.clear();
-        if let Some(m) = &mut self.memo { m.clear(); }
+        if let Some(m) = &mut self.memo {
+            m.clear();
+        }
 
         self.flags.clear();
         self.flags.extend_from_slice(context.words());
@@ -296,7 +311,7 @@ impl Engine {
         ) {
             Ok(consumed) => Ok(ParseOutput {
                 consumed,
-                events:      std::mem::take(&mut self.events),
+                events: std::mem::take(&mut self.events),
                 tree_events: std::mem::take(&mut self.tree_events),
             }),
             Err(e) => Err(e),
@@ -316,8 +331,8 @@ impl Engine {
     /// Returns `Err((partial_output, parse_error))` when the parse fails.
     pub fn parse_recovering_with_context(
         &mut self,
-        graph:   &ParseGraph,
-        input:   &[u8],
+        graph: &ParseGraph,
+        input: &[u8],
         context: &ParseContext,
     ) -> Result<ParseOutput, (ParseOutput, ParseError)> {
         self.stack.clear();
@@ -326,7 +341,9 @@ impl Engine {
         self.open_tokens.clear();
         self.error_ctx.clear();
         self.ctx_snapshots.clear();
-        if let Some(m) = &mut self.memo { m.clear(); }
+        if let Some(m) = &mut self.memo {
+            m.clear();
+        }
         self.flags.clear();
         self.flags.extend_from_slice(context.words());
 
@@ -346,21 +363,17 @@ impl Engine {
         ) {
             Ok(consumed) => Ok(ParseOutput {
                 consumed,
-                events:      std::mem::take(&mut self.events),
+                events: std::mem::take(&mut self.events),
                 tree_events: std::mem::take(&mut self.tree_events),
             }),
             Err(e) => {
                 if let Some(kind) = context.error_node_kind() {
-                    insert_error_node_events(
-                        &mut self.tree_events,
-                        self.error_ctx.furthest,
-                        kind,
-                    );
+                    insert_error_node_events(&mut self.tree_events, self.error_ctx.furthest, kind);
                 }
                 Err((
                     ParseOutput {
                         consumed: self.error_ctx.furthest,
-                        events:   std::mem::take(&mut self.events),
+                        events: std::mem::take(&mut self.events),
                         tree_events: std::mem::take(&mut self.tree_events),
                     },
                     e,
@@ -450,22 +463,18 @@ impl Engine {
         ) {
             Ok(consumed) => Ok(ParseOutput {
                 consumed,
-                events:      std::mem::take(&mut self.events),
+                events: std::mem::take(&mut self.events),
                 tree_events: std::mem::take(&mut self.tree_events),
             }),
             Err(e) => {
                 errors.push(e);
                 if let Some(kind) = context.error_node_kind() {
-                    insert_error_node_events(
-                        &mut self.tree_events,
-                        self.error_ctx.furthest,
-                        kind,
-                    );
+                    insert_error_node_events(&mut self.tree_events, self.error_ctx.furthest, kind);
                 }
                 Err(RecoverMultiResult {
                     partial: ParseOutput {
                         consumed: self.error_ctx.furthest,
-                        events:   std::mem::take(&mut self.events),
+                        events: std::mem::take(&mut self.events),
                         tree_events: std::mem::take(&mut self.tree_events),
                     },
                     errors,
@@ -474,15 +483,25 @@ impl Engine {
         }
     }
 
-    #[must_use] 
-    pub const fn error_context(&self) -> &ErrorContext { &self.error_ctx }
-    #[must_use] 
-    pub fn memo_len(&self) -> Option<usize>      { self.memo.as_ref().map(super::memo::MemoTable::len) }
-    #[must_use] 
-    pub fn flag_words(&self) -> &[u64]            { &self.flags }
+    #[must_use]
+    pub const fn error_context(&self) -> &ErrorContext {
+        &self.error_ctx
+    }
+    #[must_use]
+    pub fn memo_len(&self) -> Option<usize> {
+        self.memo.as_ref().map(super::memo::MemoTable::len)
+    }
+    #[must_use]
+    pub fn flag_words(&self) -> &[u64] {
+        &self.flags
+    }
 }
 
-impl Default for Engine { fn default() -> Self { Self::new() } }
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ─── VM loop ─────────────────────────────────────────────────────────────────
 
@@ -491,20 +510,20 @@ impl Default for Engine { fn default() -> Self { Self::new() } }
 #[allow(clippy::too_many_lines)] // VM dispatch loop; splitting would obscure control flow
 #[allow(clippy::ptr_arg)] // need Vec for .push/.pop/.truncate
 fn run(
-    graph:         &ParseGraph,
-    input:         &[u8],
-    stack:         &mut Vec<Frame>,
-    events:        &mut Vec<CaptureEvent>,
-    tree_events:   &mut Vec<TreeEvent>,
-    open_tokens:   &mut Vec<(SyntaxKind, bool, Pos)>,
-    memo:          &mut Option<MemoTable>,
-    error_ctx:     &mut ErrorContext,
-    flags:         &mut Vec<u64>,
+    graph: &ParseGraph,
+    input: &[u8],
+    stack: &mut Vec<Frame>,
+    events: &mut Vec<CaptureEvent>,
+    tree_events: &mut Vec<TreeEvent>,
+    open_tokens: &mut Vec<(SyntaxKind, bool, Pos)>,
+    memo: &mut Option<MemoTable>,
+    error_ctx: &mut ErrorContext,
+    flags: &mut Vec<u64>,
     ctx_snapshots: &mut Vec<SnapEntry>,
-    multi_errors:  &mut Option<&mut Vec<ParseError>>,
-    max_errors:    usize,
+    multi_errors: &mut Option<&mut Vec<ParseError>>,
+    max_errors: usize,
 ) -> Result<Pos, ParseError> {
-    let mut ip:  u32 = graph.start();
+    let mut ip: u32 = graph.start();
     let mut pos: Pos = 0;
 
     loop {
@@ -512,18 +531,32 @@ fn run(
 
         macro_rules! fail_jump {
             ($on_fail:expr) => {
-                fail_or_jump($on_fail, graph, input, stack, &mut ip, &mut pos,
-                    flags, ctx_snapshots, events, tree_events, open_tokens,
-                    memo, error_ctx, multi_errors, max_errors)?
+                fail_or_jump(
+                    $on_fail,
+                    graph,
+                    input,
+                    stack,
+                    &mut ip,
+                    &mut pos,
+                    flags,
+                    ctx_snapshots,
+                    events,
+                    tree_events,
+                    open_tokens,
+                    memo,
+                    error_ctx,
+                    multi_errors,
+                    max_errors,
+                )?
             };
         }
 
         match insn {
             // ── Byte terminals ────────────────────────────────────────────────
-
             Insn::Byte { byte, on_fail } => {
                 if input.get(pos as usize).copied() == Some(byte) {
-                    pos += 1; ip += 1;
+                    pos += 1;
+                    ip += 1;
                 } else {
                     error_ctx.record(pos, Expected::Byte(byte));
                     fail_jump!(on_fail);
@@ -532,15 +565,27 @@ fn run(
 
             Insn::ByteRange { lo, hi, on_fail } => {
                 if let Some(b) = input.get(pos as usize).copied() {
-                    if b >= lo && b <= hi { pos += 1; ip += 1; continue; }
+                    if b >= lo && b <= hi {
+                        pos += 1;
+                        ip += 1;
+                        continue;
+                    }
                 }
                 error_ctx.record(pos, Expected::ByteRange(lo, hi));
                 fail_jump!(on_fail);
             }
 
-            Insn::Class { class, label_id, on_fail } => {
+            Insn::Class {
+                class,
+                label_id,
+                on_fail,
+            } => {
                 if let Some(b) = input.get(pos as usize).copied() {
-                    if class.contains(b) { pos += 1; ip += 1; continue; }
+                    if class.contains(b) {
+                        pos += 1;
+                        ip += 1;
+                        continue;
+                    }
                 }
                 let label = graph
                     .class_labels
@@ -555,7 +600,7 @@ fn run(
                 let lit = graph.literals.get(lit_id);
                 if simd::literal_eq(input, pos, lit) {
                     pos += Pos::try_from(lit.len()).unwrap_or(0);
-                    ip  += 1;
+                    ip += 1;
                 } else {
                     error_ctx.record(pos, Expected::Literal(lit_id));
                     fail_jump!(on_fail);
@@ -572,13 +617,25 @@ fn run(
             }
 
             Insn::Fail => {
-                do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                        events, tree_events, open_tokens, memo, error_ctx,
-                        multi_errors, max_errors)?;
+                do_fail(
+                    graph,
+                    input,
+                    stack,
+                    &mut ip,
+                    &mut pos,
+                    flags,
+                    ctx_snapshots,
+                    events,
+                    tree_events,
+                    open_tokens,
+                    memo,
+                    error_ctx,
+                    multi_errors,
+                    max_errors,
+                )?;
             }
 
             // ── Unicode codepoint terminals ───────────────────────────────────
-
             Insn::AnyChar { on_fail } => {
                 if let Some((_cp, len)) = decode_utf8(input, pos as usize) {
                     pos += Pos::try_from(len).unwrap_or(0);
@@ -614,11 +671,15 @@ fn run(
             }
 
             // ── Control flow ──────────────────────────────────────────────────
-
-            Insn::Jump   { target } => { ip = target; }
+            Insn::Jump { target } => {
+                ip = target;
+            }
 
             Insn::Call { rule } => {
-                let entry = graph.rule_entry.get(rule as usize).copied()
+                let entry = graph
+                    .rule_entry
+                    .get(rule as usize)
+                    .copied()
                     .ok_or(ParseError::BadGraph)?;
 
                 // Record that we're trying this rule so diagnostics can show "expected <rule>".
@@ -632,17 +693,30 @@ fn run(
                         }
                         MemoReplay::Miss { furthest } => {
                             error_ctx.record(furthest, Expected::Rule(rule));
-                            do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                                    events, tree_events, open_tokens, memo, error_ctx,
-                                    multi_errors, max_errors)?;
+                            do_fail(
+                                graph,
+                                input,
+                                stack,
+                                &mut ip,
+                                &mut pos,
+                                flags,
+                                ctx_snapshots,
+                                events,
+                                tree_events,
+                                open_tokens,
+                                memo,
+                                error_ctx,
+                                multi_errors,
+                                max_errors,
+                            )?;
                         }
                         MemoReplay::Unknown => {
                             stack.push(Frame::MemoReturn {
-                                ret_ip:      ip + 1,
+                                ret_ip: ip + 1,
                                 rule,
-                                start_pos:   pos,
+                                start_pos: pos,
                                 events_mark: u32::try_from(events.len()).unwrap_or(0),
-                                tree_mark:   u32::try_from(tree_events.len()).unwrap_or(0),
+                                tree_mark: u32::try_from(tree_events.len()).unwrap_or(0),
                             });
                             ip = entry;
                         }
@@ -656,7 +730,10 @@ fn run(
             Insn::Return => {
                 loop {
                     match stack.pop() {
-                        Some(Frame::Return { ret_ip }) => { ip = ret_ip; break; }
+                        Some(Frame::Return { ret_ip }) => {
+                            ip = ret_ip;
+                            break;
+                        }
                         Some(Frame::MemoReturn {
                             ret_ip,
                             rule,
@@ -667,8 +744,9 @@ fn run(
                             if let Some(m) = memo {
                                 let stored_events =
                                     events[events_mark as usize..].to_vec().into_boxed_slice();
-                                let stored_tree =
-                                    tree_events[tree_mark as usize..].to_vec().into_boxed_slice();
+                                let stored_tree = tree_events[tree_mark as usize..]
+                                    .to_vec()
+                                    .into_boxed_slice();
                                 m.insert_hit(rule, start_pos, pos, stored_events, stored_tree);
                             }
                             ip = ret_ip;
@@ -688,13 +766,12 @@ fn run(
             }
 
             // ── Backtracking ──────────────────────────────────────────────────
-
             Insn::Choice { alt } => {
                 stack.push(Frame::Backtrack {
                     alt,
-                    saved_pos:        pos,
-                    capture_mark:     u32::try_from(events.len()).unwrap_or(0),
-                    tree_mark:        u32::try_from(tree_events.len()).unwrap_or(0),
+                    saved_pos: pos,
+                    capture_mark: u32::try_from(events.len()).unwrap_or(0),
+                    tree_mark: u32::try_from(tree_events.len()).unwrap_or(0),
                     open_tokens_mark: u32::try_from(open_tokens.len()).unwrap_or(0),
                 });
                 ip += 1;
@@ -707,15 +784,28 @@ fn run(
 
             Insn::BackCommit { target } => {
                 pos = pop_backtrack_pos(stack)?;
-                ip  = target;
+                ip = target;
             }
 
             Insn::NegBackCommit { target } => {
                 pos = pop_backtrack_pos(stack)?;
-                ip  = target;
-                do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                        events, tree_events, open_tokens, memo, error_ctx,
-                        multi_errors, max_errors)?;
+                ip = target;
+                do_fail(
+                    graph,
+                    input,
+                    stack,
+                    &mut ip,
+                    &mut pos,
+                    flags,
+                    ctx_snapshots,
+                    events,
+                    tree_events,
+                    open_tokens,
+                    memo,
+                    error_ctx,
+                    multi_errors,
+                    max_errors,
+                )?;
             }
 
             // Fix: PartialCommit must update ALL backtrack marks so that a
@@ -733,31 +823,57 @@ fn run(
             }
 
             // ── O(1) dispatch ────────────────────────────────────────────────
-
             Insn::ByteDispatch { table_id } => {
                 if let Some(b) = input.get(pos as usize).copied() {
                     let target = graph.dispatch(table_id, b);
-                    if target != u32::MAX { ip = target; continue; }
+                    if target != u32::MAX {
+                        ip = target;
+                        continue;
+                    }
                 }
-                do_fail(graph, input, stack, &mut ip, &mut pos, flags, ctx_snapshots,
-                        events, tree_events, open_tokens, memo, error_ctx,
-                        multi_errors, max_errors)?;
+                do_fail(
+                    graph,
+                    input,
+                    stack,
+                    &mut ip,
+                    &mut pos,
+                    flags,
+                    ctx_snapshots,
+                    events,
+                    tree_events,
+                    open_tokens,
+                    memo,
+                    error_ctx,
+                    multi_errors,
+                    max_errors,
+                )?;
             }
 
             // ── Context flags ─────────────────────────────────────────────────
-
             Insn::IfFlag { flag_id, on_fail } => {
                 if flag_is_set(flags, flag_id) {
                     ip += 1;
                 } else {
-                    error_ctx.record(pos, Expected::Flag { id: flag_id, required: true });
+                    error_ctx.record(
+                        pos,
+                        Expected::Flag {
+                            id: flag_id,
+                            required: true,
+                        },
+                    );
                     fail_jump!(on_fail);
                 }
             }
 
             Insn::IfNotFlag { flag_id, on_fail } => {
                 if flag_is_set(flags, flag_id) {
-                    error_ctx.record(pos, Expected::Flag { id: flag_id, required: false });
+                    error_ctx.record(
+                        pos,
+                        Expected::Flag {
+                            id: flag_id,
+                            required: false,
+                        },
+                    );
                     fail_jump!(on_fail);
                 } else {
                     ip += 1;
@@ -766,14 +882,19 @@ fn run(
 
             Insn::PushFlags { mask_id } => {
                 let entries = graph.flag_masks.get(mask_id);
-                let mark    = u32::try_from(ctx_snapshots.len()).unwrap_or(0);
+                let mark = u32::try_from(ctx_snapshots.len()).unwrap_or(0);
                 for e in entries {
                     let w = e.word as usize;
                     let old = if w < flags.len() { flags[w] } else { 0 };
-                    ctx_snapshots.push(SnapEntry { word: e.word, val: old });
+                    ctx_snapshots.push(SnapEntry {
+                        word: e.word,
+                        val: old,
+                    });
                 }
                 FlagMask { entries }.apply(flags);
-                stack.push(Frame::ContextSave { snapshot_mark: mark });
+                stack.push(Frame::ContextSave {
+                    snapshot_mark: mark,
+                });
                 ip += 1;
             }
 
@@ -784,9 +905,8 @@ fn run(
             }
 
             // ── Legacy captures ───────────────────────────────────────────────
-
             Insn::CaptureBegin { tag } => {
-                events.push(CaptureEvent::Open  { tag, pos });
+                events.push(CaptureEvent::Open { tag, pos });
                 ip += 1;
             }
             Insn::CaptureEnd { tag } => {
@@ -818,9 +938,13 @@ fn run(
 
             // End a leaf token: pop the open-tokens stack, emit TreeEvent::Token.
             Insn::TokenEnd => {
-                let (kind, is_trivia, start) = open_tokens.pop()
-                    .ok_or(ParseError::BadGraph)?;
-                tree_events.push(TreeEvent::Token { kind, start, end: pos, is_trivia });
+                let (kind, is_trivia, start) = open_tokens.pop().ok_or(ParseError::BadGraph)?;
+                tree_events.push(TreeEvent::Token {
+                    kind,
+                    start,
+                    end: pos,
+                    is_trivia,
+                });
                 ip += 1;
             }
 
@@ -830,7 +954,6 @@ fn run(
             }
 
             // ── Error recovery ─────────────────────────────────────────────────
-
             Insn::RecoverUntil { sync_rule, resume } => {
                 stack.push(Frame::Recover { sync_rule, resume });
                 ip += 1;
@@ -866,28 +989,43 @@ fn run(
 #[inline]
 fn decode_utf8(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     let b0 = *bytes.get(pos)?;
-    if b0 < 0x80 { return Some((u32::from(b0), 1)); }
-    if b0 < 0xC2 { return None; }
+    if b0 < 0x80 {
+        return Some((u32::from(b0), 1));
+    }
+    if b0 < 0xC2 {
+        return None;
+    }
     if b0 < 0xE0 {
         let b1 = *bytes.get(pos + 1)?;
-        if b1 & 0xC0 != 0x80 { return None; }
+        if b1 & 0xC0 != 0x80 {
+            return None;
+        }
         return Some((((u32::from(b0) & 0x1F) << 6) | (u32::from(b1) & 0x3F), 2));
     }
     if b0 < 0xF0 {
         let b1 = *bytes.get(pos + 1)?;
         let b2 = *bytes.get(pos + 2)?;
-        if b1 & 0xC0 != 0x80 || b2 & 0xC0 != 0x80 { return None; }
-        let cp = ((u32::from(b0) & 0x0F) << 12) | ((u32::from(b1) & 0x3F) << 6) | (u32::from(b2) & 0x3F);
-        if cp < 0x800 || (0xD800..=0xDFFF).contains(&cp) { return None; }
+        if b1 & 0xC0 != 0x80 || b2 & 0xC0 != 0x80 {
+            return None;
+        }
+        let cp =
+            ((u32::from(b0) & 0x0F) << 12) | ((u32::from(b1) & 0x3F) << 6) | (u32::from(b2) & 0x3F);
+        if cp < 0x800 || (0xD800..=0xDFFF).contains(&cp) {
+            return None;
+        }
         return Some((cp, 3));
     }
     if b0 < 0xF5 {
         let b1 = *bytes.get(pos + 1)?;
         let b2 = *bytes.get(pos + 2)?;
         let b3 = *bytes.get(pos + 3)?;
-        if b1 & 0xC0 != 0x80 || b2 & 0xC0 != 0x80 || b3 & 0xC0 != 0x80 { return None; }
-        let cp = ((u32::from(b0) & 0x07) << 18) | ((u32::from(b1) & 0x3F) << 12)
-               | ((u32::from(b2) & 0x3F) << 6)  |  (u32::from(b3) & 0x3F);
+        if b1 & 0xC0 != 0x80 || b2 & 0xC0 != 0x80 || b3 & 0xC0 != 0x80 {
+            return None;
+        }
+        let cp = ((u32::from(b0) & 0x07) << 18)
+            | ((u32::from(b1) & 0x3F) << 12)
+            | ((u32::from(b2) & 0x3F) << 6)
+            | (u32::from(b3) & 0x3F);
         if !(0x10000..=0x10_FFFF).contains(&cp) {
             return None;
         }
@@ -910,7 +1048,9 @@ fn flag_is_set(flags: &[u64], flag_id: u16) -> bool {
 fn restore_snapshot(flags: &mut [u64], snaps: &mut Vec<SnapEntry>, mark: u32) {
     let mark = mark as usize;
     for entry in snaps[mark..].iter().rev() {
-        if (entry.word as usize) < flags.len() { flags[entry.word as usize] = entry.val; }
+        if (entry.word as usize) < flags.len() {
+            flags[entry.word as usize] = entry.val;
+        }
     }
     snaps.truncate(mark);
 }
@@ -920,26 +1060,39 @@ fn restore_snapshot(flags: &mut [u64], snaps: &mut Vec<SnapEntry>, mark: u32) {
 #[allow(clippy::too_many_arguments)]
 #[inline]
 fn fail_or_jump(
-    on_fail:       u32,
-    graph:         &ParseGraph,
-    input:         &[u8],
-    stack:         &mut Vec<Frame>,
-    ip:            &mut u32,
-    pos:           &mut Pos,
-    flags:         &mut Vec<u64>,
+    on_fail: u32,
+    graph: &ParseGraph,
+    input: &[u8],
+    stack: &mut Vec<Frame>,
+    ip: &mut u32,
+    pos: &mut Pos,
+    flags: &mut Vec<u64>,
     ctx_snapshots: &mut Vec<SnapEntry>,
-    events:        &mut Vec<CaptureEvent>,
-    tree_events:   &mut Vec<TreeEvent>,
-    open_tokens:   &mut Vec<(SyntaxKind, bool, Pos)>,
-    memo:          &mut Option<MemoTable>,
-    error_ctx:     &ErrorContext,
-    multi_errors:  &mut Option<&mut Vec<ParseError>>,
-    max_errors:    usize,
+    events: &mut Vec<CaptureEvent>,
+    tree_events: &mut Vec<TreeEvent>,
+    open_tokens: &mut Vec<(SyntaxKind, bool, Pos)>,
+    memo: &mut Option<MemoTable>,
+    error_ctx: &ErrorContext,
+    multi_errors: &mut Option<&mut Vec<ParseError>>,
+    max_errors: usize,
 ) -> Result<(), ParseError> {
     if on_fail == u32::MAX {
-        do_fail(graph, input, stack, ip, pos, flags, ctx_snapshots,
-                events, tree_events, open_tokens, memo, error_ctx,
-                multi_errors, max_errors)
+        do_fail(
+            graph,
+            input,
+            stack,
+            ip,
+            pos,
+            flags,
+            ctx_snapshots,
+            events,
+            tree_events,
+            open_tokens,
+            memo,
+            error_ctx,
+            multi_errors,
+            max_errors,
+        )
     } else {
         *ip = on_fail;
         Ok(())
@@ -958,28 +1111,34 @@ const fn recovery_advance(pos: &mut Pos, input: &[u8]) {
 #[inline]
 #[allow(clippy::ptr_arg)] // need Vec for .truncate
 fn do_fail(
-    graph:         &ParseGraph,
-    input:         &[u8],
-    stack:         &mut Vec<Frame>,
-    ip:            &mut u32,
-    pos:           &mut Pos,
-    flags:         &mut Vec<u64>,
+    graph: &ParseGraph,
+    input: &[u8],
+    stack: &mut Vec<Frame>,
+    ip: &mut u32,
+    pos: &mut Pos,
+    flags: &mut Vec<u64>,
     ctx_snapshots: &mut Vec<SnapEntry>,
-    events:        &mut Vec<CaptureEvent>,
-    tree_events:   &mut Vec<TreeEvent>,
-    open_tokens:   &mut Vec<(SyntaxKind, bool, Pos)>,
-    memo:          &mut Option<MemoTable>,
-    error_ctx:     &ErrorContext,
-    multi_errors:  &mut Option<&mut Vec<ParseError>>,
-    max_errors:    usize,
+    events: &mut Vec<CaptureEvent>,
+    tree_events: &mut Vec<TreeEvent>,
+    open_tokens: &mut Vec<(SyntaxKind, bool, Pos)>,
+    memo: &mut Option<MemoTable>,
+    error_ctx: &ErrorContext,
+    multi_errors: &mut Option<&mut Vec<ParseError>>,
+    max_errors: usize,
 ) -> Result<(), ParseError> {
     loop {
         match stack.pop() {
-            Some(Frame::Backtrack { alt, saved_pos, capture_mark, tree_mark, open_tokens_mark }) => {
-                *ip  = alt;
+            Some(Frame::Backtrack {
+                alt,
+                saved_pos,
+                capture_mark,
+                tree_mark,
+                open_tokens_mark,
+            }) => {
+                *ip = alt;
                 *pos = saved_pos;
-                events.truncate(capture_mark        as usize);
-                tree_events.truncate(tree_mark      as usize);
+                events.truncate(capture_mark as usize);
+                tree_events.truncate(tree_mark as usize);
                 open_tokens.truncate(open_tokens_mark as usize);
                 return Ok(());
             }
@@ -987,10 +1146,16 @@ fn do_fail(
                 restore_snapshot(flags, ctx_snapshots, snapshot_mark);
             }
             Some(Frame::Return { .. }) => {}
-            Some(Frame::MemoReturn { rule, start_pos, .. }) => {
-                if let Some(m) = memo { m.insert_miss(rule, start_pos, error_ctx.furthest); }
+            Some(Frame::MemoReturn {
+                rule, start_pos, ..
+            }) => {
+                if let Some(m) = memo {
+                    m.insert_miss(rule, start_pos, error_ctx.furthest);
+                }
             }
-            Some(Frame::Recover { sync_rule, resume } | Frame::RecoverSync { sync_rule, resume }) => {
+            Some(
+                Frame::Recover { sync_rule, resume } | Frame::RecoverSync { sync_rule, resume },
+            ) => {
                 if let Some(errs) = multi_errors {
                     errs.push(ParseError::NoMatch(error_ctx.to_diagnostic()));
                     if errs.len() >= max_errors {
@@ -1001,7 +1166,10 @@ fn do_fail(
                 if (*pos as usize) >= input.len() {
                     // Synced to EOI; don't jump back into the recovery body — keep popping.
                 } else {
-                    let entry = *graph.rule_entry.get(sync_rule as usize).ok_or(ParseError::BadGraph)?;
+                    let entry = *graph
+                        .rule_entry
+                        .get(sync_rule as usize)
+                        .ok_or(ParseError::BadGraph)?;
                     stack.push(Frame::RecoverSync { sync_rule, resume });
                     stack.push(Frame::Return { ret_ip: resume });
                     *ip = entry;
@@ -1040,17 +1208,24 @@ fn pop_backtrack_pos(stack: &mut Vec<Frame>) -> Result<Pos, ParseError> {
 /// Update ALL marks in the nearest `Backtrack` frame (used by `PartialCommit`).
 #[inline]
 fn update_backtrack_marks(
-    stack:            &mut [Frame],
-    new_pos:          Pos,
+    stack: &mut [Frame],
+    new_pos: Pos,
     new_capture_mark: u32,
-    new_tree_mark:    u32,
-    new_open_mark:    u32,
+    new_tree_mark: u32,
+    new_open_mark: u32,
 ) -> Result<(), ParseError> {
     for frame in stack.iter_mut().rev() {
-        if let Frame::Backtrack { saved_pos, capture_mark, tree_mark, open_tokens_mark, .. } = frame {
-            *saved_pos        = new_pos;
-            *capture_mark     = new_capture_mark;
-            *tree_mark        = new_tree_mark;
+        if let Frame::Backtrack {
+            saved_pos,
+            capture_mark,
+            tree_mark,
+            open_tokens_mark,
+            ..
+        } = frame
+        {
+            *saved_pos = new_pos;
+            *capture_mark = new_capture_mark;
+            *tree_mark = new_tree_mark;
             *open_tokens_mark = new_open_mark;
             return Ok(());
         }
@@ -1100,10 +1275,18 @@ mod tests {
         let graph = built.as_graph();
         let mut engine = Engine::new();
         let err = engine.parse(&graph, b"b").unwrap_err();
-        let ParseError::NoMatch(diag) = err else { panic!("expected NoMatch"); };
+        let ParseError::NoMatch(diag) = err else {
+            panic!("expected NoMatch");
+        };
         assert_eq!(diag.furthest, 0);
-        assert!(!diag.expected.is_empty(), "diagnostic should list expected tokens");
-        assert!(diag.expected.iter().any(|e| matches!(e, Expected::Byte(0x61))));
+        assert!(
+            !diag.expected.is_empty(),
+            "diagnostic should list expected tokens"
+        );
+        assert!(diag
+            .expected
+            .iter()
+            .any(|e| matches!(e, Expected::Byte(0x61))));
     }
 
     #[test]
@@ -1112,7 +1295,9 @@ mod tests {
         let graph = built.as_graph();
         let mut engine = Engine::new();
         let err = engine.parse(&graph, b"").unwrap_err();
-        let ParseError::NoMatch(diag) = err else { panic!("expected NoMatch"); };
+        let ParseError::NoMatch(diag) = err else {
+            panic!("expected NoMatch");
+        };
         assert_eq!(diag.furthest, 0);
         assert!(!diag.expected.is_empty());
     }

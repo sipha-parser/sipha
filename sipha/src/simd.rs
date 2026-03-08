@@ -27,7 +27,7 @@ use crate::types::Pos;
 #[must_use]
 #[inline]
 pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
-    let n   = lit.len();
+    let n = lit.len();
     let off = pos as usize;
     let end = off + n;
 
@@ -67,9 +67,7 @@ pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
 #[target_feature(enable = "sse2")]
 #[allow(clippy::cast_ptr_alignment)] // required: _mm_loadu_si128 takes *const __m128i
 unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
-    use std::arch::x86_64::{
-        __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8,
-    };
+    use std::arch::x86_64::{__m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8};
 
     let mut i = 0usize;
 
@@ -94,9 +92,7 @@ unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
 #[target_feature(enable = "avx2")]
 #[allow(clippy::cast_ptr_alignment)] // required: load intrinsics take *const __m256i/__m128i
 unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
-    use std::arch::x86_64::{
-        __m256i, _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8,
-    };
+    use std::arch::x86_64::{__m256i, _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8};
 
     let mut i = 0usize;
 
@@ -114,9 +110,7 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
 
     // Handle 16-byte residual (AVX2 implies SSE2).
     if i + 16 <= n {
-        use std::arch::x86_64::{
-            __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8,
-        };
+        use std::arch::x86_64::{__m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8};
         let va = _mm_loadu_si128(a.add(i).cast::<__m128i>());
         let vb = _mm_loadu_si128(b.add(i).cast::<__m128i>());
         let eq = _mm_cmpeq_epi8(va, vb);

@@ -57,8 +57,19 @@ fn is_token_like(name: &str) -> bool {
         return true;
     }
     const TERMINAL_NAMES: &[&str] = &[
-        "ident", "lparen", "rparen", "lbracket", "rbracket", "lbrace", "rbrace",
-        "comma", "semicolon", "dot", "dot_dot", "arrow", "op_colon",
+        "ident",
+        "lparen",
+        "rparen",
+        "lbracket",
+        "rbracket",
+        "lbrace",
+        "rbrace",
+        "comma",
+        "semicolon",
+        "dot",
+        "dot_dot",
+        "arrow",
+        "op_colon",
     ];
     TERMINAL_NAMES.contains(&name)
 }
@@ -97,7 +108,10 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
                 push(ip + 1);
                 push(alt);
             }
-            Insn::Commit { target } | Insn::BackCommit { target } | Insn::PartialCommit { target } | Insn::NegBackCommit { target } => {
+            Insn::Commit { target }
+            | Insn::BackCommit { target }
+            | Insn::PartialCommit { target }
+            | Insn::NegBackCommit { target } => {
                 push(ip + 1);
                 push(target);
             }
@@ -250,7 +264,12 @@ pub fn to_cfg_dot(graph: &BuiltGraph, rule_id: RuleId) -> String {
     for &ip in &reachable {
         let insn = &graph.insns[ip as usize];
         let label = insn_label(insn, graph, ip);
-        out.push_str(&format!(r#"  n{} [label="{}: {}"];"#, ip, ip, escape_dot_label(&label)));
+        out.push_str(&format!(
+            r#"  n{} [label="{}: {}"];"#,
+            ip,
+            ip,
+            escape_dot_label(&label)
+        ));
         out.push('\n');
     }
 
@@ -302,10 +321,14 @@ fn insn_label(insn: &Insn, graph: &BuiltGraph, _ip: InsnId) -> String {
         Insn::CaptureEnd { tag } => format!("capture_end {}", tag),
         Insn::NodeBegin { kind, field: _ } => format!("node_begin {}", kind),
         Insn::NodeEnd => "node_end".to_string(),
-        Insn::TokenBegin { kind, is_trivia } => format!("token_begin {} trivia={}", kind, is_trivia),
+        Insn::TokenBegin { kind, is_trivia } => {
+            format!("token_begin {} trivia={}", kind, is_trivia)
+        }
         Insn::TokenEnd => "token_end".to_string(),
         Insn::RecordExpectedLabel { label_id } => format!("expect_label #{label_id}"),
-        Insn::RecoverUntil { sync_rule, resume } => format!("recover_until rule#{sync_rule} → {resume}"),
+        Insn::RecoverUntil { sync_rule, resume } => {
+            format!("recover_until rule#{sync_rule} → {resume}")
+        }
         Insn::RecoveryResume => "recovery_resume".to_string(),
         Insn::Accept => "accept".to_string(),
     }
@@ -333,7 +356,10 @@ fn insn_successors(insn: &Insn, ip: InsnId) -> Vec<InsnId> {
             s.push(ip + 1);
             s.push(*alt);
         }
-        Insn::Commit { target } | Insn::BackCommit { target } | Insn::PartialCommit { target } | Insn::NegBackCommit { target } => {
+        Insn::Commit { target }
+        | Insn::BackCommit { target }
+        | Insn::PartialCommit { target }
+        | Insn::NegBackCommit { target } => {
             s.push(ip + 1);
             s.push(*target);
         }

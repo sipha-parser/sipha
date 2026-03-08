@@ -7,8 +7,7 @@ use crate::red::{SyntaxElement, SyntaxNode, SyntaxToken};
 use crate::types::SyntaxKind;
 
 /// Options for S-expression output.
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SexpOptions {
     /// Include trivia tokens in the output.
     pub include_trivia: bool,
@@ -19,10 +18,9 @@ pub struct SexpOptions {
     pub max_token_len: Option<usize>,
 }
 
-
 impl SexpOptions {
     /// Structure and semantic tokens only; no trivia.
-    #[must_use] 
+    #[must_use]
     pub fn semantic_only() -> Self {
         Self {
             include_trivia: false,
@@ -31,7 +29,7 @@ impl SexpOptions {
     }
 
     /// Full tree including trivia.
-    #[must_use] 
+    #[must_use]
     pub fn full() -> Self {
         Self {
             include_trivia: true,
@@ -80,7 +78,7 @@ fn kind_str(kind: SyntaxKind, opts: &SexpOptions) -> String {
 ///
 /// Format: `(KIND child1 child2 ...)` for nodes; tokens as `(KIND "text")`.
 /// Trivia is included only when [`SexpOptions::include_trivia`] is true.
-#[must_use] 
+#[must_use]
 pub fn syntax_node_to_sexp(node: &SyntaxNode, opts: &SexpOptions) -> String {
     let mut out = String::new();
     append_node_to_sexp(node, opts, &mut out);

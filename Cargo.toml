@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+  "sipha",
+  "sipha-macros",
+  "sipha-analysis",
+  "sipha-display",
+  "sipha-sourcemap",
+  "sipha-fmt",
+  "sipha-diff",
+]
+
+[workspace.lints.clippy]
+pedantic = "warn"
+nursery = "warn"

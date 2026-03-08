@@ -41,11 +41,12 @@ pub fn build_scope_extents<S: Copy>(
 /// Find the innermost scope containing the given byte offset.
 ///
 /// Returns the scope ID of the smallest extent that contains `offset`.
-/// If no extent contains the offset, returns the root scope (first element's ID).
-/// If `extents` is empty, the return value is undefined; [`build_scope_extents`] always
-/// returns at least one element (the root).
+/// If no extent contains the offset, returns the root scope (first element's ID) when
+/// `extents` is non-empty, otherwise returns `default`.
+/// If `extents` is empty (e.g. from a future caller or partial state), returns `default`
+/// so that the LSP never panics.
 #[must_use]
-pub fn scope_at_offset<S: Copy>(extents: &[(S, (u32, u32))], offset: u32) -> S {
+pub fn scope_at_offset<S: Copy>(extents: &[(S, (u32, u32))], offset: u32, default: S) -> S {
     let mut best: Option<(S, u32)> = None;
     for (scope_id, (start, end)) in extents {
         if *start <= offset && offset < *end {
@@ -57,7 +58,7 @@ pub fn scope_at_offset<S: Copy>(extents: &[(S, (u32, u32))], offset: u32) -> S {
     }
     best.map(|(id, _)| id)
         .or_else(|| extents.first().map(|(id, _)| *id))
-        .expect("scope_at_offset requires non-empty extents (build_scope_extents always returns at least root)")
+        .unwrap_or(default)
 }
 
 struct ScopeExtentVisitor<'a, S, F> {

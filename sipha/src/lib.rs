@@ -58,32 +58,32 @@
 
 pub use sipha_macros::SyntaxKinds;
 
-pub mod types;
-pub mod context;
-pub mod insn;
-pub mod simd;
-pub mod error;
-pub mod memo;
-pub mod engine;
+pub mod builder;
 pub mod capture;
+pub mod context;
+pub mod engine;
+pub mod error;
 pub mod green;
 pub mod green_builder;
+pub mod insn;
+pub mod memo;
 pub mod red;
-pub mod builder;
+pub mod simd;
+pub mod types;
 
 pub mod codegen;
 pub mod incremental;
 pub mod sexp;
 
-#[cfg(feature = "utf16")]
-pub mod utf16;
 /// Helpers for building expression grammars with precedence (left/right-assoc infix levels).
 pub mod expr;
 pub mod line_index;
 pub mod parsed_doc;
+pub mod source_map;
 pub mod tree_display;
 pub mod trivia;
-pub mod source_map;
+#[cfg(feature = "utf16")]
+pub mod utf16;
 
 #[cfg(feature = "walk")]
 pub mod walk;
@@ -98,22 +98,28 @@ pub mod transform;
 pub mod miette_support;
 
 pub mod prelude {
-    pub use crate::types::{CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag, TreeEvent, classes, sort_spans};
-    pub use crate::context::{FlagId, ParseContext};
-    pub use crate::insn::{Insn, FlagMaskTable, LiteralTable, ParseGraph};
-    pub use crate::engine::{Engine, ParseError, ParseOutput, RecoverMultiResult};
-    pub use crate::error::{Diagnostic, ErrorContext, Expected, SemanticDiagnostic, Severity};
-    pub use crate::capture::CaptureNode;
-    pub use crate::green::{GreenElement, GreenNode, GreenToken, build_green_tree};
-    pub use crate::green_builder::GreenBuilder;
-    pub use crate::red::{SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia};
     pub use crate::builder::{BuiltGraph, GrammarBuilder, Repeat};
+    pub use crate::capture::CaptureNode;
+    pub use crate::context::{FlagId, ParseContext};
+    pub use crate::engine::{Engine, ParseError, ParseOutput, RecoverMultiResult};
+    pub use crate::error::{
+        Diagnostic, ErrorContext, Expected, RelatedLocation, SemanticDiagnostic, Severity,
+    };
+    pub use crate::expr::{left_assoc_infix_level, right_assoc_infix_level};
+    pub use crate::green::{build_green_tree, GreenElement, GreenNode, GreenToken};
+    pub use crate::green_builder::GreenBuilder;
+    pub use crate::insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph};
     pub use crate::line_index::LineIndex;
     pub use crate::memo::MemoTable;
     pub use crate::parsed_doc::ParsedDoc;
+    pub use crate::red::{SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia};
+    pub use crate::source_map::{map_offset, SpanMap, SpanMapping};
     pub use crate::tree_display::{format_syntax_tree, TreeDisplayOptions};
     pub use crate::trivia::{newline, replace_leading_trivia, replace_trailing_trivia, space};
-    pub use crate::source_map::{map_offset, SpanMap, SpanMapping};
+    pub use crate::types::{
+        classes, sort_spans, CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag,
+        TreeEvent,
+    };
 
     #[cfg(feature = "walk")]
     pub use crate::walk::{walk, Visitor, WalkOptions, WalkResult};
