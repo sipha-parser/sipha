@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,36 +32,22 @@ jobs:
         run: cargo test --workspace --all-features
 
       - name: Publish sipha-macros
-        run: cargo publish -p sipha-macros --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p sipha-macros
 
       - name: Publish sipha
-        run: cargo publish -p sipha --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p sipha
 
       - name: Publish sipha-analysis
-        run: cargo publish -p sipha-analysis --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p sipha-analysis
 
       - name: Publish sipha-display
-        run: cargo publish -p sipha-display --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p sipha-display
 
       - name: Publish sipha-sourcemap
-        run: cargo publish -p sipha-sourcemap --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p sipha-sourcemap
 
       - name: Publish sipha-fmt
-        run: cargo publish -p sipha-fmt --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p sipha-fmt
 
       - name: Publish sipha-diff
-        run: cargo publish -p sipha-diff --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p sipha-diff
