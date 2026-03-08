@@ -12,6 +12,7 @@ jobs:
   release:
     name: Publish to crates.io
     runs-on: ubuntu-latest
+    environment: sipha
     permissions:
       contents: read
     env:
