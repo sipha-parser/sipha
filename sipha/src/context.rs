@@ -131,6 +131,7 @@ impl ParseContext {
     /// The number of `u64` words currently allocated.
     #[must_use]
     #[inline]
+    #[allow(clippy::incompatible_msrv)] // .len() in const stable since 1.87; MSRV 1.70
     pub const fn num_words(&self) -> usize {
         self.words.len()
     }

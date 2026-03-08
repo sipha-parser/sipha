@@ -84,15 +84,7 @@ pub fn format_syntax_tree(
 ) -> String {
     let mut out = String::new();
     let mut visited = HashSet::new();
-    format_node(
-        root,
-        options,
-        &kind_name,
-        "",
-        true,
-        &mut out,
-        &mut visited,
-    );
+    format_node(root, options, &kind_name, "", true, &mut out, &mut visited);
     out
 }
 

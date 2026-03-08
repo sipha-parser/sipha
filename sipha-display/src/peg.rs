@@ -2,7 +2,13 @@
 //!
 //! Walks the instruction stream and reverse-engineers PEG syntax (e.g. `rule <- a / b "lit"`).
 
-#![allow(clippy::match_same_arms, clippy::doc_markdown, clippy::format_push_string, clippy::uninlined_format_args, clippy::cast_possible_truncation)]
+#![allow(
+    clippy::match_same_arms,
+    clippy::doc_markdown,
+    clippy::format_push_string,
+    clippy::uninlined_format_args,
+    clippy::cast_possible_truncation
+)]
 
 use sipha::builder::BuiltGraph;
 use sipha::insn::Insn;
@@ -107,7 +113,7 @@ fn parse_sequence_until(
             | Insn::Commit { .. }
             | Insn::BackCommit { .. }
             | Insn::PartialCommit { .. }
-            |             Insn::NegBackCommit { .. } => break,
+            | Insn::NegBackCommit { .. } => break,
             Insn::Choice { .. } => {
                 let (expr, next) = parse_choice(graph, ip, reachable, seen);
                 if !expr.is_empty() {
@@ -309,11 +315,7 @@ fn format_char_class(class: CharClass) -> String {
     let mut ranges = Vec::new();
     for b in 0u8..=255 {
         if class.contains(b) {
-            if ranges.is_empty()
-                || ranges
-                    .last()
-                    .is_none_or(|(_, e)| *e != b.wrapping_sub(1))
-            {
+            if ranges.is_empty() || ranges.last().is_none_or(|(_, e)| *e != b.wrapping_sub(1)) {
                 ranges.push((b, b));
             } else {
                 let last = ranges.last_mut().unwrap();

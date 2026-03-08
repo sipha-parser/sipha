@@ -73,8 +73,8 @@ fn parse_repetition() {
     g.rule("start", |g| {
         g.byte(b'a');
         g.zero_or_more(|g| {
-        g.byte(b'b');
-    });
+            g.byte(b'b');
+        });
         g.end_of_input();
         g.accept();
     });

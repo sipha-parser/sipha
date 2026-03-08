@@ -713,6 +713,7 @@ impl GrammarBuilder {
 
     /// Return the address the *next* emitted instruction will have.
     #[allow(clippy::cast_possible_truncation)] // const fn; graph size fits InsnId in practice
+    #[allow(clippy::incompatible_msrv)] // .len() in const stable since 1.87; MSRV 1.70
     const fn current_ip(&self) -> InsnId {
         self.insns.len() as InsnId
     }
