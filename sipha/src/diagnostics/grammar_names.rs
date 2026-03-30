@@ -1,0 +1,35 @@
+//! Resolve rule / label / class names for display diagnostics.
+
+use crate::types::RuleId;
+
+/// Tables used to turn numeric ids in [`Expected`](crate::diagnostics::error::Expected) into readable strings.
+///
+/// Implemented by [`crate::parse::insn::ParseGraph`] (interned strings) and
+/// [`SliceGrammarNames`] for static `&[&str]` tables (e.g. tests or hand-written glue).
+pub trait GrammarNames {
+    fn rule_name(&self, id: RuleId) -> Option<&str>;
+    fn expected_label(&self, id: u32) -> Option<&str>;
+    fn class_label(&self, label_id: u32) -> Option<&str>;
+}
+
+/// Rule, expected-label, and class-label slices (e.g. from generated `static` tables).
+#[derive(Clone, Copy, Debug)]
+pub struct SliceGrammarNames<'a> {
+    pub rule_names: &'a [&'a str],
+    pub expected_labels: &'a [&'a str],
+    pub class_labels: &'a [&'a str],
+}
+
+impl GrammarNames for SliceGrammarNames<'_> {
+    fn rule_name(&self, id: RuleId) -> Option<&str> {
+        self.rule_names.get(id as usize).copied()
+    }
+
+    fn expected_label(&self, id: u32) -> Option<&str> {
+        self.expected_labels.get(id as usize).copied()
+    }
+
+    fn class_label(&self, label_id: u32) -> Option<&str> {
+        self.class_labels.get(label_id as usize).copied()
+    }
+}

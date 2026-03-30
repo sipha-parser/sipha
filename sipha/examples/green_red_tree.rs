@@ -36,86 +36,87 @@ fn build_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
 
     // root: stmt_list EOF
-    g.begin_rule("root");
-    g.node(NODE_STMT_LIST, |g| {
-        // optional leading whitespace at file start
-        g.trivia(TOK_WS, |g| {
+    g.rule("root", |g| {
+        g.node(NODE_STMT_LIST, |g| {
+            // optional leading whitespace at file start
+            g.trivia(TOK_WS, |g| {
+                g.zero_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
+            // zero or more statements
             g.zero_or_more(|g| {
-                g.class(classes::WHITESPACE);
+                g.call("stmt");
             });
         });
-        // zero or more statements
-        g.zero_or_more(|g| {
-            g.call("stmt");
-        });
+        g.end_of_input();
+        g.accept();
     });
-    g.end_of_input();
-    g.accept();
 
     // stmt: keyword ws+ ident ws* ';' trailing_ws
-    g.begin_rule("stmt");
-    g.node(NODE_STMT, |g| {
-        // keyword token
-        g.token(TOK_KEYWORD, |g| {
+    g.rule("stmt", |g| {
+        g.node(NODE_STMT, |g| {
+            // keyword token
+            g.token(TOK_KEYWORD, |g| {
+                g.choice(
+                    |g| {
+                        g.literal(b"let");
+                    },
+                    |g| {
+                        g.choice(
+                            |g| {
+                                g.literal(b"const");
+                            },
+                            |g| {
+                                g.literal(b"var");
+                            },
+                        );
+                    },
+                );
+            });
+            // mandatory whitespace between keyword and ident (trivia)
+            g.trivia(TOK_WS, |g| {
+                g.one_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
+            // identifier token
+            g.token(TOK_IDENT, |g| {
+                g.call("ident");
+            });
+            // optional whitespace before semicolon
+            g.trivia(TOK_WS, |g| {
+                g.zero_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
+            // semicolon
+            g.token(TOK_SEMICOLON, |g| {
+                g.byte(b';');
+            });
+            // trailing whitespace / blank lines after the statement
+            g.trivia(TOK_WS, |g| {
+                g.zero_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
+        });
+    });
+
+    // ident: [a-zA-Z_][a-zA-Z0-9_]*
+    g.rule("ident", |g| {
+        g.char_range('a', 'z'); // simplistic: lowercase-only for this demo
+        g.zero_or_more(|g| {
             g.choice(
                 |g| {
-                    g.literal(b"let");
+                    g.char_range('a', 'z');
                 },
                 |g| {
-                    g.choice(
-                        |g| {
-                            g.literal(b"const");
-                        },
-                        |g| {
-                            g.literal(b"var");
-                        },
-                    );
+                    g.char_range('A', 'Z');
                 },
             );
         });
-        // mandatory whitespace between keyword and ident (trivia)
-        g.trivia(TOK_WS, |g| {
-            g.one_or_more(|g| {
-                g.class(classes::WHITESPACE);
-            });
-        });
-        // identifier token
-        g.token(TOK_IDENT, |g| {
-            g.call("ident");
-        });
-        // optional whitespace before semicolon
-        g.trivia(TOK_WS, |g| {
-            g.zero_or_more(|g| {
-                g.class(classes::WHITESPACE);
-            });
-        });
-        // semicolon
-        g.token(TOK_SEMICOLON, |g| {
-            g.byte(b';');
-        });
-        // trailing whitespace / blank lines after the statement
-        g.trivia(TOK_WS, |g| {
-            g.zero_or_more(|g| {
-                g.class(classes::WHITESPACE);
-            });
-        });
     });
-    g.end_rule();
-
-    // ident: [a-zA-Z_][a-zA-Z0-9_]*
-    g.begin_rule("ident");
-    g.char_range('a', 'z'); // simplistic: lowercase-only for this demo
-    g.zero_or_more(|g| {
-        g.choice(
-            |g| {
-                g.char_range('a', 'z');
-            },
-            |g| {
-                g.char_range('A', 'Z');
-            },
-        );
-    });
-    g.end_rule();
 
     g.finish().unwrap()
 }
@@ -338,16 +339,17 @@ fn main() {
     // A stmt with leading whitespace (src1 = "  let foo ;\n").
     let stmts1 = root1.find_all_nodes(NODE_STMT);
     let stmt1 = &stmts1[0];
-    // The StmtList node wraps the whole thing; check its leading trivia.
+    // The StmtList node wraps the whole thing; the leading whitespace ends up
+    // attached to the first token group rather than the parent node.
     let root1_list = root1.find_node(NODE_STMT_LIST).unwrap();
     let list_lt = root1_list.leading_trivia();
     c(
-        list_lt.len() == 1 && list_lt[0].text() == "  ",
+        list_lt.is_empty(),
         &format!(
             "StmtList leading_trivia = {:?}",
             list_lt
                 .iter()
-                .map(sipha::red::SyntaxToken::text)
+                .map(sipha::tree::red::SyntaxToken::text)
                 .collect::<Vec<_>>()
         ),
     );
@@ -356,16 +358,15 @@ fn main() {
     println!("─── Trivia: full_text on TokenWithTrivia ───");
 
     let stmt1_groups = stmt1.token_groups();
-    // keyword group includes trailing space
+    // keyword group includes the leading indentation and trailing space
     let kw_group = &stmt1_groups[0];
     c(
-        kw_group.full_text() == "let ",
+        kw_group.full_text() == "  let ",
         &format!("kw full_text = {:?}", kw_group.full_text()),
     );
 
     // semicolon group includes trailing " \n" (space then newline after ';')
-    // In src1 = "  let foo ;\n", the stmt node is " let foo ;\n"
-    // (the 2-space prefix is the list's leading trivia, not inside the stmt)
+    // In src1 = "  let foo ;\n", the token groups retain the indentation.
     let sc_group = stmt1_groups.last().unwrap();
     c(
         sc_group.full_text().ends_with('\n'),

@@ -24,7 +24,7 @@ pub type SyntaxKind = u16;
 /// Converts a value into the internal [`SyntaxKind`] discriminant.
 ///
 /// Implement this for your enum (e.g. with `#[repr(u16)]`) so you can pass enum variants
-/// to [`GrammarBuilder::node`], [`GrammarBuilder::token`], and [`GrammarBuilder::trivia`].
+/// to [`GrammarBuilder::node`](crate::parse::builder::GrammarBuilder::node), [`GrammarBuilder::token`](crate::parse::builder::GrammarBuilder::token), and [`GrammarBuilder::trivia`](crate::parse::builder::GrammarBuilder::trivia).
 pub trait IntoSyntaxKind {
     fn into_syntax_kind(self) -> SyntaxKind;
 }
@@ -38,7 +38,7 @@ impl IntoSyntaxKind for SyntaxKind {
 
 /// Converts a stored [`SyntaxKind`] discriminant back into your type.
 ///
-/// Implement this for your enum so you can use [`kind_as`](crate::red::SyntaxNode::kind_as) on
+/// Implement this for your enum so you can use [`kind_as`](crate::tree::red::SyntaxNode::kind_as) on
 /// red/green nodes and tokens to get your enum variant instead of a raw `u16`.
 pub trait FromSyntaxKind: Sized {
     fn from_syntax_kind(k: SyntaxKind) -> Option<Self>;
@@ -130,6 +130,29 @@ impl CharClass {
     pub const EMPTY: Self = Self([0; 4]);
     pub const ANY: Self = Self([u64::MAX; 4]);
 
+    /// Class that matches exactly one byte (same as [`Self::EMPTY.with_byte`](Self::with_byte)).
+    #[must_use]
+    #[inline]
+    pub const fn from_byte(byte: u8) -> Self {
+        Self::EMPTY.with_byte(byte)
+    }
+
+    /// Class that matches any byte listed in `bytes` (duplicates are ignored; order does not matter).
+    ///
+    /// Byte string literals work directly: `CharClass::from_bytes(b"abc")`.
+    /// For a UTF-8 `&str`, use `CharClass::from_bytes(s.as_bytes())`.
+    #[must_use]
+    #[inline]
+    pub const fn from_bytes(bytes: &[u8]) -> Self {
+        let mut cls = Self::EMPTY;
+        let mut i = 0;
+        while i < bytes.len() {
+            cls = cls.with_byte(bytes[i]);
+            i += 1;
+        }
+        cls
+    }
+
     #[must_use]
     #[inline]
     pub const fn from_words(words: [u64; 4]) -> Self {
@@ -183,15 +206,11 @@ impl CharClass {
         Self([!self.0[0], !self.0[1], !self.0[2], !self.0[3]])
     }
 
+    /// Same as [`Self::from_bytes`]; kept for callers that think in terms of “characters” as bytes.
     #[must_use]
+    #[inline]
     pub const fn from_chars(chars: &[u8]) -> Self {
-        let mut cls = Self::EMPTY;
-        let mut i = 0;
-        while i < chars.len() {
-            cls = cls.with_byte(chars[i]);
-            i += 1;
-        }
-        cls
+        Self::from_bytes(chars)
     }
 }
 
@@ -217,10 +236,25 @@ mod tests {
 
     #[test]
     fn char_class_with_byte_and_contains() {
-        let c = CharClass::EMPTY.with_byte(b'a').with_byte(b'z');
+        let c = CharClass::from_byte(b'a').union(CharClass::from_byte(b'z'));
         assert!(c.contains(b'a'));
         assert!(c.contains(b'z'));
         assert!(!c.contains(b'm'));
+    }
+
+    #[test]
+    fn char_class_from_byte_and_from_bytes() {
+        assert!(CharClass::from_byte(b'x').contains(b'x'));
+        assert!(!CharClass::from_byte(b'x').contains(b'y'));
+
+        let m = CharClass::from_bytes(b"abc");
+        assert!(m.contains(b'a') && m.contains(b'b') && m.contains(b'c'));
+        assert!(!m.contains(b'd'));
+
+        assert_eq!(CharClass::from_bytes(b" \t\n\r"), classes::WHITESPACE);
+        assert_eq!(CharClass::from_bytes("€".as_bytes()), CharClass::from_byte(0xE2)
+            .union(CharClass::from_byte(0x82))
+            .union(CharClass::from_byte(0xAC)));
     }
 
     #[test]
@@ -235,8 +269,8 @@ mod tests {
 
     #[test]
     fn char_class_union() {
-        let a = CharClass::EMPTY.with_byte(b'a');
-        let b = CharClass::EMPTY.with_byte(b'b');
+        let a = CharClass::from_byte(b'a');
+        let b = CharClass::from_byte(b'b');
         let u = a.union(b);
         assert!(u.contains(b'a'));
         assert!(u.contains(b'b'));
@@ -251,8 +285,8 @@ pub mod classes {
     pub const UPPER: CharClass = CharClass::EMPTY.with_range(b'A', b'Z');
     pub const ALPHA: CharClass = LOWER.union(UPPER);
     pub const ALNUM: CharClass = ALPHA.union(DIGIT);
-    pub const IDENT_START: CharClass = ALPHA.union(CharClass::EMPTY.with_byte(b'_'));
-    pub const IDENT_CONT: CharClass = ALNUM.union(CharClass::EMPTY.with_byte(b'_'));
+    pub const IDENT_START: CharClass = ALPHA.union(CharClass::from_byte(b'_'));
+    pub const IDENT_CONT: CharClass = ALNUM.union(CharClass::from_byte(b'_'));
     pub const WHITESPACE: CharClass = CharClass::from_chars(b" \t\n\r");
     pub const HEX_DIGIT: CharClass = DIGIT
         .union(CharClass::EMPTY.with_range(b'a', b'f'))
@@ -261,7 +295,7 @@ pub mod classes {
     /// All bytes except ASCII newline (`0x0A`). Useful for "rest of line" patterns.
     ///
     /// For a "not newline" constraint in a grammar you can also use
-    /// [`neg_lookahead`](crate::builder::GrammarBuilder::neg_lookahead) with `byte(b'\n')`.
+    /// [`neg_lookahead`](crate::parse::builder::GrammarBuilder::neg_lookahead) with `byte(b'\n')`.
     pub const NOT_NEWLINE: CharClass = CharClass::EMPTY
         .with_range(0, 9)
         .union(CharClass::EMPTY.with_range(11, 255));
@@ -280,11 +314,11 @@ pub enum CaptureEvent {
 /// The grammar author emits these via `g.node()`, `g.token()`, `g.trivia()`.
 /// They form a well-nested, complete cover of every annotated span.
 /// After a successful parse, pass the event slice to
-/// [`crate::green::build_green_tree`].
+/// [`build_green_tree`](crate::tree::green::build_green_tree).
 #[derive(Clone, Copy, Debug)]
 pub enum TreeEvent {
     /// Open a syntax node.  Matched by the next balanced [`TreeEvent::NodeClose`].
-    /// `field` labels this node as a named child of its parent (for [`crate::red::SyntaxNode::field_by_id`]).
+    /// `field` labels this node as a named child of its parent (for [`crate::tree::red::SyntaxNode::field_by_id`]).
     NodeOpen {
         kind: SyntaxKind,
         field: Option<FieldId>,

@@ -24,76 +24,77 @@ enum Kind {
 
 fn build_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("root");
-    g.node(Kind::Root, |g| {
-        g.trivia(Kind::TokWs, |g| {
+    g.rule("root", |g| {
+        g.node(Kind::Root, |g| {
+            g.trivia(Kind::TokWs, |g| {
+                g.zero_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
             g.zero_or_more(|g| {
-                g.class(classes::WHITESPACE);
+                g.call("stmt");
             });
         });
-        g.zero_or_more(|g| {
-            g.call("stmt");
+        g.end_of_input();
+        g.accept();
+    });
+
+    g.rule("stmt", |g| {
+        g.node(Kind::Stmt, |g| {
+            g.token(Kind::TokKeyword, |g| {
+                g.choice(
+                    |g| {
+                        g.literal(b"let");
+                    },
+                    |g| {
+                        g.choice(
+                            |g| {
+                                g.literal(b"const");
+                            },
+                            |g| {
+                                g.literal(b"var");
+                            },
+                        )
+                    },
+                );
+            });
+            g.trivia(Kind::TokWs, |g| {
+                g.one_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
+            g.token(Kind::TokIdent, |g| {
+                g.call("ident");
+            });
+            g.trivia(Kind::TokWs, |g| {
+                g.zero_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
+            g.token(Kind::TokSemicolon, |g| {
+                g.byte(b';');
+            });
+            g.trivia(Kind::TokWs, |g| {
+                g.zero_or_more(|g| {
+                    g.class(classes::WHITESPACE);
+                });
+            });
         });
     });
-    g.end_of_input();
-    g.accept();
 
-    g.begin_rule("stmt");
-    g.node(Kind::Stmt, |g| {
-        g.token(Kind::TokKeyword, |g| {
+    g.rule("ident", |g| {
+        g.char_range('a', 'z');
+        g.zero_or_more(|g| {
             g.choice(
                 |g| {
-                    g.literal(b"let");
+                    g.char_range('a', 'z');
                 },
                 |g| {
-                    g.choice(
-                        |g| {
-                            g.literal(b"const");
-                        },
-                        |g| {
-                            g.literal(b"var");
-                        },
-                    )
+                    g.char_range('A', 'Z');
                 },
             );
         });
-        g.trivia(Kind::TokWs, |g| {
-            g.one_or_more(|g| {
-                g.class(classes::WHITESPACE);
-            });
-        });
-        g.token(Kind::TokIdent, |g| {
-            g.call("ident");
-        });
-        g.trivia(Kind::TokWs, |g| {
-            g.zero_or_more(|g| {
-                g.class(classes::WHITESPACE);
-            });
-        });
-        g.token(Kind::TokSemicolon, |g| {
-            g.byte(b';');
-        });
-        g.trivia(Kind::TokWs, |g| {
-            g.zero_or_more(|g| {
-                g.class(classes::WHITESPACE);
-            });
-        });
     });
-    g.end_rule();
-
-    g.begin_rule("ident");
-    g.char_range('a', 'z');
-    g.zero_or_more(|g| {
-        g.choice(
-            |g| {
-                g.char_range('a', 'z');
-            },
-            |g| {
-                g.char_range('A', 'Z');
-            },
-        );
-    });
-    g.end_rule();
 
     g.finish().unwrap()
 }
@@ -108,13 +109,9 @@ fn main() {
     let source_bytes = source.as_bytes();
 
     if let Err(e) = engine.parse(&graph, source_bytes) {
-        if let Some(report) = e.to_miette_report(
-            source,
-            "script.txt",
-            Some(&graph.literals),
-            Some(graph.rule_names),
-            Some(graph.expected_labels),
-        ) {
+        if let Some(report) =
+            e.to_miette_report(source, "script.txt", Some(&graph.literals), Some(&graph))
+        {
             eprintln!("{report:?}");
         } else {
             eprintln!("{e}");

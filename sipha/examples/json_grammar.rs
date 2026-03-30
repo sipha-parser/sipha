@@ -23,245 +23,249 @@ const T_MEMBER: Tag = 7;
 
 fn build_json_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
+    // JSON is inherently recursive (value -> object/array -> value), so this
+    // grammar intentionally contains cycles.
+    g.allow_rule_cycles(true);
 
     // ── json (root) ──────────────────────────────────────────────────────────
-    g.begin_rule("json");
-    g.call("ws");
-    g.call("value");
-    g.call("ws");
-    g.end_of_input();
-    g.accept();
+    g.rule("json", |g| {
+        g.call("ws");
+        g.call("value");
+        g.call("ws");
+        g.end_of_input();
+        g.accept();
+    });
 
     // ── value — uses ByteDispatch for O(1) first-byte dispatch ───────────────
     //
     //   Instead of a chain of 7 Choice/Commit pairs (O(7) on the last branch),
     //   we emit one ByteDispatch table that jumps directly to the right arm.
-    g.begin_rule("value");
-    g.capture(T_VALUE, |g| {
-        // Class sets for the dispatch table.
-        let class_quote = CharClass::EMPTY.with_byte(b'"');
-        let class_lbrace = CharClass::EMPTY.with_byte(b'{');
-        let class_lbrack = CharClass::EMPTY.with_byte(b'[');
-        let class_number = classes::DIGIT.with_byte(b'-');
-        let class_t = CharClass::EMPTY.with_byte(b't');
-        let class_f = CharClass::EMPTY.with_byte(b'f');
-        let class_n = CharClass::EMPTY.with_byte(b'n');
+    g.rule("value", |g| {
+        g.capture(T_VALUE, |g| {
+            // Class sets for the dispatch table.
+            let class_quote = CharClass::from_byte(b'"');
+            let class_lbrace = CharClass::from_byte(b'{');
+            let class_lbrack = CharClass::from_byte(b'[');
+            let class_number = classes::DIGIT.with_byte(b'-');
+            let class_t = CharClass::from_byte(b't');
+            let class_f = CharClass::from_byte(b'f');
+            let class_n = CharClass::from_byte(b'n');
 
-        g.byte_dispatch(
-            vec![
-                // ── string ──────────────────────────────────────────────
-                (
-                    class_quote,
-                    Box::new(|g: &mut GrammarBuilder| {
-                        g.call("string");
-                    }),
-                ),
-                // ── object ──────────────────────────────────────────────
-                (
-                    class_lbrace,
-                    Box::new(|g: &mut GrammarBuilder| {
-                        g.call("object");
-                    }),
-                ),
-                // ── array ───────────────────────────────────────────────
-                (
-                    class_lbrack,
-                    Box::new(|g: &mut GrammarBuilder| {
-                        g.call("array");
-                    }),
-                ),
-                // ── number ──────────────────────────────────────────────
-                (
-                    class_number,
-                    Box::new(|g: &mut GrammarBuilder| {
-                        g.call("number");
-                    }),
-                ),
-                // ── true ────────────────────────────────────────────────
-                (
-                    class_t,
-                    Box::new(|g: &mut GrammarBuilder| {
-                        g.capture(T_BOOL, |g| {
-                            g.literal(b"true");
-                        });
-                    }),
-                ),
-                // ── false ───────────────────────────────────────────────
-                (
-                    class_f,
-                    Box::new(|g: &mut GrammarBuilder| {
-                        g.capture(T_BOOL, |g| {
-                            g.literal(b"false");
-                        });
-                    }),
-                ),
-                // ── null ────────────────────────────────────────────────
-                (
-                    class_n,
-                    Box::new(|g: &mut GrammarBuilder| {
-                        g.capture(T_NULL, |g| {
-                            g.literal(b"null");
-                        });
-                    }),
-                ),
-            ],
-            None,
-        );
+            g.byte_dispatch(
+                vec![
+                    // ── string ──────────────────────────────────────────────
+                    (
+                        class_quote,
+                        Box::new(|g: &mut GrammarBuilder| {
+                            g.call("string");
+                        }),
+                    ),
+                    // ── object ──────────────────────────────────────────────
+                    (
+                        class_lbrace,
+                        Box::new(|g: &mut GrammarBuilder| {
+                            g.call("object");
+                        }),
+                    ),
+                    // ── array ───────────────────────────────────────────────
+                    (
+                        class_lbrack,
+                        Box::new(|g: &mut GrammarBuilder| {
+                            g.call("array");
+                        }),
+                    ),
+                    // ── number ──────────────────────────────────────────────
+                    (
+                        class_number,
+                        Box::new(|g: &mut GrammarBuilder| {
+                            g.call("number");
+                        }),
+                    ),
+                    // ── true ────────────────────────────────────────────────
+                    (
+                        class_t,
+                        Box::new(|g: &mut GrammarBuilder| {
+                            g.capture(T_BOOL, |g| {
+                                g.literal(b"true");
+                            });
+                        }),
+                    ),
+                    // ── false ───────────────────────────────────────────────
+                    (
+                        class_f,
+                        Box::new(|g: &mut GrammarBuilder| {
+                            g.capture(T_BOOL, |g| {
+                                g.literal(b"false");
+                            });
+                        }),
+                    ),
+                    // ── null ────────────────────────────────────────────────
+                    (
+                        class_n,
+                        Box::new(|g: &mut GrammarBuilder| {
+                            g.capture(T_NULL, |g| {
+                                g.literal(b"null");
+                            });
+                        }),
+                    ),
+                ],
+                None,
+            );
+        });
     });
-    g.end_rule();
 
     // ── object ───────────────────────────────────────────────────────────────
-    g.begin_rule("object");
-    g.capture(T_OBJECT, |g| {
-        g.byte(b'{');
-        g.call("ws");
-        g.optional(|g| {
-            g.call("member");
-            g.zero_or_more(|g| {
-                g.call("ws");
-                g.byte(b',');
-                g.call("ws");
+    g.rule("object", |g| {
+        g.capture(T_OBJECT, |g| {
+            g.byte(b'{');
+            g.call("ws");
+            g.optional(|g| {
                 g.call("member");
+                g.zero_or_more(|g| {
+                    g.call("ws");
+                    g.byte(b',');
+                    g.call("ws");
+                    g.call("member");
+                });
             });
+            g.call("ws");
+            g.byte(b'}');
         });
-        g.call("ws");
-        g.byte(b'}');
     });
-    g.end_rule();
 
     // ── member ───────────────────────────────────────────────────────────────
-    g.begin_rule("member");
-    g.capture(T_MEMBER, |g| {
-        g.call("string");
-        g.call("ws");
-        g.byte(b':');
-        g.call("ws");
-        g.call("value");
+    g.rule("member", |g| {
+        g.capture(T_MEMBER, |g| {
+            g.call("string");
+            g.call("ws");
+            g.byte(b':');
+            g.call("ws");
+            g.call("value");
+        });
     });
-    g.end_rule();
 
     // ── array ────────────────────────────────────────────────────────────────
-    g.begin_rule("array");
-    g.capture(T_ARRAY, |g| {
-        g.byte(b'[');
-        g.call("ws");
-        g.optional(|g| {
-            g.call("value");
-            g.zero_or_more(|g| {
-                g.call("ws");
-                g.byte(b',');
-                g.call("ws");
+    g.rule("array", |g| {
+        g.capture(T_ARRAY, |g| {
+            g.byte(b'[');
+            g.call("ws");
+            g.optional(|g| {
                 g.call("value");
+                g.zero_or_more(|g| {
+                    g.call("ws");
+                    g.byte(b',');
+                    g.call("ws");
+                    g.call("value");
+                });
             });
+            g.call("ws");
+            g.byte(b']');
         });
-        g.call("ws");
-        g.byte(b']');
     });
-    g.end_rule();
 
     // ── string ───────────────────────────────────────────────────────────────
-    g.begin_rule("string");
-    g.capture(T_STRING, |g| {
-        g.byte(b'"');
-        g.zero_or_more(|g| {
-            g.neg_lookahead(|g| {
-                g.byte(b'"');
-            });
-            g.choice(
-                |g| {
-                    g.call("escape");
-                },
-                |g| {
-                    g.class(CharClass::ANY);
-                },
-            );
-        });
-        g.byte(b'"');
-    });
-    g.end_rule();
-
-    // ── escape ────────────────────────────────────────────────────────────────
-    g.begin_rule("escape");
-    g.byte(b'\\');
-    g.choice(
-        |g| {
-            g.class(
-                CharClass::EMPTY
-                    .with_byte(b'"')
-                    .with_byte(b'\\')
-                    .with_byte(b'/')
-                    .with_byte(b'b')
-                    .with_byte(b'f')
-                    .with_byte(b'n')
-                    .with_byte(b'r')
-                    .with_byte(b't'),
-            );
-        },
-        |g| {
-            g.byte(b'u');
-            g.class(classes::HEX_DIGIT);
-            g.class(classes::HEX_DIGIT);
-            g.class(classes::HEX_DIGIT);
-            g.class(classes::HEX_DIGIT);
-        },
-    );
-    g.end_rule();
-
-    // ── number ────────────────────────────────────────────────────────────────
-    g.begin_rule("number");
-    g.capture(T_NUMBER, |g| {
-        g.optional(|g| {
-            g.byte(b'-');
-        });
-        g.choice(
-            |g| {
-                g.byte(b'0');
-            },
-            |g| {
-                g.byte_range(b'1', b'9');
-                g.zero_or_more(|g| {
-                    g.class(classes::DIGIT);
+    g.rule("string", |g| {
+        g.capture(T_STRING, |g| {
+            g.byte(b'"');
+            g.zero_or_more(|g| {
+                g.neg_lookahead(|g| {
+                    g.byte(b'"');
                 });
-            },
-        );
-        g.optional(|g| {
-            g.byte(b'.');
-            g.one_or_more(|g| {
-                g.class(classes::DIGIT);
-            });
-        });
-        g.optional(|g| {
-            g.choice(
-                |g| {
-                    g.byte(b'e');
-                },
-                |g| {
-                    g.byte(b'E');
-                },
-            );
-            g.optional(|g| {
                 g.choice(
                     |g| {
-                        g.byte(b'+');
+                        g.call("escape");
                     },
                     |g| {
-                        g.byte(b'-');
+                        g.class(CharClass::ANY);
                     },
                 );
             });
-            g.one_or_more(|g| {
-                g.class(classes::DIGIT);
+            g.byte(b'"');
+        });
+    });
+
+    // ── escape ────────────────────────────────────────────────────────────────
+    g.rule("escape", |g| {
+        g.byte(b'\\');
+        g.choice(
+            |g| {
+                g.class(
+                    CharClass::EMPTY
+                        .with_byte(b'"')
+                        .with_byte(b'\\')
+                        .with_byte(b'/')
+                        .with_byte(b'b')
+                        .with_byte(b'f')
+                        .with_byte(b'n')
+                        .with_byte(b'r')
+                        .with_byte(b't'),
+                );
+            },
+            |g| {
+                g.byte(b'u');
+                g.class(classes::HEX_DIGIT);
+                g.class(classes::HEX_DIGIT);
+                g.class(classes::HEX_DIGIT);
+                g.class(classes::HEX_DIGIT);
+            },
+        );
+    });
+
+    // ── number ────────────────────────────────────────────────────────────────
+    g.rule("number", |g| {
+        g.capture(T_NUMBER, |g| {
+            g.optional(|g| {
+                g.byte(b'-');
+            });
+            g.choice(
+                |g| {
+                    g.byte(b'0');
+                },
+                |g| {
+                    g.byte_range(b'1', b'9');
+                    g.zero_or_more(|g| {
+                        g.class(classes::DIGIT);
+                    });
+                },
+            );
+            g.optional(|g| {
+                g.byte(b'.');
+                g.one_or_more(|g| {
+                    g.class(classes::DIGIT);
+                });
+            });
+            g.optional(|g| {
+                g.choice(
+                    |g| {
+                        g.byte(b'e');
+                    },
+                    |g| {
+                        g.byte(b'E');
+                    },
+                );
+                g.optional(|g| {
+                    g.choice(
+                        |g| {
+                            g.byte(b'+');
+                        },
+                        |g| {
+                            g.byte(b'-');
+                        },
+                    );
+                });
+                g.one_or_more(|g| {
+                    g.class(classes::DIGIT);
+                });
             });
         });
     });
-    g.end_rule();
 
     // ── ws ────────────────────────────────────────────────────────────────────
-    g.begin_rule("ws");
-    g.zero_or_more(|g| {
-        g.class(classes::WHITESPACE);
+    g.rule("ws", |g| {
+        g.zero_or_more(|g| {
+            g.class(classes::WHITESPACE);
+        });
     });
-    g.end_rule();
 
     g.finish().expect("grammar must be valid")
 }
@@ -297,11 +301,7 @@ fn main() {
                     ctx.expected.len(),
                     ctx.expected
                         .iter()
-                        .map(|e| e.display(
-                            Some(&graph.literals),
-                            Some(graph.rule_names),
-                            Some(graph.expected_labels)
-                        ))
+                        .map(|e| e.display(Some(&graph.literals), Some(&graph)))
                         .collect::<Vec<_>>()
                 );
             }
@@ -391,11 +391,14 @@ fn main() {
     println!("\n  {passed}/{} passed.", cases.len());
 
     // ── Codegen preview ───────────────────────────────────────────────────────
-    println!("\n=== Codegen preview (first 50 lines) ===");
+    #[cfg(feature = "codegen-pretty")]
+    println!("\n=== Codegen preview (pretty printed via prettyplease; first 50 lines) ===");
+    #[cfg(not(feature = "codegen-pretty"))]
+    println!("\n=== Codegen preview (token display; first 50 lines) ===");
     let mut src = String::new();
-    sipha::codegen::emit_rust(&graph_data, &mut src).unwrap();
+    sipha::parse::codegen::emit_rust(&graph_data, &mut src).unwrap();
     for line in src.lines().take(50) {
-        println!("  {line}");
+        println!("{line}");
     }
-    println!("  ... ({} total lines)", src.lines().count());
+    println!("... ({} total lines)", src.lines().count());
 }

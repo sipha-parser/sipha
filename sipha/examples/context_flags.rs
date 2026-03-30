@@ -47,211 +47,216 @@ const T_EXPR: Tag = 6;
 
 fn build_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
+    // This example intentionally allows nested constructs that create
+    // mutual recursion between rules (e.g. `fn_decl` contains `stmt`, and
+    // `stmt` can contain `fn_decl`). Opt into cycle-tolerant validation.
+    g.allow_rule_cycles(true);
 
     // ── program
-    g.begin_rule("program");
-    g.capture(T_PROGRAM, |g| {
-        g.call("ws");
-        g.zero_or_more(|g| {
-            g.call("item");
+    g.rule("program", |g| {
+        g.capture(T_PROGRAM, |g| {
             g.call("ws");
+            g.zero_or_more(|g| {
+                g.call("item");
+                g.call("ws");
+            });
+            g.end_of_input();
         });
-        g.end_of_input();
+        g.accept();
     });
-    g.accept();
 
     // ── item <- fn_decl / stmt
-    g.begin_rule("item");
-    g.choice(
-        |g| {
-            g.call("fn_decl");
-        },
-        |g| {
-            g.call("stmt");
-        },
-    );
-    g.end_rule();
+    g.rule("item", |g| {
+        g.choice(
+            |g| {
+                g.call("fn_decl");
+            },
+            |g| {
+                g.call("stmt");
+            },
+        );
+    });
 
     // ── fn_decl
     //    Sets IN_FN (word 0), clears IN_LOOP (word 0) — same word, one snapshot entry.
-    g.begin_rule("fn_decl");
-    g.capture(T_FN_DECL, |g| {
-        g.literal(b"fn");
-        g.call("ws1");
-        g.call("ident_raw");
-        g.call("ws");
-        g.byte(b'(');
-        g.call("ws");
-        g.byte(b')');
-        g.call("ws");
-        g.byte(b'{');
-        g.call("ws");
-        g.with_flags(
-            &[FLAG_IN_FN],   // set: IN_FN
-            &[FLAG_IN_LOOP], // clear: IN_LOOP (nested fn resets loop ctx)
-            |g| {
-                g.zero_or_more(|g| {
-                    g.call("stmt");
-                    g.call("ws");
-                });
-            },
-        );
-        g.byte(b'}');
+    g.rule("fn_decl", |g| {
+        g.capture(T_FN_DECL, |g| {
+            g.literal(b"fn");
+            g.call("ws1");
+            g.call("ident_raw");
+            g.call("ws");
+            g.byte(b'(');
+            g.call("ws");
+            g.byte(b')');
+            g.call("ws");
+            g.byte(b'{');
+            g.call("ws");
+            g.with_flags(
+                &[FLAG_IN_FN],   // set: IN_FN
+                &[FLAG_IN_LOOP], // clear: IN_LOOP (nested fn resets loop ctx)
+                |g| {
+                    g.zero_or_more(|g| {
+                        g.call("stmt");
+                        g.call("ws");
+                    });
+                },
+            );
+            g.byte(b'}');
+        });
     });
-    g.end_rule();
 
     // ── stmt
-    g.begin_rule("stmt");
-    g.choice(
-        |g| {
-            g.call("loop_stmt");
-        },
-        |g| {
-            g.choice(
-                |g| {
-                    g.call("fn_decl");
-                }, // nested fn allowed anywhere
-                |g| {
-                    g.choice(
-                        |g| {
-                            g.call("return_stmt");
-                        },
-                        |g| {
-                            g.choice(
-                                |g| {
-                                    g.call("break_stmt");
-                                },
-                                |g| {
-                                    g.choice(
-                                        |g| {
-                                            g.call("cont_stmt");
-                                        },
-                                        |g| {
-                                            g.call("expr_stmt");
-                                        },
-                                    )
-                                },
-                            )
-                        },
-                    )
-                },
-            )
-        },
-    );
-    g.end_rule();
+    g.rule("stmt", |g| {
+        g.choice(
+            |g| {
+                g.call("loop_stmt");
+            },
+            |g| {
+                g.choice(
+                    |g| {
+                        g.call("fn_decl");
+                    }, // nested fn allowed anywhere
+                    |g| {
+                        g.choice(
+                            |g| {
+                                g.call("return_stmt");
+                            },
+                            |g| {
+                                g.choice(
+                                    |g| {
+                                        g.call("break_stmt");
+                                    },
+                                    |g| {
+                                        g.choice(
+                                            |g| {
+                                                g.call("cont_stmt");
+                                            },
+                                            |g| {
+                                                g.call("expr_stmt");
+                                            },
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        );
+    });
 
     // ── loop_stmt
     //    Sets IN_LOOP (word 0 bit 0) — single snapshot entry.
-    g.begin_rule("loop_stmt");
-    g.capture(T_LOOP, |g| {
-        g.literal(b"loop");
-        g.call("ws");
-        g.byte(b'{');
-        g.call("ws");
-        g.with_flags(
-            &[FLAG_IN_LOOP], // set
-            &[],             // clear nothing
-            |g| {
-                g.zero_or_more(|g| {
-                    g.call("stmt");
-                    g.call("ws");
-                });
-            },
-        );
-        g.byte(b'}');
+    g.rule("loop_stmt", |g| {
+        g.capture(T_LOOP, |g| {
+            g.literal(b"loop");
+            g.call("ws");
+            g.byte(b'{');
+            g.call("ws");
+            g.with_flags(
+                &[FLAG_IN_LOOP], // set
+                &[],             // clear nothing
+                |g| {
+                    g.zero_or_more(|g| {
+                        g.call("stmt");
+                        g.call("ws");
+                    });
+                },
+            );
+            g.byte(b'}');
+        });
     });
-    g.end_rule();
 
     // ── return_stmt — only valid in a function
-    g.begin_rule("return_stmt");
-    g.if_flag(FLAG_IN_FN);
-    g.capture(T_RETURN, |g| {
-        g.literal(b"return");
-        g.optional(|g| {
-            g.call("ws1");
-            g.call("expr");
+    g.rule("return_stmt", |g| {
+        g.if_flag(FLAG_IN_FN);
+        g.capture(T_RETURN, |g| {
+            g.literal(b"return");
+            g.optional(|g| {
+                g.call("ws1");
+                g.call("expr");
+            });
+            g.call("ws");
+            g.byte(b';');
         });
-        g.call("ws");
-        g.byte(b';');
     });
-    g.end_rule();
 
     // ── break_stmt — only valid in a loop
-    g.begin_rule("break_stmt");
-    g.if_flag(FLAG_IN_LOOP);
-    g.capture(T_BREAK, |g| {
-        g.literal(b"break");
-        g.call("ws");
-        g.byte(b';');
+    g.rule("break_stmt", |g| {
+        g.if_flag(FLAG_IN_LOOP);
+        g.capture(T_BREAK, |g| {
+            g.literal(b"break");
+            g.call("ws");
+            g.byte(b';');
+        });
     });
-    g.end_rule();
 
     // ── cont_stmt — only valid in a loop
-    g.begin_rule("cont_stmt");
-    g.if_flag(FLAG_IN_LOOP);
-    g.capture(T_CONTINUE, |g| {
-        g.literal(b"continue");
+    g.rule("cont_stmt", |g| {
+        g.if_flag(FLAG_IN_LOOP);
+        g.capture(T_CONTINUE, |g| {
+            g.literal(b"continue");
+            g.call("ws");
+            g.byte(b';');
+        });
+    });
+
+    // ── expr_stmt
+    g.rule("expr_stmt", |g| {
+        g.call("expr");
         g.call("ws");
         g.byte(b';');
     });
-    g.end_rule();
-
-    // ── expr_stmt
-    g.begin_rule("expr_stmt");
-    g.call("expr");
-    g.call("ws");
-    g.byte(b';');
-    g.end_rule();
 
     // ── expr <- integer / ident
-    g.begin_rule("expr");
-    g.capture(T_EXPR, |g| {
-        g.choice(
-            |g| {
-                g.one_or_more(|g| {
-                    g.class(classes::DIGIT);
-                });
-            },
-            |g| {
-                g.call("ident_raw");
-            },
-        );
+    g.rule("expr", |g| {
+        g.capture(T_EXPR, |g| {
+            g.choice(
+                |g| {
+                    g.one_or_more(|g| {
+                        g.class(classes::DIGIT);
+                    });
+                },
+                |g| {
+                    g.call("ident_raw");
+                },
+            );
+        });
     });
-    g.end_rule();
 
     // ── ident_raw (keyword-guarded)
-    g.begin_rule("ident_raw");
-    for kw in &[b"loop" as &[u8], b"fn", b"return", b"break", b"continue"] {
-        let kw = *kw;
-        g.neg_lookahead(move |g| {
-            g.literal(kw);
-            g.call("non_ident");
+    g.rule("ident_raw", |g| {
+        for kw in &[b"loop" as &[u8], b"fn", b"return", b"break", b"continue"] {
+            let kw = *kw;
+            g.neg_lookahead(move |g| {
+                g.literal(kw);
+                g.call("non_ident");
+            });
+        }
+        g.class(classes::IDENT_START);
+        g.zero_or_more(|g| {
+            g.class(classes::IDENT_CONT);
         });
-    }
-    g.class(classes::IDENT_START);
-    g.zero_or_more(|g| {
-        g.class(classes::IDENT_CONT);
     });
-    g.end_rule();
 
     // ── non_ident — word boundary: succeed only when next char is not ident-continuing
-    g.begin_rule("non_ident");
-    g.neg_lookahead(|g| {
-        g.class(classes::IDENT_CONT);
+    g.rule("non_ident", |g| {
+        g.neg_lookahead(|g| {
+            g.class(classes::IDENT_CONT);
+        });
     });
-    g.end_rule();
 
     // ── ws1 / ws
-    g.begin_rule("ws1");
-    g.one_or_more(|g| {
-        g.class(classes::WHITESPACE);
+    g.rule("ws1", |g| {
+        g.one_or_more(|g| {
+            g.class(classes::WHITESPACE);
+        });
     });
-    g.end_rule();
-    g.begin_rule("ws");
-    g.zero_or_more(|g| {
-        g.class(classes::WHITESPACE);
+    g.rule("ws", |g| {
+        g.zero_or_more(|g| {
+            g.class(classes::WHITESPACE);
+        });
     });
-    g.end_rule();
 
     g.finish().expect("grammar valid")
 }
@@ -260,7 +265,7 @@ fn build_grammar() -> BuiltGraph {
 
 fn check(
     engine: &mut Engine,
-    graph: &sipha::insn::ParseGraph,
+    graph: &sipha::parse::insn::ParseGraph,
     src: &str,
     ctx: &ParseContext,
     expect_ok: bool,
@@ -278,13 +283,7 @@ fn check(
         let exp: Vec<String> = ectx
             .expected
             .iter()
-            .map(|e| {
-                e.display(
-                    Some(&graph.literals),
-                    Some(graph.rule_names),
-                    Some(graph.expected_labels),
-                )
-            })
+            .map(|e| e.display(Some(&graph.literals), Some(&graph)))
             .collect();
         println!("  [{sym}] {desc} → ERR at byte {}: {exp:?}", ectx.furthest);
     }
@@ -437,7 +436,7 @@ fn main() {
     println!();
     println!("=== Generated flag instructions ===");
     let mut src = String::new();
-    sipha::codegen::emit_rust(&graph_data, &mut src).unwrap();
+    sipha::parse::codegen::emit_rust(&graph_data, &mut src).unwrap();
     for line in src.lines().filter(|l| {
         l.contains("PushFlags")
             || l.contains("PopFlags")

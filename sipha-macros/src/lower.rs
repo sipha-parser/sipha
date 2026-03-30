@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::LitStr;
 
-/// Emit code that builds the grammar and returns `sipha::BuiltGraph`.
+/// Emit code that builds the grammar and returns `sipha::parse::builder::BuiltGraph`.
 pub fn lower_grammar(grammar: &Grammar) -> TokenStream {
     let start_name = grammar.directives.iter().find_map(|d| {
         if let Directive::Start(ref id) = d {
@@ -68,7 +68,7 @@ pub fn lower_grammar(grammar: &Grammar) -> TokenStream {
 
     quote! {
         {
-            let mut g = sipha::builder::GrammarBuilder::new();
+            let mut g = sipha::parse::builder::GrammarBuilder::new();
             #(#trivia)*
             #(#rules)*
             g.finish().expect("grammar must be valid")

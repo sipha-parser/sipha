@@ -10,6 +10,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  msrv:
+    name: MSRV (Rust 1.70) tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust (MSRV)
+        uses: dtolnay/rust-toolchain@1.70.0
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-msrv-
+
+      - name: Run tests (all features)
+        run: cargo test --workspace --all-features
+
   check:
     name: Format, clippy, and test
     runs-on: ubuntu-latest
@@ -41,3 +65,42 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-features
+
+  feature-matrix:
+    name: sipha feature matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flags:
+          - "--no-default-features"
+          - "--features walk"
+          - "--features emit"
+          - "--features transform"
+          - "--features transform,sourcemap"
+          - "--features emit,diff"
+          - "--features emit,fmt"
+          - "--features walk,miette"
+          - "--features walk,utf16,analysis"
+          - "--features walk,incremental"
+          - "--features walk,emit,transform,miette,utf16,analysis,display,sourcemap,fmt,diff,incremental"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-matrix-${{ matrix.flags }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-matrix-
+
+      - name: Test sipha
+        run: cargo test -p sipha ${{ matrix.flags }}

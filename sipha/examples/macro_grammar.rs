@@ -3,7 +3,7 @@
 use sipha::prelude::*;
 use sipha_macros::sipha_grammar;
 
-fn main() -> Result<(), sipha::engine::ParseError> {
+fn main() -> Result<(), sipha::parse::engine::ParseError> {
     let built = sipha_grammar! {
         @trivia ws;
         @start start;

@@ -1,6 +1,6 @@
 # sipha-macros
 
-Procedural macros for defining [sipha] PEG grammars via a DSL.
+Procedural macros for defining [sipha](https://docs.rs/sipha) PEG grammars via a DSL. The **sipha** crate holds the runtime; this crate only expands `sipha_grammar!` into `GrammarBuilder` calls.
 
 ## Usage
 
@@ -8,8 +8,8 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sipha = { path = "../sipha" }
-sipha-macros = { path = "../sipha-macros" }
+sipha = "3"
+sipha-macros = "3"
 ```
 
 Then use the `sipha_grammar!` macro:
@@ -59,4 +59,7 @@ let graph = built.as_graph();
 | `#[capture(TAG)] e` | Legacy capture       |
 | `#[no_skip] e`     | No trivia skip       |
 
-[sipha]: ../sipha
+## See also
+
+- [sipha crate README](../sipha/README.md) (overview and features)
+- [Sipha cookbook](../sipha/docs/COOKBOOK.md) (builder patterns without the macro)

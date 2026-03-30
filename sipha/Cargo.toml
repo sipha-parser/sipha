@@ -1,6 +1,6 @@
 [package]
 name = "sipha"
-version = "2.0.0"
+version = "3.0.0"
 edition = "2021"
 rust-version = "1.70"
 description = "PEG parser, syntax trees, and code generation"
@@ -9,27 +9,51 @@ repository = "https://github.com/sipha-parser/sipha"
 homepage = "https://github.com/sipha-parser/sipha"
 documentation = "https://docs.rs/sipha"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true
 
 [features]
 default = ["walk"]
 walk = []
+incremental = []
 emit = ["walk"]
 transform = []
 miette = ["dep:miette"]
 utf16 = []
+analysis = ["walk"]
+display = []
+sourcemap = ["transform"]
+fmt = ["emit"]
+diff = ["emit"]
+codegen-pretty = ["dep:prettyplease", "dep:syn"]
+patterns = []
 
 [dependencies]
-sipha-macros = { path = "../sipha-macros", version = "2.0" }
+sipha-macros = { path = "../sipha-macros", version = "3.0" }
 miette = { version = "7", optional = true }
+proc-macro2 = "1"
+quote = "1"
+prettyplease = { version = "0.2", optional = true }
+syn = { version = "2", default-features = false, features = ["full", "parsing"], optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1"
 
 [[example]]
 name = "miette_errors"
 required-features = ["miette"]
+
+[[example]]
+name = "display_grammar"
+required-features = ["display"]
+
+[[example]]
+name = "incremental_reparse"
+required-features = ["incremental"]
 
 [[bench]]
 name = "parse"

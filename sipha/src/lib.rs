@@ -3,16 +3,29 @@
 //! A PEG (Parsing Expression Grammar) parser with a stack-based VM, green/red
 //! syntax trees, and optional packrat memoisation.
 //!
+//! ## Crate layout
+//!
+//! - [`parse`] — grammar builder, VM engine, IR ([`Insn`](parse::insn::Insn)),
+//!   codegen, memoisation.
+//! - [`tree`] — green/red syntax trees, trivia, walking, optional emit/transform.
+//! - [`diagnostics`] — spans, line index, [`ParsedDoc`](diagnostics::parsed_doc::ParsedDoc),
+//!   parse and semantic diagnostics.
+//! - [`types`] — [`Span`](types::Span), [`SyntaxKind`](types::SyntaxKind), char classes, tree events.
+//! - [`extras`] — optional tools (display, fmt, diff, …), feature-gated.
+//!
+//! Use [`prelude`] for the usual names in one import, or import from the modules above.
+//!
 //! ## Quick start
 //!
 //! ```rust
 //! use sipha::prelude::*;
 //!
 //! let mut g = GrammarBuilder::new();
-//! g.begin_rule("start");
-//! g.byte(b'a');
-//! g.end_of_input();
-//! g.accept();
+//! g.rule("start", |g| {
+//!     g.byte(b'a');
+//!     g.end_of_input();
+//!     g.accept();
+//! });
 //! let built = g.finish().unwrap();
 //! let graph = built.as_graph();
 //!
@@ -24,115 +37,204 @@
 //! ## Compiler / formatter API
 //!
 //! For a single handle to source, tree, and line info after a successful parse,
-//! use [`ParsedDoc`]: build it from `ParseOutput` and then use `doc.root()`,
+//! use [`ParsedDoc`](diagnostics::parsed_doc::ParsedDoc): build it from `ParseOutput` and then use `doc.root()`,
 //! `doc.offset_to_line_col_1based()`, and `doc.format_diagnostic()` for errors.
-//! See `examples/parsed_doc_errors.rs` and the [`line_index`] and [`parsed_doc`]
-//! modules.
+//! See `examples/parsed_doc_errors.rs` and the [`diagnostics::line_index`] and
+//! [`diagnostics::parsed_doc`] modules.
 //!
 //! ## Tree walk (visitor, optional)
 //!
-//! With the default `walk` feature, use [`SyntaxNode::walk`] (or the free
-//! function [`walk`]) with a [`Visitor`] and [`WalkOptions`] to traverse the
+//! With the default `walk` feature, use [`SyntaxNode::walk`](tree::red::SyntaxNode::walk) (or the free
+//! function [`walk`](tree::walk::walk)) with a [`Visitor`](tree::walk::Visitor) and [`WalkOptions`](tree::walk::WalkOptions) to traverse the
 //! red tree for formatting, scope analysis, type checking, or linting. See the
-//! [`walk`] module.
+//! [`tree::walk`] module.
 //!
 //! ## Semantic (analysis) diagnostics
 //!
-//! For validation and other post-parse analyses, use [`SemanticDiagnostic`] and
-//! [`Severity`]. Report span, message, and severity; then format with
-//! [`SemanticDiagnostic::format_with_source`] or convert to miette via
-//! [`SemanticDiagnostic::into_miette`] (with the `miette` feature). [`ParsedDoc`]
-//! provides [`ParsedDoc::format_semantic_diagnostic`] so you can plug the same
+//! For validation and other post-parse analyses, use [`SemanticDiagnostic`](diagnostics::error::SemanticDiagnostic) and
+//! [`Severity`](diagnostics::error::Severity). Report span, message, and severity; then format with
+//! [`SemanticDiagnostic::format_with_source`](diagnostics::error::SemanticDiagnostic::format_with_source) or convert to miette via
+//! [`SemanticDiagnostic::into_miette`](diagnostics::error::SemanticDiagnostic::into_miette) (with the `miette` feature). [`ParsedDoc`](diagnostics::parsed_doc::ParsedDoc)
+//! provides [`ParsedDoc::format_semantic_diagnostic`](diagnostics::parsed_doc::ParsedDoc::format_semantic_diagnostic) so you can plug the same
 //! output style as parse errors.
 //!
 //! ## Miette integration (optional)
 //!
 //! Enable the `miette` feature for pretty-printed diagnostics. Then use
-//! [`ParseError::to_miette_report`] or [`Diagnostic::into_miette`] for parse
-//! errors, and [`SemanticDiagnostic::into_miette`] for analysis diagnostics.
+//! [`ParseError::to_miette_report`](parse::engine::ParseError::to_miette_report) or [`Diagnostic::into_miette`](diagnostics::error::Diagnostic::into_miette) for parse
+//! errors, and [`SemanticDiagnostic::into_miette`](diagnostics::error::SemanticDiagnostic::into_miette) for analysis diagnostics.
 //! See `examples/miette_errors.rs`.
 //!
 //! See the individual modules for details and the `examples/` directory for
 //! full grammars (e.g. JSON). For common patterns (expression precedence,
-//! error recovery, `byte_dispatch`, trivia), see `docs/COOKBOOK.md` in the crate.
+//! error recovery, `byte_dispatch`, trivia), see the **Cookbook** in the repository
+//! at `sipha/docs/COOKBOOK.md` ([rendered on GitHub](https://github.com/sipha-parser/sipha/blob/main/sipha/docs/COOKBOOK.md)).
+
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub use sipha_macros::SyntaxKinds;
 
-pub mod builder;
-pub mod capture;
-pub mod context;
-pub mod engine;
-pub mod error;
-pub mod green;
-pub mod green_builder;
-pub mod insn;
-pub mod memo;
-pub mod red;
-pub mod simd;
+pub mod diagnostics;
+pub mod extras;
+pub mod parse;
+pub mod tree;
 pub mod types;
 
-pub mod codegen;
-pub mod incremental;
-pub mod sexp;
-
-/// Helpers for building expression grammars with precedence (left/right-assoc infix levels).
-pub mod expr;
-pub mod line_index;
-pub mod parsed_doc;
-pub mod source_map;
-pub mod tree_display;
-pub mod trivia;
-#[cfg(feature = "utf16")]
-pub mod utf16;
-
-#[cfg(feature = "walk")]
-pub mod walk;
-
-#[cfg(feature = "emit")]
-pub mod emit;
-
-#[cfg(feature = "transform")]
-pub mod transform;
-
-#[cfg(feature = "miette")]
-pub mod miette_support;
-
 pub mod prelude {
-    pub use crate::builder::{BuiltGraph, GrammarBuilder, Repeat};
-    pub use crate::capture::CaptureNode;
-    pub use crate::context::{FlagId, ParseContext};
-    pub use crate::engine::{Engine, ParseError, ParseOutput, RecoverMultiResult};
-    pub use crate::error::{
-        Diagnostic, ErrorContext, Expected, RelatedLocation, SemanticDiagnostic, Severity,
+    //! Commonly used types. For granular imports, use [`parse`](crate::parse),
+    //! [`tree`](crate::tree), or [`diagnostics`](crate::diagnostics).
+
+    /// Parsing: grammar builder, VM, IR, memo.
+    ///
+    /// N-way [`GrammarBuilder::choices`] without a `Vec`: use the [`choices`](crate::choices) macro
+    /// at the crate root, for example `sipha::choices!(g, |g| g.literal(b"a"), |g| g.literal(b"b"))`.
+    pub mod parse {
+        pub use crate::parse::builder::{BuiltGraph, GrammarBuilder, GrammarChoiceFn, Repeat};
+        pub use crate::parse::capture::CaptureNode;
+        pub use crate::parse::context::{FlagId, ParseContext};
+        pub use crate::parse::engine::{
+            BadGraphKind, Engine, ParseError, ParseOutput, RecoverMultiResult,
+        };
+        pub use crate::parse::expr::{
+            left_assoc_infix_level, postfix_chain, right_assoc_infix_level, separated1_rule_list,
+            separated_rule_list, LeftAssocInfixLevel,
+        };
+        pub use crate::parse::insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph};
+        pub use crate::parse::memo::MemoTable;
+
+        #[cfg(feature = "incremental")]
+        pub use crate::parse::incremental::{
+            build_green_tree_with_reuse, reparse, reparse_with_output, ReparseResult, TextEdit,
+        };
+    }
+
+    /// Syntax trees: green layer, red layer, trivia, display helpers.
+    pub mod tree {
+        pub use crate::tree::green::{build_green_tree, GreenElement, GreenNode, GreenToken};
+        pub use crate::tree::green_builder::GreenBuilder;
+        pub use crate::tree::red::{SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia};
+        pub use crate::tree::tree_display::{format_syntax_tree, TreeDisplayOptions};
+        pub use crate::tree::trivia::{
+            newline, replace_leading_trivia, replace_trailing_trivia, space,
+        };
+
+        #[cfg(feature = "walk")]
+        pub use crate::tree::walk::{walk, Visitor, WalkOptions, WalkResult};
+
+        #[cfg(feature = "emit")]
+        pub use crate::tree::emit::{syntax_root_to_string, EmitOptions};
+
+        #[cfg(feature = "transform")]
+        pub use crate::tree::transform::{transform, TransformResult, Transformer};
+    }
+
+    /// Line index, parsed document, span maps, and diagnostic types.
+    pub mod diagnostics {
+        pub use crate::diagnostics::error::{
+            Diagnostic, ErrorContext, Expected, RelatedLocation, SemanticDiagnostic, Severity,
+        };
+        pub use crate::diagnostics::line_index::LineIndex;
+        pub use crate::diagnostics::parsed_doc::ParsedDoc;
+        pub use crate::diagnostics::source_map::{map_offset, SpanMap, SpanMapping};
+        pub use crate::diagnostics::{GrammarNames, SliceGrammarNames};
+
+        #[cfg(feature = "miette")]
+        pub use crate::diagnostics::miette_support::{
+            MietteParseDiagnostic, MietteSemanticDiagnostic,
+        };
+
+        #[cfg(feature = "utf16")]
+        pub use crate::diagnostics::utf16::{byte_offset_to_utf16, span_to_utf16_range, utf16_len};
+    }
+
+    /// Optional add-ons (feature-gated); same symbols as `sipha::extras` when enabled.
+    pub mod extras {
+        #[cfg(feature = "patterns")]
+        pub use crate::extras::patterns as patterns;
+
+        #[cfg(feature = "analysis")]
+        pub use crate::extras::analysis::{
+            build_scope_extents, collect_definitions, scope_at_offset,
+        };
+
+        #[cfg(feature = "display")]
+        pub use crate::extras::display::{
+            to_cfg_dot, to_peg, to_rule_dep_dot, to_rule_dep_dot_with_options, RuleDepDotOptions,
+        };
+
+        #[cfg(feature = "sourcemap")]
+        pub use crate::extras::sourcemap::transform_with_mapping;
+
+        #[cfg(feature = "fmt")]
+        pub use crate::extras::fmt::{format_full, format_semantic_only, format_with_skip};
+
+        #[cfg(feature = "diff")]
+        pub use crate::extras::diff::{
+            assert_parse_eq, format_diff, syntax_node_to_sexp, trees_equal, trees_equal_semantic,
+            SexpOptions,
+        };
+    }
+
+    pub use self::diagnostics::{map_offset, SpanMap, SpanMapping};
+    pub use self::diagnostics::{
+        Diagnostic, ErrorContext, Expected, GrammarNames, LineIndex, ParsedDoc, RelatedLocation,
+        SemanticDiagnostic, Severity, SliceGrammarNames,
     };
-    pub use crate::expr::{left_assoc_infix_level, right_assoc_infix_level};
-    pub use crate::green::{build_green_tree, GreenElement, GreenNode, GreenToken};
-    pub use crate::green_builder::GreenBuilder;
-    pub use crate::insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph};
-    pub use crate::line_index::LineIndex;
-    pub use crate::memo::MemoTable;
-    pub use crate::parsed_doc::ParsedDoc;
-    pub use crate::red::{SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia};
-    pub use crate::source_map::{map_offset, SpanMap, SpanMapping};
-    pub use crate::tree_display::{format_syntax_tree, TreeDisplayOptions};
-    pub use crate::trivia::{newline, replace_leading_trivia, replace_trailing_trivia, space};
+    pub use self::parse::{
+        left_assoc_infix_level, right_assoc_infix_level, BadGraphKind, BuiltGraph, CaptureNode,
+        Engine, FlagId, FlagMaskTable, GrammarBuilder, Insn, LeftAssocInfixLevel, LiteralTable,
+        MemoTable, ParseContext, ParseError, ParseGraph, ParseOutput, RecoverMultiResult, Repeat,
+    };
+    pub use self::tree::{
+        build_green_tree, format_syntax_tree, newline, replace_leading_trivia,
+        replace_trailing_trivia, space, GreenBuilder, GreenElement, GreenNode, GreenToken,
+        SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia, TreeDisplayOptions,
+    };
     pub use crate::types::{
         classes, sort_spans, CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag,
         TreeEvent,
     };
 
     #[cfg(feature = "walk")]
-    pub use crate::walk::{walk, Visitor, WalkOptions, WalkResult};
+    pub use self::tree::{walk, Visitor, WalkOptions, WalkResult};
 
     #[cfg(feature = "emit")]
-    pub use crate::emit::{syntax_root_to_string, EmitOptions};
+    pub use self::tree::{syntax_root_to_string, EmitOptions};
 
     #[cfg(feature = "transform")]
-    pub use crate::transform::{transform, TransformResult, Transformer};
+    pub use self::tree::{transform, TransformResult, Transformer};
 
     #[cfg(feature = "miette")]
-    pub use crate::miette_support::{MietteParseDiagnostic, MietteSemanticDiagnostic};
+    pub use self::diagnostics::{MietteParseDiagnostic, MietteSemanticDiagnostic};
 
     #[cfg(feature = "utf16")]
-    pub use crate::utf16::{byte_offset_to_utf16, span_to_utf16_range, utf16_len};
+    pub use self::diagnostics::{byte_offset_to_utf16, span_to_utf16_range, utf16_len};
+
+    #[cfg(feature = "analysis")]
+    pub use self::extras::{build_scope_extents, collect_definitions, scope_at_offset};
+
+    #[cfg(feature = "patterns")]
+    pub use self::extras::patterns;
+
+    #[cfg(feature = "display")]
+    pub use self::extras::{
+        to_cfg_dot, to_peg, to_rule_dep_dot, to_rule_dep_dot_with_options, RuleDepDotOptions,
+    };
+
+    #[cfg(feature = "sourcemap")]
+    pub use self::extras::transform_with_mapping;
+
+    #[cfg(feature = "fmt")]
+    pub use self::extras::{format_full, format_semantic_only, format_with_skip};
+
+    #[cfg(feature = "diff")]
+    pub use self::extras::{
+        assert_parse_eq, format_diff, syntax_node_to_sexp, trees_equal, trees_equal_semantic,
+        SexpOptions,
+    };
+
+    #[cfg(feature = "incremental")]
+    pub use self::parse::{
+        build_green_tree_with_reuse, reparse, reparse_with_output, ReparseResult, TextEdit,
+    };
 }

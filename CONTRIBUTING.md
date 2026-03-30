@@ -24,7 +24,7 @@ cargo run -p sipha --example json_grammar
 cargo run -p sipha --example macro_grammar
 ```
 
-See the [sipha README](README.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for crate layout and where to edit.
+See the [sipha crate README](sipha/README.md) (user-facing API and features), the workspace [README](README.md), and [ARCHITECTURE.md](ARCHITECTURE.md) for internals and where to edit.
 
 ## Before opening a PR
 
@@ -46,8 +46,9 @@ See the [sipha README](README.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for cra
 
 4. **Docs** (optional but recommended)
    ```bash
-   cargo doc --workspace --no-deps
+   cargo doc --workspace --all-features --no-deps
    ```
+   Add `--open` to view in a browser. This builds [rustdoc](https://doc.rust-lang.org/rustdoc/) for the workspace. Prefer doc comments on public items so [docs.rs](https://docs.rs/sipha) stays accurate.
 
 CI runs format, clippy, and tests. Keep `#[allow(...)]` to a minimum; prefer fixing the underlying cause. If you must add an allow, keep it narrow and add a short comment.
 

@@ -8,13 +8,18 @@ This repository is a Cargo workspace containing:
 
 | Crate | Description |
 |-------|-------------|
-| [**sipha**](sipha) | Core parser, grammar builder, syntax trees, and codegen |
+| [**sipha**](sipha) | Parser, grammar builder, syntax trees, codegen, and optional add-ons behind [Cargo features](sipha/README.md#optional-features) |
 | [**sipha-macros**](sipha-macros) | `sipha_grammar!` macro for PEG-style DSL |
-| **sipha-analysis** | Analysis and semantic diagnostics |
-| **sipha-display** | Tree/source display utilities |
-| **sipha-sourcemap** | Source mapping support |
-| **sipha-fmt** | Formatting and pretty-printing |
-| **sipha-diff** | Diff utilities |
+
+## Documentation
+
+| Resource | What it covers |
+|----------|----------------|
+| [**API reference (docs.rs)**](https://docs.rs/sipha) | Generated docs for `sipha` (modules, types, traits). |
+| [**sipha crate README**](sipha/README.md) | Features, quick examples, optional Cargo features, links to examples. |
+| [**Cookbook**](sipha/docs/COOKBOOK.md) | Recipes: expression precedence, `recover_until`, `byte_dispatch`, trivia vs lexer rules. |
+| [**Architecture**](ARCHITECTURE.md) | Data flow through builder → VM → trees, module map, where to change code. |
+| [**sipha-macros README**](sipha-macros/README.md) | Grammar DSL directives, expression syntax, attributes. |
 
 ## Quick start
 
@@ -22,15 +27,15 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sipha = "2"
+sipha = "3"
 ```
 
 For the grammar macro:
 
 ```toml
 [dependencies]
-sipha = "2"
-sipha-macros = "2"
+sipha = "3"
+sipha-macros = "3"
 ```
 
 See the [**sipha** crate README](sipha/README.md) for features, examples, and API overview.

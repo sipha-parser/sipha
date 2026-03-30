@@ -17,7 +17,7 @@ use sipha::prelude::*;
 
 fn check(
     engine: &mut Engine,
-    graph: &sipha::insn::ParseGraph,
+    graph: &sipha::parse::insn::ParseGraph,
     input: &str,
     expect_ok: bool,
     desc: &str,
@@ -35,13 +35,7 @@ fn check(
         let exp: Vec<_> = ec
             .expected
             .iter()
-            .map(|e| {
-                e.display(
-                    Some(&graph.literals),
-                    Some(graph.rule_names),
-                    Some(graph.expected_labels),
-                )
-            })
+            .map(|e| e.display(Some(&graph.literals), Some(&graph)))
             .collect();
         println!("  [{sym}] {desc:<58} → ERR byte {}: {exp:?}", ec.furthest);
     }
@@ -53,90 +47,98 @@ fn check(
 /// `AnyChar` — matches any valid UTF-8 codepoint, then EOF.
 fn grammar_any_char() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.any_char();
-    g.end_of_input();
-    g.accept();
+    g.rule("start", |g| {
+        g.any_char();
+        g.end_of_input();
+        g.accept();
+    });
     g.finish().unwrap()
 }
 
 /// `Char('€')` — matches exactly U+20AC, then EOF.
 fn grammar_exact_char(c: char) -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.char(c);
-    g.end_of_input();
-    g.accept();
+    g.rule("start", |g| {
+        g.char(c);
+        g.end_of_input();
+        g.accept();
+    });
     g.finish().unwrap()
 }
 
 /// `CharRange('α','ω')` — matches any Greek lowercase codepoint, then EOF.
 fn grammar_char_range(lo: char, hi: char) -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.char_range(lo, hi);
-    g.end_of_input();
-    g.accept();
+    g.rule("start", |g| {
+        g.char_range(lo, hi);
+        g.end_of_input();
+        g.accept();
+    });
     g.finish().unwrap()
 }
 
 /// `AnyChar{1,4}` — matches 1 to 4 codepoints, then EOF.
 fn grammar_any_char_repeat() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.repeat(1..=4u32, |g| {
-        g.any_char();
+    g.rule("start", |g| {
+        g.repeat(1..=4u32, |g| {
+            g.any_char();
+        });
+        g.end_of_input();
+        g.accept();
     });
-    g.end_of_input();
-    g.accept();
     g.finish().unwrap()
 }
 
 /// Exact(n) — byte 'x' repeated exactly n times.
 fn grammar_exact(n: u32) -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.repeat(n, |g| {
-        g.byte(b'x');
+    g.rule("start", |g| {
+        g.repeat(n, |g| {
+            g.byte(b'x');
+        });
+        g.end_of_input();
+        g.accept();
     });
-    g.end_of_input();
-    g.accept();
     g.finish().unwrap()
 }
 
 /// AtLeast(n) — byte 'y' repeated at least n times.
 fn grammar_at_least(n: u32) -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.repeat(n.., |g| {
-        g.byte(b'y');
+    g.rule("start", |g| {
+        g.repeat(n.., |g| {
+            g.byte(b'y');
+        });
+        g.end_of_input();
+        g.accept();
     });
-    g.end_of_input();
-    g.accept();
     g.finish().unwrap()
 }
 
 /// AtMost(n) — byte 'z' repeated at most n times.
 fn grammar_at_most(n: u32) -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.repeat(..=n, |g| {
-        g.byte(b'z');
+    g.rule("start", |g| {
+        g.repeat(..=n, |g| {
+            g.byte(b'z');
+        });
+        g.end_of_input();
+        g.accept();
     });
-    g.end_of_input();
-    g.accept();
     g.finish().unwrap()
 }
 
 /// Between(lo, hi) — byte 'a' repeated between lo and hi times.
 fn grammar_between(lo: u32, hi: u32) -> BuiltGraph {
     let mut g = GrammarBuilder::new();
-    g.begin_rule("start");
-    g.repeat(lo..=hi, |g| {
-        g.byte(b'a');
+    g.rule("start", |g| {
+        g.repeat(lo..=hi, |g| {
+            g.byte(b'a');
+        });
+        g.end_of_input();
+        g.accept();
     });
-    g.end_of_input();
-    g.accept();
     g.finish().unwrap()
 }
 
@@ -145,46 +147,47 @@ fn grammar_tag() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
 
     // start <- '[' emoji{1,4} ':' label ']' EOF
-    g.begin_rule("start");
-    g.byte(b'[');
-    // 1 to 4 emoji (any non-ASCII codepoint, or any char that isn't control bytes)
-    g.repeat(1..=4u32, |g| {
-        g.neg_lookahead(|g| {
-            g.byte(b':');
+    g.rule("start", |g| {
+        g.byte(b'[');
+        // 1 to 4 emoji (any non-ASCII codepoint, or any char that isn't control bytes)
+        g.repeat(1..=4u32, |g| {
+            g.neg_lookahead(|g| {
+                g.byte(b':');
+            });
+            g.neg_lookahead(|g| {
+                g.byte(b']');
+            });
+            g.any_char();
         });
-        g.neg_lookahead(|g| {
-            g.byte(b']');
-        });
-        g.any_char();
+        g.byte(b':');
+        g.call("label");
+        g.byte(b']');
+        g.end_of_input();
+        g.accept();
     });
-    g.byte(b':');
-    g.call("label");
-    g.byte(b']');
-    g.end_of_input();
-    g.accept();
 
     // label <- segment ('-' segment)*
-    g.begin_rule("label");
-    g.call("segment");
-    g.zero_or_more(|g| {
-        g.byte(b'-');
+    g.rule("label", |g| {
         g.call("segment");
+        g.zero_or_more(|g| {
+            g.byte(b'-');
+            g.call("segment");
+        });
     });
-    g.end_rule();
 
     // segment <- alpha{3,12}
-    g.begin_rule("segment");
-    g.repeat(3..=12u32, |g| {
-        g.choice(
-            |g| {
-                g.char_range('a', 'z');
-            },
-            |g| {
-                g.char_range('A', 'Z');
-            },
-        );
+    g.rule("segment", |g| {
+        g.repeat(3..=12u32, |g| {
+            g.choice(
+                |g| {
+                    g.char_range('a', 'z');
+                },
+                |g| {
+                    g.char_range('A', 'Z');
+                },
+            );
+        });
     });
-    g.end_rule();
 
     g.finish().unwrap()
 }

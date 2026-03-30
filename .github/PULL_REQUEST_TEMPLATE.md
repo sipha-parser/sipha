@@ -4,13 +4,8 @@ Brief description of the change and why it’s needed.
 
 ## Which crate(s) are affected?
 
-- [ ] sipha (core)
+- [ ] sipha
 - [ ] sipha-macros
-- [ ] sipha-analysis
-- [ ] sipha-display
-- [ ] sipha-sourcemap
-- [ ] sipha-fmt
-- [ ] sipha-diff
 
 ## Checklist
 

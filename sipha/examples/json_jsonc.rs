@@ -81,12 +81,12 @@
 //! ws (JSONC) ←  ([ \t\n\r]+ | '//' [^\n]* '\n'? | '/*' (!'*/' .)* '*/')*
 //! ```
 //!
-//! [`set_trivia_rule`]: sipha::builder::GrammarBuilder::set_trivia_rule
-//! [`parser_rule`]: sipha::builder::GrammarBuilder::parser_rule
-//! [`lexer_rule`]: sipha::builder::GrammarBuilder::lexer_rule
-//! [`call`]: sipha::builder::GrammarBuilder::call
-//! [`token`]: sipha::builder::GrammarBuilder::token
-//! [`byte_dispatch`]: sipha::builder::GrammarBuilder::byte_dispatch
+//! [`set_trivia_rule`]: sipha::parse::builder::GrammarBuilder::set_trivia_rule
+//! [`parser_rule`]: sipha::parse::builder::GrammarBuilder::parser_rule
+//! [`lexer_rule`]: sipha::parse::builder::GrammarBuilder::lexer_rule
+//! [`call`]: sipha::parse::builder::GrammarBuilder::call
+//! [`token`]: sipha::parse::builder::GrammarBuilder::token
+//! [`byte_dispatch`]: sipha::parse::builder::GrammarBuilder::byte_dispatch
 
 use sipha::prelude::*;
 use sipha::types::classes;
@@ -178,13 +178,13 @@ fn emit_shared_rules(g: &mut GrammarBuilder) {
             vec![
                 // auto: ws → dispatch
                 (
-                    CharClass::EMPTY.with_byte(b'"'),
+                    CharClass::from_byte(b'"'),
                     Box::new(|g: &mut GrammarBuilder| {
                         g.call("string");
                     }),
                 ),
                 (
-                    CharClass::EMPTY.with_byte(b'{'),
+                    CharClass::from_byte(b'{'),
                     Box::new(|g: &mut GrammarBuilder| {
                         g.call("object");
                     }),
@@ -202,7 +202,7 @@ fn emit_shared_rules(g: &mut GrammarBuilder) {
                     }),
                 ),
                 (
-                    CharClass::EMPTY.with_byte(b't'),
+                    CharClass::from_byte(b't'),
                     Box::new(|g: &mut GrammarBuilder| {
                         g.token(TOK_TRUE, |g| {
                             g.literal(b"true");
@@ -210,7 +210,7 @@ fn emit_shared_rules(g: &mut GrammarBuilder) {
                     }),
                 ),
                 (
-                    CharClass::EMPTY.with_byte(b'f'),
+                    CharClass::from_byte(b'f'),
                     Box::new(|g: &mut GrammarBuilder| {
                         g.token(TOK_FALSE, |g| {
                             g.literal(b"false");
@@ -218,7 +218,7 @@ fn emit_shared_rules(g: &mut GrammarBuilder) {
                     }),
                 ),
                 (
-                    CharClass::EMPTY.with_byte(b'n'),
+                    CharClass::from_byte(b'n'),
                     Box::new(|g: &mut GrammarBuilder| {
                         g.token(TOK_NULL, |g| {
                             g.literal(b"null");
@@ -406,6 +406,9 @@ fn emit_shared_rules(g: &mut GrammarBuilder) {
 #[must_use]
 pub fn build_json_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
+    // JSON is inherently recursive (value -> object/array -> value), so this
+    // grammar intentionally contains cycles.
+    g.allow_rule_cycles(true);
 
     // Register ws as the trivia rule.  After this, parser_rule bodies will
     // auto-inject a ws-skip before every call/token/byte_dispatch.
@@ -437,6 +440,9 @@ pub fn build_json_grammar() -> BuiltGraph {
 #[must_use]
 pub fn build_jsonc_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
+    // JSONC is inherently recursive (value -> object/array -> value), so this
+    // grammar intentionally contains cycles.
+    g.allow_rule_cycles(true);
 
     g.set_trivia_rule("ws");
 
@@ -687,7 +693,7 @@ fn main() {
     let trivia: Vec<_> = root
         .descendant_tokens()
         .into_iter()
-        .filter(sipha::red::SyntaxToken::is_trivia)
+        .filter(sipha::tree::red::SyntaxToken::is_trivia)
         .collect();
     c(!trivia.is_empty(), "whitespace trivia tokens are present");
     println!("   Trivia tokens: {}", trivia.len());
@@ -719,7 +725,7 @@ fn main() {
     let all_trivia: Vec<SyntaxToken> = root_c
         .descendant_tokens()
         .into_iter()
-        .filter(sipha::red::SyntaxToken::is_trivia)
+        .filter(sipha::tree::red::SyntaxToken::is_trivia)
         .collect();
     let ws_count = all_trivia.iter().filter(|t| t.kind() == TRIVIA_WS).count();
     let line_count = all_trivia
