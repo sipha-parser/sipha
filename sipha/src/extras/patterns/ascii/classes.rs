@@ -52,4 +52,3 @@ pub const NOT_CR: CharClass = CharClass::EMPTY
 
 /// All bytes except ASCII newline (LF).
 pub const NOT_NEWLINE: CharClass = NOT_LF;
-

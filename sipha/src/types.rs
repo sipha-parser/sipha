@@ -252,9 +252,12 @@ mod tests {
         assert!(!m.contains(b'd'));
 
         assert_eq!(CharClass::from_bytes(b" \t\n\r"), classes::WHITESPACE);
-        assert_eq!(CharClass::from_bytes("€".as_bytes()), CharClass::from_byte(0xE2)
-            .union(CharClass::from_byte(0x82))
-            .union(CharClass::from_byte(0xAC)));
+        assert_eq!(
+            CharClass::from_bytes("€".as_bytes()),
+            CharClass::from_byte(0xE2)
+                .union(CharClass::from_byte(0x82))
+                .union(CharClass::from_byte(0xAC))
+        );
     }
 
     #[test]

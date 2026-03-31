@@ -1,91 +1,104 @@
-# Sipha cookbook
+# sipha Cookbook
 
-Short recipes for common grammar patterns. For API details, see [docs.rs/sipha](https://docs.rs/sipha) (this file lives in the repo as `sipha/docs/COOKBOOK.md` and is not embedded on docs.rs).
+This document is intentionally example-first. Most sections show a “pattern” and a small runnable snippet.
 
-## 1. Expression grammar with precedence
+## Trivia (whitespace/comments) that never breaks parsing
 
-Use the [`sipha::parse::expr`](https://docs.rs/sipha/latest/sipha/parse/expr/index.html) module helpers to build left- or right-associative infix levels without repeating the same pattern:
+If you call `GrammarBuilder::set_trivia_rule("ws")`, the builder will **auto-inject** `skip()` before:
 
-- **Left-associative** (e.g. mul/div, add/sub): `lower ( op lower )*` with each `op lower` wrapped in a node.
+- `call(...)`
+- `token(...)`
+- `byte_dispatch(...)`
+
+…but only inside `parser_rule(...)` bodies.
+
+**Rule of thumb:** your trivia rule must succeed even when there is *no* trivia, so prefer `zero_or_more`.
 
 ```rust
 use sipha::prelude::*;
-use sipha::parse::expr;
 
-// After defining primary, postfix, unary, and token rules:
-expr::left_assoc_infix_level(g, "expr_mul", "expr_power", &["op_star", "op_slash", "op_percent"], Kind::NodeBinaryExpr);
-expr::left_assoc_infix_level(g, "expr_add", "expr_mul", &["op_plus", "op_minus"], Kind::NodeBinaryExpr);
-```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::SyntaxKinds)]
+#[repr(u16)]
+enum K { Ws }
 
-- **Right-associative** (e.g. power, assignment): `lower op level | lower`.
-
-```rust
-expr::right_assoc_infix_level(g, "expr_power", "unary", "op_power", Kind::NodeBinaryExpr);
-```
-
-Define your base level (primary, postfix, unary) and token rules first; then chain levels from highest precedence (e.g. power) down to lowest (e.g. assignment).
-
-## 2. Error recovery with `recover_until`
-
-When a rule fails, you can skip input until a sync point and then continue. Use `GrammarBuilder::recover_until`:
-
-```rust
-g.parser_rule("program", |g| {
-    g.recover_until("semicolon", |g| {
+let mut g = GrammarBuilder::new();
+g.set_trivia_rule("ws");
+g.lexer_rule("ws", |g| {
+    g.trivia(K::Ws, |g| {
         g.zero_or_more(|g| {
-            g.call("statement");
+            g.class(classes::WHITESPACE);
         });
     });
 });
 ```
 
-Here, if `statement` fails, the engine skips bytes until the `semicolon` rule matches (or end-of-input), then continues parsing. For multi-error collection, use `Engine::parse_recovering_multi` so each failure is recorded and parsing continues.
+## Parser rules vs lexer rules
 
-## 3. Byte dispatch for keywords / values
+- **`lexer_rule`**: “tight” byte-level patterns like identifiers, numbers, string bodies, comments.
+- **`parser_rule`**: structural composition of tokens + subrules, with trivia auto-skip.
 
-For a rule with many alternatives that start with different bytes (e.g. JSON value: `{`, `[`, `"`, …), use [`GrammarBuilder::byte_dispatch`](https://docs.rs/sipha/latest/sipha/parse/builder/struct.GrammarBuilder.html#method.byte_dispatch) with `(CharClass, closure)` arms, or the helpers below when each arm is a single leading byte or a plain rule call.
+Inside `token(...)` and `trivia(...)` bodies, trivia auto-skip is suppressed automatically (token interiors should be byte-level).
 
-**Rule calls only** — [`byte_dispatch_rules`](https://docs.rs/sipha/latest/sipha/parse/builder/struct.GrammarBuilder.html#method.byte_dispatch_rules):
+## Trailing trivia before EOF
+
+`end_of_input()` is **not** preceded by an automatic skip. If your grammar allows trailing spaces/comments, do:
 
 ```rust
-g.byte_dispatch_rules(
-    &[
-        (b'{', "object"),
-        (b'[', "array"),
-        (b'"', "string"),
-    ],
-    Some("value_fallback"),
+g.parser_rule("start", |g| {
+    g.call("top_level");
+    g.skip();
+    g.end_of_input();
+    g.accept();
+});
+```
+
+## Building a `ParsedDoc`
+
+After a successful parse, build a single “document handle” that gives you:
+
+- root node
+- source bytes
+- a `LineIndex` for formatting diagnostics with snippets
+
+```rust
+let out = engine.parse(&graph, source_bytes)?;
+let doc = ParsedDoc::from_slice(source_bytes, &out).unwrap();
+let root: &SyntaxNode = doc.root();
+```
+
+## S-expression snapshots for tests
+
+For grammar tests, comparing the full pretty tree output can be noisy. Use the built-in S-expression serializer:
+
+```rust
+let sexp = sipha::tree::sexp::syntax_node_to_sexp(
+    doc.root(),
+    &sipha::tree::sexp::SexpOptions::semantic_only(),
 );
 ```
 
-**Custom body per byte** — [`byte_dispatch_bytes`](https://docs.rs/sipha/latest/sipha/parse/builder/struct.GrammarBuilder.html#method.byte_dispatch_bytes) (each arm is one byte and a closure; in debug builds duplicate bytes panic):
+If you derive `SyntaxKinds`, you can pass a `kind_to_name` mapping so the output uses readable names instead of numeric kinds.
+
+## Multi-error recovery (panic-free parsing)
+
+If your grammar uses `recover_until("sync_rule", ...)`, you can parse while collecting multiple errors:
 
 ```rust
-use sipha::parse::builder::GrammarChoiceFn;
-
-g.byte_dispatch_bytes(
-    vec![
-        (b'{', Box::new(|g| g.call("object"))),
-        (b'[', Box::new(|g| g.call("array"))),
-    ],
-    Some(Box::new(|g| g.call("other"))),
-);
+let res = engine.parse_recovering_multi(&graph, src, 32);
+match res {
+    Ok(out) => { /* no errors */ }
+    Err(multi) => {
+        for e in &multi.errors {
+            // e: ParseError
+        }
+        // multi.partial: ParseOutput with whatever was built before/around recovery points
+    }
+}
 ```
 
-Inside [`parser_rule`](crate::parse::builder::GrammarBuilder::parser_rule), trivia is skipped once before the dispatch table lookup. This avoids a long chain of choices and improves performance.
+## Embedding sub-languages
 
-The **first** rule you define is the parse entry point (see [`ParseGraph::start`](crate::parse::insn::ParseGraph::start)); define your top-level rule (e.g. `start`) before helper rules when those helpers are only reached via `call` from it.
+You can parse the “host” language, then post-process its `TreeEvent`s to parse marked spans with an embedded grammar and splice the embedded tree under a host node.
 
-## 4. Trivia and parser vs lexer rules
+See the runnable example `examples/sublanguage_markdown_json.rs`.
 
-- **Trivia**: Register a single rule for whitespace/comments with `set_trivia_rule`. Then use `parser_rule` for structural rules; the builder will automatically emit a trivia-skip before each `call`, `token`, and `byte_dispatch`.
-
-- **Parser rules**: Use `parser_rule` for rules that should have trivia skipped between tokens (e.g. statements, expressions).
-
-- **Lexer rules**: Use `lexer_rule` for token-level rules (strings, numbers, identifiers, whitespace). No trivia is injected inside them, so the byte-level pattern stays contiguous.
-
-Example: define `ws` as a lexer rule, call `set_trivia_rule("ws")`, then define `object`, `array`, etc. as parser rules so whitespace is allowed between every token.
-
-## Reference: full grammar example
-
-For an end-to-end grammar in-tree, see `examples/json_grammar.rs` (byte dispatch, memo, SIMD literals, diagnostics). For a macro-defined grammar, see `examples/macro_grammar.rs`. Larger language front ends typically split lexer-style rules, expression precedence, and statement/recovery rules across modules in the same way as the cookbook sections above.

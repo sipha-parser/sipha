@@ -5,9 +5,6 @@ use super::classes;
 /// ASCII identifier: `IDENT_START IDENT_CONT*`.
 #[inline]
 pub fn ident(g: &mut GrammarBuilder) {
-    g.class(classes::IDENT_START);
-    g.zero_or_more(|g| {
-        g.class(classes::IDENT_CONT);
-    });
+    g.class_with_label(classes::IDENT_START, "identifier start");
+    g.consume_while_class_with_label(classes::IDENT_CONT, "identifier continuation", 0);
 }
-

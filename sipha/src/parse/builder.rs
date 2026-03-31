@@ -158,7 +158,10 @@ pub type GrammarChoiceFn = Box<dyn FnOnce(&mut GrammarBuilder)>;
 /// One arm of a byte dispatch: character class + body.
 type ByteDispatchArm = (CharClass, GrammarChoiceFn);
 
-/// N-way choice without `Vec<Box<dyn FnOnce>>`: `choices!(g, |g| g.literal(b"a"), |g| g.literal(b"b"))`.
+/// Convenience macro for [`GrammarBuilder::choices`].
+///
+/// This still allocates a `Vec` internally; it primarily exists to avoid
+/// spelling out `vec![Box::new(...), ...]` at the call site.
 #[macro_export]
 macro_rules! choices {
     ($g:expr, $first:expr $(, $rest:expr)* $(,)?) => {
@@ -449,6 +452,9 @@ pub struct GrammarBuilder {
     /// If `false`, [`finish`](Self::finish) will return an error when any rule
     /// is unreachable from the start rule. Default is `true` (allow unreachable).
     allow_unreachable_rules: bool,
+
+    /// If `true`, [`trace`](Self::trace) emits runtime trace waypoints.
+    trace_mode: bool,
 }
 
 impl GrammarBuilder {
@@ -477,7 +483,14 @@ impl GrammarBuilder {
             field_names: Vec::new(),
             allow_rule_cycles: false,
             allow_unreachable_rules: true,
+            trace_mode: false,
         }
+    }
+
+    /// Enable/disable emission of runtime trace waypoints via [`trace`](Self::trace).
+    pub const fn set_trace_mode(&mut self, enabled: bool) -> &mut Self {
+        self.trace_mode = enabled;
+        self
     }
 
     /// Allow rule cycles (left-recursion or mutual recursion) when finishing.
@@ -776,6 +789,11 @@ impl GrammarBuilder {
     // ── Byte-level terminals ──────────────────────────────────────────────────
 
     /// Match exactly one byte value.
+    ///
+    /// # Emits
+    /// ```text
+    /// Byte { byte: b, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn byte(&mut self, b: u8) -> InsnId {
         self.emit(Insn::Byte {
             byte: b,
@@ -784,6 +802,11 @@ impl GrammarBuilder {
     }
 
     /// Match any byte in the inclusive range `[lo, hi]`.
+    ///
+    /// # Emits
+    /// ```text
+    /// ByteRange { lo, hi, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn byte_range(&mut self, lo: u8, hi: u8) -> InsnId {
         self.emit(Insn::ByteRange {
             lo,
@@ -793,6 +816,11 @@ impl GrammarBuilder {
     }
 
     /// Match any byte whose bit is set in `class`.
+    ///
+    /// # Emits
+    /// ```text
+    /// Class { class, label_id: 0, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn class(&mut self, class: CharClass) -> InsnId {
         self.emit(Insn::Class {
             class,
@@ -802,6 +830,11 @@ impl GrammarBuilder {
     }
 
     /// Like [`class`](Self::class) but use `label` in diagnostics (e.g. "digit", "whitespace").
+    ///
+    /// # Emits
+    /// ```text
+    /// Class { class, label_id: <interned>, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn class_with_label(&mut self, class: CharClass, label: &str) -> InsnId {
         let sym = self.strings.intern(label);
         let label_id = if let Some((i, _)) = self
@@ -824,7 +857,24 @@ impl GrammarBuilder {
     }
 
     /// Match the exact byte string `bytes` (SIMD-accelerated for ≥16 bytes).
+    ///
+    /// # Emits
+    /// ```text
+    /// LiteralSmall { .. }   // when bytes.len() <= 8
+    /// Literal { .. }        // otherwise (interned in LiteralTable)
+    /// ```
     pub fn literal(&mut self, bytes: &[u8]) -> InsnId {
+        if bytes.len() <= 8 {
+            let mut buf = [0u8; 8];
+            for (i, &b) in bytes.iter().enumerate() {
+                buf[i] = b;
+            }
+            return self.emit(Insn::LiteralSmall {
+                len: u8::try_from(bytes.len()).unwrap_or(0),
+                bytes: buf,
+                on_fail: u32::MAX,
+            });
+        }
         let lit_id = self.literals.intern(bytes);
         self.emit(Insn::Literal {
             lit_id,
@@ -832,11 +882,107 @@ impl GrammarBuilder {
         })
     }
 
+    /// Match exactly one of two byte values.
+    ///
+    /// # Emits
+    /// ```text
+    /// ByteEither { a, b, on_fail: <patched by surrounding combinator> }
+    /// ```
+    pub fn byte_either(&mut self, a: u8, b: u8) -> InsnId {
+        self.emit(Insn::ByteEither {
+            a,
+            b,
+            on_fail: u32::MAX,
+        })
+    }
+
+    /// Match exactly one of three byte values.
+    ///
+    /// # Emits
+    /// ```text
+    /// ByteIn3 { a, b, c, on_fail: <patched by surrounding combinator> }
+    /// ```
+    pub fn byte_in3(&mut self, a: u8, b: u8, c: u8) -> InsnId {
+        self.emit(Insn::ByteIn3 {
+            a,
+            b,
+            c,
+            on_fail: u32::MAX,
+        })
+    }
+
+    /// Consume a run of bytes matching `class`. Succeeds iff at least `min` bytes are consumed.
+    ///
+    /// Use `class_with_label` + `one_or_more`/`zero_or_more` when you need full PEG structure;
+    /// use this when you specifically want a fast scan of a byte run.
+    ///
+    /// # Emits
+    /// ```text
+    /// ConsumeWhileClass { class, label_id: 0, min, on_fail: <patched by surrounding combinator> }
+    /// ```
+    pub fn consume_while_class(&mut self, class: CharClass, min: u32) -> InsnId {
+        self.emit(Insn::ConsumeWhileClass {
+            class,
+            label_id: 0,
+            min,
+            on_fail: u32::MAX,
+        })
+    }
+
+    /// Like [`consume_while_class`](Self::consume_while_class) but uses `label` in diagnostics.
+    ///
+    /// # Emits
+    /// ```text
+    /// ConsumeWhileClass { class, label_id: <interned>, min, on_fail: <patched by surrounding combinator> }
+    /// ```
+    pub fn consume_while_class_with_label(
+        &mut self,
+        class: CharClass,
+        label: &str,
+        min: u32,
+    ) -> InsnId {
+        let sym = self.strings.intern(label);
+        let label_id = if let Some((i, _)) = self
+            .class_labels
+            .iter()
+            .enumerate()
+            .find(|(_, &s)| s == sym)
+        {
+            u32::try_from(i).unwrap_or(0)
+        } else {
+            let id = u32::try_from(self.class_labels.len()).unwrap_or(0);
+            self.class_labels.push(sym);
+            id
+        };
+        self.emit(Insn::ConsumeWhileClass {
+            class,
+            label_id,
+            min,
+            on_fail: u32::MAX,
+        })
+    }
+
+    /// Like [`consume_while_class_with_label`](Self::consume_while_class_with_label) with `min = 1`.
+    ///
+    /// # Emits
+    /// ```text
+    /// (same as consume_while_class_with_label with min = 1)
+    /// ```
+    #[inline]
+    pub fn consume_while_class1_with_label(&mut self, class: CharClass, label: &str) -> InsnId {
+        self.consume_while_class_with_label(class, label, 1)
+    }
+
     /// Match end-of-input.
     ///
     /// Note: `end_of_input` is **not** preceded by an auto-skip even inside a
     /// [`parser_rule`](Self::parser_rule).  Call [`skip()`](Self::skip)
     /// explicitly if trailing trivia should be consumed before the end marker.
+    ///
+    /// # Emits
+    /// ```text
+    /// EndOfInput { on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn end_of_input(&mut self) -> InsnId {
         self.emit(Insn::EndOfInput { on_fail: u32::MAX })
     }
@@ -847,6 +993,11 @@ impl GrammarBuilder {
     ///
     /// Fails on invalid UTF-8 or end-of-input.  For ASCII-only input,
     /// `class(CharClass::ANY)` is equivalent and faster (no decode step).
+    ///
+    /// # Emits
+    /// ```text
+    /// AnyChar { on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn any_char(&mut self) -> InsnId {
         self.emit(Insn::AnyChar { on_fail: u32::MAX })
     }
@@ -855,6 +1006,11 @@ impl GrammarBuilder {
     ///
     /// For ASCII codepoints (U+0000–U+007F), `byte(c as u8)` is equivalent
     /// and avoids the UTF-8 decode.
+    ///
+    /// # Emits
+    /// ```text
+    /// Char { codepoint: c as u32, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn char(&mut self, c: char) -> InsnId {
         self.emit(Insn::Char {
             codepoint: u32::from(c),
@@ -869,6 +1025,11 @@ impl GrammarBuilder {
     /// g.char_range('α', 'ω')          // Greek lowercase
     /// g.char_range('\u{1F600}', '\u{1F64F}')  // Smiley emoji block
     /// ```
+    ///
+    /// # Emits
+    /// ```text
+    /// CharRange { lo: lo as u32, hi: hi as u32, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn char_range(&mut self, lo: char, hi: char) -> InsnId {
         self.emit(Insn::CharRange {
             lo: u32::from(lo),
@@ -880,6 +1041,11 @@ impl GrammarBuilder {
     // ── Control flow ──────────────────────────────────────────────────────────
 
     /// Emit an unconditional failure.
+    ///
+    /// # Emits
+    /// ```text
+    /// Fail
+    /// ```
     pub fn fail(&mut self) -> InsnId {
         self.emit(Insn::Fail)
     }
@@ -889,6 +1055,11 @@ impl GrammarBuilder {
     /// Only needed as the final instruction of the grammar's start rule; all
     /// other rules end with `Return` (emitted when a [`rule`](Self::rule) /
     /// [`parser_rule`](Self::parser_rule) / [`lexer_rule`](Self::lexer_rule) body returns).
+    ///
+    /// # Emits
+    /// ```text
+    /// Accept
+    /// ```
     pub fn accept(&mut self) {
         self.emit(Insn::Accept);
     }
@@ -900,6 +1071,12 @@ impl GrammarBuilder {
     ///
     /// Inside a [`parser_rule`](Self::parser_rule), a [`skip()`](Self::skip)
     /// is emitted **before** the call.
+    ///
+    /// # Emits
+    /// ```text
+    /// (optional) <emission of skip()>    // when auto_trivia == true
+    /// Call { rule: <patched at finish> }
+    /// ```
     pub fn call(&mut self, rule_name: impl Into<String>) -> InsnId {
         if self.auto_trivia {
             self.skip();
@@ -913,6 +1090,12 @@ impl GrammarBuilder {
     ///
     /// Inside a [`parser_rule`](Self::parser_rule), a [`skip()`](Self::skip)
     /// is emitted **before** the call.
+    ///
+    /// # Emits
+    /// ```text
+    /// (optional) <emission of skip()>    // when auto_trivia == true
+    /// Call { rule }
+    /// ```
     pub fn call_id(&mut self, rule: RuleId) -> InsnId {
         if self.auto_trivia {
             self.skip();
@@ -927,6 +1110,13 @@ impl GrammarBuilder {
     /// Prefer [`node`](Self::node) / [`token`](Self::token) for new grammars —
     /// they produce the green/red tree.  `capture` is retained for grammars
     /// that use the flat [`CaptureEvent`](crate::types::CaptureEvent) log.
+    ///
+    /// # Emits
+    /// ```text
+    /// CaptureBegin { tag }
+    ///   <body>
+    /// CaptureEnd { tag }
+    /// ```
     pub fn capture<F>(&mut self, tag: Tag, body: F)
     where
         F: FnOnce(&mut Self),
@@ -951,6 +1141,13 @@ impl GrammarBuilder {
     ///     g.token(TOK_NUM, |g| g.repeat(1.., |g| g.class(classes::DIGIT)));
     /// });
     /// ```
+    ///
+    /// # Emits
+    /// ```text
+    /// NodeBegin { kind, field: None }
+    ///   <body>
+    /// NodeEnd
+    /// ```
     pub fn node<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
     where
         F: FnOnce(&mut Self),
@@ -968,6 +1165,13 @@ impl GrammarBuilder {
     /// The label is interned in the grammar's `field_names` table; use
     /// [`crate::tree::red::SyntaxNode::field_by_id`] with the corresponding
     /// [`FieldId`] to access this child by name.
+    ///
+    /// # Emits
+    /// ```text
+    /// NodeBegin { kind, field: Some(<interned>) }
+    ///   <body>
+    /// NodeEnd
+    /// ```
     pub fn node_with_field<K: IntoSyntaxKind, F>(&mut self, kind: K, field: &str, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1005,6 +1209,14 @@ impl GrammarBuilder {
     ///     g.zero_or_more(|g| g.class(classes::IDENT_CONT));
     /// });
     /// ```
+    ///
+    /// # Emits
+    /// ```text
+    /// (optional) <emission of skip()>    // when auto_trivia == true
+    /// TokenBegin { kind, is_trivia: false }
+    ///   <body>                           // auto_trivia forced off for token interior
+    /// TokenEnd
+    /// ```
     pub fn token<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1037,6 +1249,13 @@ impl GrammarBuilder {
     ///     g.zero_or_more(|g| g.class(classes::WHITESPACE));
     /// });
     /// ```
+    ///
+    /// # Emits
+    /// ```text
+    /// TokenBegin { kind, is_trivia: true }
+    ///   <body>                           // auto_trivia forced off for trivia interior
+    /// TokenEnd
+    /// ```
     pub fn trivia<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1068,6 +1287,16 @@ impl GrammarBuilder {
     ///
     /// Auto-skip mode is passed through transparently to both branches.
     /// For many alternatives, use [`choices`](Self::choices) with a vec.
+    ///
+    /// # Emits
+    /// ```text
+    /// Choice { alt: e2 }
+    ///   <body of e1>
+    /// Commit { target: after }
+    /// e2:
+    ///   <body of e2>
+    /// after:
+    /// ```
     pub fn choice<F1, F2>(&mut self, e1: F1, e2: F2)
     where
         F1: FnOnce(&mut Self),
@@ -1115,6 +1344,43 @@ impl GrammarBuilder {
                 let first = alternatives.remove(0);
                 self.choice(first, |g| g.choices(alternatives));
             }
+        }
+    }
+
+    /// N-way choice over a slice of byte literals, without `Vec<Box<..>>` allocations.
+    ///
+    /// Equivalent to nesting `choice(|g| g.literal(words[0]), ...)` for each element.
+    /// Empty slice is a no-op; single element emits that literal.
+    pub fn choice_literals(&mut self, words: &[&'static [u8]]) {
+        match words {
+            [] => {}
+            [w] => {
+                self.literal(w);
+            }
+            [w, rest @ ..] => self.choice(
+                |g| {
+                    g.literal(w);
+                },
+                |g| g.choice_literals(rest),
+            ),
+        }
+    }
+
+    /// N-way choice over a slice of rule calls, without `Vec<Box<..>>` allocations.
+    ///
+    /// Equivalent to nesting `choice(|g| g.call(rules[0]), ...)` for each element.
+    pub fn choice_rule_calls(&mut self, rules: &[&'static str]) {
+        match rules {
+            [] => {}
+            [r] => {
+                self.call(*r);
+            }
+            [r, rest @ ..] => self.choice(
+                |g| {
+                    g.call(*r);
+                },
+                |g| g.choice_rule_calls(rest),
+            ),
         }
     }
 
@@ -1186,6 +1452,15 @@ impl GrammarBuilder {
     }
 
     /// `e?` — match `body` zero or one time.
+    ///
+    /// # Emits
+    /// ```text
+    /// Choice { alt: after }
+    ///   <body of e>
+    /// Commit { target: after }
+    /// after:
+    /// ```
+    #[doc(alias = "?")]
     pub fn optional<F>(&mut self, body: F)
     where
         F: Fn(&mut Self),
@@ -1199,6 +1474,19 @@ impl GrammarBuilder {
     }
 
     /// `e*` — match `body` zero or more times.
+    ///
+    /// Each successful iteration is committed with `PartialCommit`, so captures/tree-events
+    /// from completed iterations are not discarded when the loop terminates.
+    ///
+    /// # Emits
+    /// ```text
+    /// Choice { alt: after }
+    /// loop:
+    ///   <body of e>
+    /// PartialCommit { target: loop }
+    /// after:
+    /// ```
+    #[doc(alias = "*")]
     pub fn zero_or_more<F>(&mut self, body: F)
     where
         F: Fn(&mut Self),
@@ -1212,6 +1500,13 @@ impl GrammarBuilder {
     }
 
     /// `e+` — match `body` one or more times.
+    ///
+    /// # Emits
+    /// ```text
+    ///   <body of e>
+    ///   <emission of zero_or_more(e)>
+    /// ```
+    #[doc(alias = "+")]
     pub fn one_or_more<F>(&mut self, body: F)
     where
         F: Fn(&mut Self),
@@ -1316,6 +1611,16 @@ impl GrammarBuilder {
     }
 
     /// `&e` — succeed iff `body` matches, without consuming input.
+    ///
+    /// # Emits
+    /// ```text
+    /// Choice { alt: fail }
+    ///   <body of e>
+    /// BackCommit { target: after }
+    /// fail:
+    ///   Fail
+    /// after:
+    /// ```
     pub fn lookahead<F>(&mut self, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1331,6 +1636,14 @@ impl GrammarBuilder {
     }
 
     /// `!e` — succeed iff `body` does **not** match, without consuming input.
+    ///
+    /// # Emits
+    /// ```text
+    /// Choice { alt: after }
+    ///   <body of e>
+    /// NegBackCommit { target: after }
+    /// after:
+    /// ```
     pub fn neg_lookahead<F>(&mut self, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1358,6 +1671,12 @@ impl GrammarBuilder {
     ///
     /// When a parse fails, the diagnostic will show `label` (e.g. "statement", "expression")
     /// in the expected set when the failure occurred at the start of this region.
+    ///
+    /// # Emits
+    /// ```text
+    /// RecordExpectedLabel { label_id: ... }
+    ///   <body>
+    /// ```
     pub fn expect_label<F>(&mut self, label: &str, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1379,11 +1698,74 @@ impl GrammarBuilder {
         body(self);
     }
 
+    /// Push a "while parsing ..." diagnostic context label for the duration of `body`.
+    ///
+    /// This is intended to preserve rule nesting for rightmost-error diagnostics:
+    ///
+    /// ```text
+    /// error at 5:14: expected expression
+    ///   while parsing: if-condition
+    ///   while parsing: statement
+    /// ```
+    ///
+    /// # Emits
+    /// ```text
+    /// PushDiagnosticContext { label_id: ... }
+    ///   <body>
+    /// PopDiagnosticContext
+    /// ```
+    pub fn context_rule<F>(&mut self, label: &str, body: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        // Reuse the existing expected-label table for context labels as well.
+        let sym = self.strings.intern(label);
+        let label_id = if let Some((i, _)) = self
+            .expected_labels
+            .iter()
+            .enumerate()
+            .find(|(_, &s)| s == sym)
+        {
+            u32::try_from(i).unwrap_or(0)
+        } else {
+            let id = u32::try_from(self.expected_labels.len()).unwrap_or(0);
+            self.expected_labels.push(sym);
+            id
+        };
+        self.emit(Insn::PushDiagnosticContext { label_id });
+        body(self);
+        self.emit(Insn::PopDiagnosticContext);
+    }
+
+    /// Emit a dynamic hint at the current position.
+    ///
+    /// The hint is shown only if this position becomes the furthest parse failure.
+    pub fn hint(&mut self, text: &str) -> InsnId {
+        let hint_id = self.strings.intern(text);
+        self.emit(Insn::SetHint { hint_id })
+    }
+
+    /// Emit a runtime trace waypoint (only when trace mode is enabled).
+    pub fn trace(&mut self, label: &str) {
+        if !self.trace_mode {
+            return;
+        }
+        let label_id = self.strings.intern(label);
+        self.emit(Insn::TracePoint { label_id });
+    }
+
     /// Run `body` and commit to this alternative on success (no backtracking past this point).
     ///
     /// Like a cut in Prolog or "commit" in PEG: if `body` succeeds, the parser will not
     /// backtrack to before this point. Use inside a [`choice`](Self::choice) when the
     /// first successful match should be final. On failure, backtracking proceeds as usual.
+    ///
+    /// # Emits
+    /// ```text
+    ///   <body>
+    /// Commit { target: after }
+    /// after:
+    /// ```
     pub fn cut<F>(&mut self, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1412,6 +1794,14 @@ impl GrammarBuilder {
     /// It is resolved at [`finish`](Self::finish) like [`call`](Self::call). Use inside a
     /// list rule to report multiple errors in one pass: after a statement fails, skip to the
     /// next sync token and keep parsing.
+    ///
+    /// # Emits
+    /// ```text
+    /// RecoverUntil { sync_rule: <patched at finish>, resume: resume }
+    ///   <body>
+    /// resume:
+    ///   RecoveryResume
+    /// ```
     pub fn recover_until<F>(&mut self, sync_rule: &str, body: F)
     where
         F: FnOnce(&mut Self),
@@ -1481,6 +1871,11 @@ impl GrammarBuilder {
     // ── Context flags ─────────────────────────────────────────────────────────
 
     /// Succeed iff flag `id` is **set**; does not consume input.
+    ///
+    /// # Emits
+    /// ```text
+    /// IfFlag { flag_id: id, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn if_flag(&mut self, id: FlagId) -> InsnId {
         self.emit(Insn::IfFlag {
             flag_id: id,
@@ -1489,6 +1884,11 @@ impl GrammarBuilder {
     }
 
     /// Succeed iff flag `id` is **clear**; does not consume input.
+    ///
+    /// # Emits
+    /// ```text
+    /// IfNotFlag { flag_id: id, on_fail: <patched by surrounding combinator> }
+    /// ```
     pub fn if_not_flag(&mut self, id: FlagId) -> InsnId {
         self.emit(Insn::IfNotFlag {
             flag_id: id,
@@ -1500,6 +1900,13 @@ impl GrammarBuilder {
     ///
     /// On any exit — success or backtrack — the previous flag values are
     /// automatically restored via the snapshot arena.
+    ///
+    /// # Emits
+    /// ```text
+    /// PushFlags { mask_id: <interned> }
+    ///   <body>
+    /// PopFlags
+    /// ```
     pub fn with_flags<F>(&mut self, set_ids: &[FlagId], clear_ids: &[FlagId], body: F)
     where
         F: FnOnce(&mut Self),
@@ -1522,6 +1929,23 @@ impl GrammarBuilder {
     /// is emitted before the dispatch table lookup.  The arm bodies themselves
     /// always run without auto-skip (since trivia before them was already
     /// consumed before the dispatch).
+    ///
+    /// # Emits
+    /// ```text
+    /// (optional) <emission of skip()>                 // when auto_trivia == true
+    /// ByteDispatch { table_id: <patched> }
+    /// arm_0:
+    ///   <body of arm_0>                               // auto_trivia forced off in arms
+    ///   Jump { target: after }
+    /// arm_1:
+    ///   <body of arm_1>
+    ///   Jump { target: after }
+    /// ...
+    /// fallback:                                      // if provided
+    ///   <body of fallback>
+    ///   Jump { target: after }
+    /// after:
+    /// ```
     pub fn byte_dispatch(&mut self, arms: Vec<ByteDispatchArm>, fallback: Option<GrammarChoiceFn>) {
         if self.auto_trivia {
             self.skip();
@@ -1970,5 +2394,23 @@ mod tests {
         assert!(engine.parse(&graph, b"b").is_ok());
         assert!(engine.parse(&graph, b"c").is_ok());
         assert!(engine.parse(&graph, b"d").is_err());
+    }
+
+    #[test]
+    fn literal_small_is_used_for_short_literals() {
+        let mut g = GrammarBuilder::new();
+        g.rule("start", |g| {
+            g.literal(b"abc");
+            g.end_of_input();
+            g.accept();
+        });
+        let built = g.finish().unwrap();
+        assert!(
+            built
+                .insns
+                .iter()
+                .any(|i| matches!(i, Insn::LiteralSmall { .. })),
+            "expected LiteralSmall to be emitted for <=8 byte literals"
+        );
     }
 }

@@ -24,9 +24,9 @@ impl LineIndex {
         let mut i = 0;
         while i < source.len() {
             if source[i] == b'\n' {
-                line_starts.push(Pos::try_from(i + 1).unwrap_or(0));
+                line_starts.push(Pos::try_from(i + 1).unwrap_or(Pos::MAX));
             } else if source[i] == b'\r' && i + 1 < source.len() && source[i + 1] == b'\n' {
-                line_starts.push(Pos::try_from(i + 2).unwrap_or(0));
+                line_starts.push(Pos::try_from(i + 2).unwrap_or(Pos::MAX));
                 i += 1;
             }
             i += 1;
@@ -102,11 +102,18 @@ impl LineIndex {
         let line_1 = line_0 + 1;
         let span = self.line_range(line_0, source.len());
         let line_bytes = span.as_slice(source);
-        let line_str = String::from_utf8_lossy(line_bytes).into_owned();
+        let line_str = String::from_utf8_lossy(line_bytes);
         let trimmed = line_str.trim_end_matches(['\r', '\n']);
-        let col_limit = u32::try_from(trimmed.len()).unwrap_or(0);
-        let caret = " ".repeat(col_0.min(col_limit) as usize) + "^";
-        format!("  {line_1} | {trimmed}\n      | {caret}")
+        let col_limit = u32::try_from(trimmed.len()).unwrap_or(u32::MAX);
+        let caret_pos = col_0.min(col_limit) as usize;
+
+        let mut out = String::with_capacity(trimmed.len() + 32);
+        use core::fmt::Write as _;
+        let _ = writeln!(out, "  {line_1} | {trimmed}");
+        out.push_str("      | ");
+        out.extend(core::iter::repeat_n(' ', caret_pos));
+        out.push('^');
+        out
     }
 
     /// Full error snippet: "at line:col" plus the line and caret.

@@ -41,4 +41,3 @@ pub fn json_string_contents(g: &mut GrammarBuilder) {
         );
     });
 }
-

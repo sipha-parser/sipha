@@ -117,13 +117,17 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
                 push(target);
             }
             Insn::Byte { on_fail, .. }
+            | Insn::ByteEither { on_fail, .. }
+            | Insn::ByteIn3 { on_fail, .. }
             | Insn::ByteRange { on_fail, .. }
             | Insn::Class { on_fail, .. }
             | Insn::Literal { on_fail, .. }
+            | Insn::LiteralSmall { on_fail, .. }
             | Insn::EndOfInput { on_fail }
             | Insn::AnyChar { on_fail }
             | Insn::Char { on_fail, .. }
             | Insn::CharRange { on_fail, .. }
+            | Insn::ConsumeWhileClass { on_fail, .. }
             | Insn::IfFlag { on_fail, .. }
             | Insn::IfNotFlag { on_fail, .. } => {
                 push(ip + 1);
@@ -139,6 +143,10 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
             | Insn::TokenBegin { .. }
             | Insn::TokenEnd
             | Insn::RecordExpectedLabel { .. }
+            | Insn::PushDiagnosticContext { .. }
+            | Insn::PopDiagnosticContext
+            | Insn::SetHint { .. }
+            | Insn::TracePoint { .. }
             | Insn::RecoverUntil { .. }
             | Insn::RecoveryResume => push(ip + 1),
         }
@@ -291,11 +299,23 @@ pub fn to_cfg_dot(graph: &BuiltGraph, rule_id: RuleId) -> String {
 fn insn_label(insn: &Insn, graph: &BuiltGraph, _ip: InsnId) -> String {
     match insn {
         Insn::Byte { byte, .. } => format!("byte 0x{byte:02X}"),
+        Insn::ByteEither { a, b, .. } => format!("byte 0x{a:02X}|0x{b:02X}"),
+        Insn::ByteIn3 { a, b, c, .. } => format!("byte 0x{a:02X}|0x{b:02X}|0x{c:02X}"),
         Insn::ByteRange { lo, hi, .. } => format!("byte_range 0x{lo:02X}-0x{hi:02X}"),
         Insn::Class { label_id, .. } => format!("[class label#{label_id}]"),
+        Insn::ConsumeWhileClass { label_id, min, .. } => {
+            format!("[consume class label#{label_id} min={min}]")
+        }
         Insn::Literal { lit_id, .. } => {
             let lit = get_literal(graph, *lit_id);
             format!("\"{}\"", escape_literal_display(lit))
+        }
+        Insn::LiteralSmall { len, bytes, .. } => {
+            let n = *len as usize;
+            format!(
+                "\"{}\"",
+                escape_literal_display(&bytes[..n.min(bytes.len())])
+            )
         }
         Insn::EndOfInput { .. } => "eoi".to_string(),
         Insn::Fail => "fail".to_string(),
@@ -327,6 +347,10 @@ fn insn_label(insn: &Insn, graph: &BuiltGraph, _ip: InsnId) -> String {
         }
         Insn::TokenEnd => "token_end".to_string(),
         Insn::RecordExpectedLabel { label_id } => format!("expect_label #{label_id}"),
+        Insn::PushDiagnosticContext { label_id } => format!("push_diag_ctx #{label_id}"),
+        Insn::PopDiagnosticContext => "pop_diag_ctx".to_string(),
+        Insn::SetHint { hint_id } => format!("set_hint #{}", hint_id.0),
+        Insn::TracePoint { label_id } => format!("trace_point #{}", label_id.0),
         Insn::RecoverUntil { sync_rule, resume } => {
             format!("recover_until rule#{sync_rule} → {resume}")
         }
@@ -351,6 +375,10 @@ fn insn_successors(insn: &Insn, ip: InsnId) -> Vec<InsnId> {
         | Insn::TokenBegin { .. }
         | Insn::TokenEnd
         | Insn::RecordExpectedLabel { .. }
+        | Insn::PushDiagnosticContext { .. }
+        | Insn::PopDiagnosticContext
+        | Insn::SetHint { .. }
+        | Insn::TracePoint { .. }
         | Insn::RecoverUntil { .. }
         | Insn::RecoveryResume => s.push(ip + 1),
         Insn::Choice { alt } => {
@@ -365,13 +393,17 @@ fn insn_successors(insn: &Insn, ip: InsnId) -> Vec<InsnId> {
             s.push(*target);
         }
         Insn::Byte { on_fail, .. }
+        | Insn::ByteEither { on_fail, .. }
+        | Insn::ByteIn3 { on_fail, .. }
         | Insn::ByteRange { on_fail, .. }
         | Insn::Class { on_fail, .. }
         | Insn::Literal { on_fail, .. }
+        | Insn::LiteralSmall { on_fail, .. }
         | Insn::EndOfInput { on_fail }
         | Insn::AnyChar { on_fail }
         | Insn::Char { on_fail, .. }
         | Insn::CharRange { on_fail, .. }
+        | Insn::ConsumeWhileClass { on_fail, .. }
         | Insn::IfFlag { on_fail, .. }
         | Insn::IfNotFlag { on_fail, .. } => {
             s.push(ip + 1);
@@ -393,19 +425,18 @@ fn get_literal(graph: &BuiltGraph, id: u32) -> &[u8] {
 }
 
 fn escape_literal_display(lit: &[u8]) -> String {
-    lit.iter()
-        .map(|&b| {
-            if b == b'"' {
-                "\\\"".to_string()
-            } else if b == b'\\' {
-                "\\\\".to_string()
-            } else if b.is_ascii_graphic() || b == b' ' {
-                (b as char).to_string()
-            } else {
-                format!("\\x{b:02X}")
+    let mut out = String::with_capacity(lit.len());
+    for &b in lit {
+        match b {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            b if b.is_ascii_graphic() || b == b' ' => out.push(b as char),
+            _ => {
+                let _ = write!(out, "\\x{b:02X}");
             }
-        })
-        .collect()
+        }
+    }
+    out
 }
 
 fn escape_dot_label(s: &str) -> String {

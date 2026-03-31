@@ -4,8 +4,11 @@ pub mod error;
 pub mod grammar_names;
 
 pub use grammar_names::{GrammarNames, SliceGrammarNames};
+#[cfg(feature = "std")]
 pub mod line_index;
+#[cfg(feature = "std")]
 pub mod parsed_doc;
+#[cfg(feature = "std")]
 pub mod source_map;
 
 #[cfg(feature = "utf16")]

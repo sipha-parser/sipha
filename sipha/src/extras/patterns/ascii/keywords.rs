@@ -1,7 +1,4 @@
-use crate::{
-    parse::builder::{GrammarBuilder, GrammarChoiceFn},
-    types::IntoSyntaxKind,
-};
+use crate::{parse::builder::GrammarBuilder, types::IntoSyntaxKind};
 
 use super::classes;
 
@@ -26,11 +23,16 @@ pub fn keyword_token<K: IntoSyntaxKind>(g: &mut GrammarBuilder, kind: K, word: &
 
 /// N-way keyword choice, using [`keyword_bytes`] for each alternative.
 pub fn any_keyword_bytes(g: &mut GrammarBuilder, words: &[&'static [u8]]) {
-    let alternatives: Vec<GrammarChoiceFn> = words
-        .iter()
-        .copied()
-        .map(|w| Box::new(move |g: &mut GrammarBuilder| keyword_bytes(g, w)) as GrammarChoiceFn)
-        .collect();
-    g.choices(alternatives);
+    match words {
+        [] => {}
+        [w] => keyword_bytes(g, w),
+        [w, rest @ ..] => g.choice(
+            |g| {
+                keyword_bytes(g, w);
+            },
+            |g| {
+                any_keyword_bytes(g, rest);
+            },
+        ),
+    }
 }
-

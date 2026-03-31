@@ -17,7 +17,7 @@ pub fn to_peg(graph: &BuiltGraph) -> String {
         let start = graph.rule_entry[r];
         let reachable = reachable_insns(graph, start);
         let (expr, _) = parse_sequence_until(graph, start, &reachable, &mut HashSet::new(), None);
-        let expr = expr.trim().to_string();
+        let expr = expr.trim();
         if expr.is_empty() {
             let _ = writeln!(out, "{name} <- (empty)");
         } else {
@@ -63,13 +63,17 @@ fn reachable_insns(graph: &BuiltGraph, start: InsnId) -> HashSet<InsnId> {
                 push(target);
             }
             Insn::Byte { on_fail, .. }
+            | Insn::ByteEither { on_fail, .. }
+            | Insn::ByteIn3 { on_fail, .. }
             | Insn::ByteRange { on_fail, .. }
             | Insn::Class { on_fail, .. }
             | Insn::Literal { on_fail, .. }
+            | Insn::LiteralSmall { on_fail, .. }
             | Insn::EndOfInput { on_fail }
             | Insn::AnyChar { on_fail }
             | Insn::Char { on_fail, .. }
             | Insn::CharRange { on_fail, .. }
+            | Insn::ConsumeWhileClass { on_fail, .. }
             | Insn::IfFlag { on_fail, .. }
             | Insn::IfNotFlag { on_fail, .. } => {
                 push(ip + 1);
@@ -291,11 +295,32 @@ fn parse_atom(graph: &BuiltGraph, ip: InsnId) -> (String, InsnId) {
 
     let s = match insn {
         Insn::Byte { byte, .. } => format_byte(byte),
+        Insn::ByteEither { a, b, .. } => format!("({}) / ({})", format_byte(a), format_byte(b)),
+        Insn::ByteIn3 { a, b, c, .. } => format!(
+            "({}) / ({}) / ({})",
+            format_byte(a),
+            format_byte(b),
+            format_byte(c)
+        ),
         Insn::ByteRange { lo, hi, .. } => format!("[\\x{lo:02X}-\\x{hi:02X}]"),
         Insn::Class { class, .. } => format_char_class(class),
+        Insn::ConsumeWhileClass { class, min, .. } => {
+            let atom = format_char_class(class);
+            if min == 0 {
+                format!("({atom})*")
+            } else if min == 1 {
+                format!("({atom})+")
+            } else {
+                format!("({atom}){{{min},}}")
+            }
+        }
         Insn::Literal { lit_id, .. } => {
             let lit = get_literal(graph, lit_id);
             format!("\"{}\"", escape_peg_literal(lit))
+        }
+        Insn::LiteralSmall { len, bytes, .. } => {
+            let n = len as usize;
+            format!("\"{}\"", escape_peg_literal(&bytes[..n.min(bytes.len())]))
         }
         Insn::EndOfInput { .. } => "eoi".to_string(),
         Insn::Fail => "fail".to_string(),
@@ -361,17 +386,16 @@ fn get_literal(graph: &BuiltGraph, id: u32) -> &[u8] {
 }
 
 fn escape_peg_literal(lit: &[u8]) -> String {
-    lit.iter()
-        .map(|&b| {
-            if b == b'"' {
-                "\\\"".to_string()
-            } else if b == b'\\' {
-                "\\\\".to_string()
-            } else if b.is_ascii_graphic() || b == b' ' {
-                (b as char).to_string()
-            } else {
-                format!("\\x{b:02X}")
+    let mut out = String::with_capacity(lit.len());
+    for &b in lit {
+        match b {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            b if b.is_ascii_graphic() || b == b' ' => out.push(b as char),
+            _ => {
+                let _ = write!(out, "\\x{b:02X}");
             }
-        })
-        .collect()
+        }
+    }
+    out
 }

@@ -41,6 +41,11 @@
 //! assert!(!ctx.has(FLAG_IN_LOOP));
 //! ```
 
+#[cfg(not(feature = "std"))]
+use alloc::{vec, vec::Vec};
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 /// A flag identifier — the flat index of one boolean flag.
 ///
 /// `word = flag_id >> 6`, `bit = flag_id & 63`.

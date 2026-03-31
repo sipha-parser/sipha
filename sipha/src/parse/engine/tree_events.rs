@@ -1,4 +1,6 @@
 use crate::types::{Pos, SyntaxKind, TreeEvent};
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 /// Close open nodes and insert an error node so the event list is well-nested.
 pub(super) fn insert_error_node_events(

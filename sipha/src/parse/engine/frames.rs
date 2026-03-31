@@ -17,10 +17,13 @@ pub(super) enum Frame {
         tree_mark: u32,
         /// Mark into `open_tokens` (in-progress token spans).
         open_tokens_mark: u32,
+        /// Mark into `context_stack` (diagnostic "while parsing" context).
+        context_mark: u32,
     },
     Return {
         ret_ip: u32,
     },
+    #[cfg(feature = "std")]
     MemoReturn {
         ret_ip: u32,
         rule: RuleId,

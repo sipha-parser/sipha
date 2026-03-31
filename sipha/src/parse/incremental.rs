@@ -94,6 +94,19 @@ pub struct ReparseResult {
     pub root: Option<SyntaxNode>,
 }
 
+/// Statistics about green-tree reuse during incremental rebuild.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ReuseStats {
+    /// Total token events that produced a non-empty token.
+    pub tokens_total: u32,
+    /// Tokens reused from the old green tree (`Arc::ptr_eq`).
+    pub tokens_reused: u32,
+    /// Total nodes closed (i.e. `TreeEvent::NodeClose` successfully produced a node).
+    pub nodes_total: u32,
+    /// Nodes reused from the old green tree (`Arc::ptr_eq`).
+    pub nodes_reused: u32,
+}
+
 /// Sort `edits` by `start` (same order as [`TextEdit::apply_edits`]).
 fn sorted_edits_refs<'a>(edits: &'a [TextEdit]) -> Vec<&'a TextEdit> {
     let mut v: Vec<&'a TextEdit> = edits.iter().collect();
@@ -284,6 +297,18 @@ pub fn build_green_tree_with_reuse(
     old_source: &[u8],
     edits: &[TextEdit],
 ) -> Option<Arc<GreenNode>> {
+    build_green_tree_with_reuse_stats(new_source, events, old_root, old_source, edits).map(|r| r.0)
+}
+
+/// Like [`build_green_tree_with_reuse`], but also returns [`ReuseStats`].
+#[must_use]
+pub fn build_green_tree_with_reuse_stats(
+    new_source: &[u8],
+    events: &[TreeEvent],
+    old_root: &Arc<GreenNode>,
+    old_source: &[u8],
+    edits: &[TextEdit],
+) -> Option<(Arc<GreenNode>, ReuseStats)> {
     let token_map = old_tree_token_map(old_root.as_ref());
     let node_map = old_tree_node_map(old_root);
     let sorted = sorted_edits_refs(edits);
@@ -291,6 +316,7 @@ pub fn build_green_tree_with_reuse(
 
     let mut stack: Vec<IncrementalStackEntry> = Vec::new();
     let mut roots: Vec<IncrementalRootElem> = Vec::new();
+    let mut stats = ReuseStats::default();
 
     for ev in events {
         match *ev {
@@ -307,19 +333,35 @@ pub fn build_green_tree_with_reuse(
 
             TreeEvent::NodeClose { pos: end } => {
                 let (kind, my_field, open_start, children_with_fields) = stack.pop()?;
-                let node = if let Some((old_s, old_e)) =
+                stats.nodes_total = stats.nodes_total.saturating_add(1);
+                let (node, reused) = if let Some((old_s, old_e)) =
                     new_span_to_old_multi(open_start, end, &sorted, old_len)
                 {
                     if let Some(old_node) = node_map.get(&(old_s, old_e, kind)) {
-                        try_reuse_green_node(kind, &children_with_fields, old_node).unwrap_or_else(
-                            || GreenNode::new_with_fields(kind, children_with_fields),
-                        )
+                        if let Some(n) = try_reuse_green_node(kind, &children_with_fields, old_node)
+                        {
+                            (n, true)
+                        } else {
+                            (
+                                GreenNode::new_with_fields(kind, children_with_fields),
+                                false,
+                            )
+                        }
                     } else {
-                        GreenNode::new_with_fields(kind, children_with_fields)
+                        (
+                            GreenNode::new_with_fields(kind, children_with_fields),
+                            false,
+                        )
                     }
                 } else {
-                    GreenNode::new_with_fields(kind, children_with_fields)
+                    (
+                        GreenNode::new_with_fields(kind, children_with_fields),
+                        false,
+                    )
                 };
+                if reused {
+                    stats.nodes_reused = stats.nodes_reused.saturating_add(1);
+                }
                 push_element(&mut stack, &mut roots, (my_field, GreenElement::Node(node)));
             }
 
@@ -332,6 +374,7 @@ pub fn build_green_tree_with_reuse(
                 if start == end {
                     continue;
                 }
+                stats.tokens_total = stats.tokens_total.saturating_add(1);
                 let tok_arc = if let Some((old_s, old_e)) =
                     new_span_to_old_multi(start, end, &sorted, old_len)
                 {
@@ -339,16 +382,19 @@ pub fn build_green_tree_with_reuse(
                 } else {
                     None
                 };
-                let tok = match tok_arc {
-                    Some(t) if t.kind == kind && t.is_trivia == is_trivia => t,
+                let (tok, reused) = match tok_arc.as_ref() {
+                    Some(t) if t.kind == kind && t.is_trivia == is_trivia => (Arc::clone(t), true),
                     _ => {
                         let text = new_source
                             .get(start as usize..end as usize)
                             .and_then(|b| std::str::from_utf8(b).ok())
                             .unwrap_or("");
-                        GreenToken::new(kind, text, is_trivia)
+                        (GreenToken::new(kind, text, is_trivia), false)
                     }
                 };
+                if reused {
+                    stats.tokens_reused = stats.tokens_reused.saturating_add(1);
+                }
                 push_element(&mut stack, &mut roots, (None, GreenElement::Token(tok)));
             }
         }
@@ -363,15 +409,18 @@ pub fn build_green_tree_with_reuse(
         1 => {
             let (_, elem) = roots.remove(0);
             match elem {
-                GreenElement::Node(n) => Some(n),
+                GreenElement::Node(n) => Some((n, stats)),
                 GreenElement::Token(t) => {
-                    Some(GreenNode::new(t.kind, vec![GreenElement::Token(t)]))
+                    Some((GreenNode::new(t.kind, vec![GreenElement::Token(t)]), stats))
                 }
             }
         }
         _ => {
             let children_with_fields: Vec<IncrementalRootElem> = roots.into_iter().collect();
-            Some(GreenNode::new_with_fields(u16::MAX, children_with_fields))
+            Some((
+                GreenNode::new_with_fields(u16::MAX, children_with_fields),
+                stats,
+            ))
         }
     }
 }
@@ -418,19 +467,40 @@ pub fn reparse_with_output(
     old_root: &SyntaxNode,
     edits: &[TextEdit],
 ) -> Result<ReparseResult, ParseError> {
+    Ok(reparse_with_output_and_stats(engine, graph, old_source, old_root, edits)?.0)
+}
+
+/// Like [`reparse_with_output`], but also returns [`ReuseStats`].
+///
+/// # Errors
+///
+/// Propagates [`ParseError`] from the parser if the new source fails to parse.
+pub fn reparse_with_output_and_stats(
+    engine: &mut Engine,
+    graph: &ParseGraph<'_>,
+    old_source: &[u8],
+    old_root: &SyntaxNode,
+    edits: &[TextEdit],
+) -> Result<(ReparseResult, ReuseStats), ParseError> {
     let new_source = TextEdit::apply_edits(old_source, edits);
     let parse_output = engine.parse(graph, &new_source)?;
-    let new_green = build_green_tree_with_reuse(
+    let new_green = build_green_tree_with_reuse_stats(
         &new_source,
         &parse_output.tree_events,
         old_root.green(),
         old_source,
         edits,
     );
-    Ok(ReparseResult {
-        parse_output,
-        root: new_green.map(SyntaxNode::new_root),
-    })
+    let (new_green, stats) = new_green
+        .map(|(g, s)| (Some(g), s))
+        .unwrap_or((None, ReuseStats::default()));
+    Ok((
+        ReparseResult {
+            parse_output,
+            root: new_green.map(SyntaxNode::new_root),
+        },
+        stats,
+    ))
 }
 
 #[cfg(test)]

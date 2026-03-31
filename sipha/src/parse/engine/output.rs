@@ -1,4 +1,8 @@
 use crate::types::{CaptureEvent, Pos, TreeEvent};
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct ParseOutput {
@@ -14,21 +18,15 @@ pub struct ParseOutput {
 }
 
 impl ParseOutput {
-    /// Build the green tree from this parse output.
-    ///
-    /// `input` is the raw source bytes used during parsing — token texts are
-    /// sliced from it and stored inside each [`GreenToken`](crate::tree::green::GreenToken).
-    ///
-    /// Returns `None` if `tree_events` is empty or malformed.
+    /// Build the green tree from this parse output (requires `std`).
+    #[cfg(feature = "std")]
     #[must_use]
-    pub fn build_green_tree(
-        &self,
-        input: &[u8],
-    ) -> Option<std::sync::Arc<crate::tree::green::GreenNode>> {
+    pub fn build_green_tree(&self, input: &[u8]) -> Option<Arc<crate::tree::green::GreenNode>> {
         crate::tree::green::build_green_tree(input, &self.tree_events)
     }
 
-    /// Build the green tree and wrap it in a [`crate::tree::red::SyntaxNode`] root.
+    /// Build the green tree and wrap it in a syntax root (requires `std`).
+    #[cfg(feature = "std")]
     #[must_use]
     pub fn syntax_root(&self, input: &[u8]) -> Option<crate::tree::red::SyntaxNode> {
         self.build_green_tree(input)

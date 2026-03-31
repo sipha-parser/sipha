@@ -4,6 +4,10 @@
 //! typed, tree-structured output that callers can traverse.
 
 use crate::types::{CaptureEvent, Pos, Span, Tag};
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 /// A node in the capture tree.
 #[derive(Clone, Debug)]

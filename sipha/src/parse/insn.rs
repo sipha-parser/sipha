@@ -31,29 +31,77 @@ use crate::types::{CharClass, FieldId, InsnId, RuleId, SyntaxKind, Tag};
 #[repr(u8)]
 pub enum Insn {
     // ── Terminals ────────────────────────────────────────────────────────────
-    Byte {
-        byte: u8,
+    /// Match exactly one byte `byte`.
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::byte`](crate::parse::builder::GrammarBuilder::byte)
+    Byte { byte: u8, on_fail: InsnId },
+    /// Match exactly one of two byte values.
+    ///
+    /// Slightly smaller/faster than `Class` for tiny sets.
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::byte_either`](crate::parse::builder::GrammarBuilder::byte_either)
+    ByteEither { a: u8, b: u8, on_fail: InsnId },
+    /// Match exactly one of three byte values.
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::byte_in3`](crate::parse::builder::GrammarBuilder::byte_in3)
+    ByteIn3 {
+        a: u8,
+        b: u8,
+        c: u8,
         on_fail: InsnId,
     },
-    ByteRange {
-        lo: u8,
-        hi: u8,
-        on_fail: InsnId,
-    },
+    /// Match any byte in the inclusive range `[lo, hi]`.
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::byte_range`](crate::parse::builder::GrammarBuilder::byte_range)
+    ByteRange { lo: u8, hi: u8, on_fail: InsnId },
     /// Index into the grammar's `class_labels` for diagnostics; 0 = default "character class".
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::class`](crate::parse::builder::GrammarBuilder::class),
+    /// [`GrammarBuilder::class_with_label`](crate::parse::builder::GrammarBuilder::class_with_label)
     Class {
         class: CharClass,
         label_id: u32,
         on_fail: InsnId,
     },
     /// SIMD-accelerated for literals ≥ 16 bytes.
-    Literal {
-        lit_id: u32,
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::literal`](crate::parse::builder::GrammarBuilder::literal)
+    Literal { lit_id: u32, on_fail: InsnId },
+    /// Inline literal of up to 8 bytes.
+    ///
+    /// Intended for very common short punctuation/keywords where indirection
+    /// through the literal table is pure overhead.
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::literal`](crate::parse::builder::GrammarBuilder::literal)
+    LiteralSmall {
+        len: u8,
+        bytes: [u8; 8],
         on_fail: InsnId,
     },
-    EndOfInput {
-        on_fail: InsnId,
-    },
+    /// Match end-of-input.
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::end_of_input`](crate::parse::builder::GrammarBuilder::end_of_input)
+    EndOfInput { on_fail: InsnId },
+    /// Unconditional failure.
+    ///
+    /// Builder source: [`GrammarBuilder::fail`](crate::parse::builder::GrammarBuilder::fail),
+    /// and synthesized inside lookahead combinators.
     Fail,
 
     // ── Unicode codepoint terminals ───────────────────────────────────────────
@@ -65,54 +113,103 @@ pub enum Insn {
     // they skip the UTF-8 decode and are marginally faster.
     /// Consume any single valid UTF-8 codepoint (1–4 bytes).
     /// Fails on invalid UTF-8 or end-of-input.
-    AnyChar {
-        on_fail: InsnId,
-    },
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::any_char`](crate::parse::builder::GrammarBuilder::any_char)
+    AnyChar { on_fail: InsnId },
 
     /// Match exactly the Unicode codepoint `codepoint`.
     /// Advances `pos` by the codepoint's UTF-8 byte length (1–4).
-    Char {
-        codepoint: u32,
-        on_fail: InsnId,
-    },
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::char`](crate::parse::builder::GrammarBuilder::char)
+    Char { codepoint: u32, on_fail: InsnId },
 
     /// Match any codepoint in the inclusive range `[lo, hi]`.
     /// Fails if the decoded codepoint is outside the range, or on invalid UTF-8.
-    CharRange {
-        lo: u32,
-        hi: u32,
-        on_fail: InsnId,
-    },
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::char_range`](crate::parse::builder::GrammarBuilder::char_range)
+    CharRange { lo: u32, hi: u32, on_fail: InsnId },
 
     // ── Control flow ──────────────────────────────────────────────────────────
-    Jump {
-        target: InsnId,
-    },
-    Call {
-        rule: RuleId,
-    },
+    /// Unconditional jump to `target`.
+    ///
+    /// Builder source: synthesized by higher-level builders (not directly exposed),
+    /// most prominently [`GrammarBuilder::byte_dispatch`](crate::parse::builder::GrammarBuilder::byte_dispatch).
+    Jump { target: InsnId },
+    /// Call a rule by id.
+    ///
+    /// Builder source: [`GrammarBuilder::call`](crate::parse::builder::GrammarBuilder::call),
+    /// [`GrammarBuilder::call_id`](crate::parse::builder::GrammarBuilder::call_id)
+    Call { rule: RuleId },
+    /// Return from a rule call.
+    ///
+    /// Builder source: automatically emitted at the end of every rule body by
+    /// [`GrammarBuilder::rule`](crate::parse::builder::GrammarBuilder::rule),
+    /// [`GrammarBuilder::parser_rule`](crate::parse::builder::GrammarBuilder::parser_rule),
+    /// and [`GrammarBuilder::lexer_rule`](crate::parse::builder::GrammarBuilder::lexer_rule).
     Return,
 
     // ── Backtracking ──────────────────────────────────────────────────────────
-    Choice {
-        alt: InsnId,
-    },
-    Commit {
-        target: InsnId,
-    },
-    BackCommit {
-        target: InsnId,
-    },
-    NegBackCommit {
-        target: InsnId,
-    },
-    PartialCommit {
-        target: InsnId,
-    },
+    /// Save a backtracking point with an alternate branch at `alt`.
+    ///
+    /// Builder source: [`GrammarBuilder::choice`](crate::parse::builder::GrammarBuilder::choice),
+    /// [`GrammarBuilder::optional`](crate::parse::builder::GrammarBuilder::optional),
+    /// [`GrammarBuilder::zero_or_more`](crate::parse::builder::GrammarBuilder::zero_or_more),
+    /// [`GrammarBuilder::lookahead`](crate::parse::builder::GrammarBuilder::lookahead),
+    /// [`GrammarBuilder::neg_lookahead`](crate::parse::builder::GrammarBuilder::neg_lookahead).
+    Choice { alt: InsnId },
+    /// Discard the most recent backtracking point and jump to `target`.
+    ///
+    /// Builder source: [`GrammarBuilder::choice`](crate::parse::builder::GrammarBuilder::choice),
+    /// [`GrammarBuilder::optional`](crate::parse::builder::GrammarBuilder::optional),
+    /// [`GrammarBuilder::cut`](crate::parse::builder::GrammarBuilder::cut).
+    Commit { target: InsnId },
+    /// Succeed without consuming input: backtrack to the most recent choice point, then jump to `target`.
+    ///
+    /// Builder source: [`GrammarBuilder::lookahead`](crate::parse::builder::GrammarBuilder::lookahead).
+    BackCommit { target: InsnId },
+    /// Negative lookahead commit: succeed iff the body failed, without consuming input, then jump to `target`.
+    ///
+    /// Builder source: [`GrammarBuilder::neg_lookahead`](crate::parse::builder::GrammarBuilder::neg_lookahead).
+    NegBackCommit { target: InsnId },
+    /// Commit partial progress and jump to `target`.
+    ///
+    /// Used by loops to commit events/captures per-iteration while still allowing the loop
+    /// itself to terminate via backtracking.
+    ///
+    /// Builder source: [`GrammarBuilder::zero_or_more`](crate::parse::builder::GrammarBuilder::zero_or_more).
+    PartialCommit { target: InsnId },
 
     // ── O(1) Dispatch ────────────────────────────────────────────────────────
-    ByteDispatch {
-        table_id: u32,
+    /// Dispatch to an arm based on the next input byte using a precomputed 256-entry table.
+    ///
+    /// Builder source: [`GrammarBuilder::byte_dispatch`](crate::parse::builder::GrammarBuilder::byte_dispatch).
+    ByteDispatch { table_id: u32 },
+
+    // ── Fused terminals ──────────────────────────────────────────────────────
+    /// Consume a run of bytes matching `class`.
+    ///
+    /// Equivalent to `class` repeated with no backtracking in-between, and is
+    /// commonly used for digit/ident/whitespace runs.
+    ///
+    /// Succeeds iff at least `min` bytes are consumed.
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::consume_while_class`](crate::parse::builder::GrammarBuilder::consume_while_class),
+    /// [`GrammarBuilder::consume_while_class_with_label`](crate::parse::builder::GrammarBuilder::consume_while_class_with_label),
+    /// [`GrammarBuilder::consume_while_class1_with_label`](crate::parse::builder::GrammarBuilder::consume_while_class1_with_label).
+    ConsumeWhileClass {
+        class: CharClass,
+        /// Index into `class_labels` for diagnostics (0 = "character class").
+        label_id: u32,
+        min: u32,
+        on_fail: InsnId,
     },
 
     // ── Context flags ─────────────────────────────────────────────────────────
@@ -121,36 +218,42 @@ pub enum Insn {
     // Supports up to 65,535 flags (FlagId = u16).
     /// Succeed iff `flags[flag_id >> 6] & (1 << (flag_id & 63)) != 0`.
     /// Does not consume input.
-    IfFlag {
-        flag_id: u16,
-        on_fail: InsnId,
-    },
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::if_flag`](crate::parse::builder::GrammarBuilder::if_flag).
+    IfFlag { flag_id: u16, on_fail: InsnId },
 
     /// Succeed iff the named flag is **clear**.
-    IfNotFlag {
-        flag_id: u16,
-        on_fail: InsnId,
-    },
+    ///
+    /// On failure, jump to `on_fail`.
+    ///
+    /// Builder source: [`GrammarBuilder::if_not_flag`](crate::parse::builder::GrammarBuilder::if_not_flag).
+    IfNotFlag { flag_id: u16, on_fail: InsnId },
 
     /// Push a snapshot of the affected words onto the context-save arena,
     /// then apply `graph.flag_masks.get(mask_id)` to the live flag bank.
     ///
     /// Uses a table reference instead of inline masks so that masks spanning
     /// many words do not bloat the instruction array.
-    PushFlags {
-        mask_id: u32,
-    },
+    ///
+    /// Builder source: [`GrammarBuilder::with_flags`](crate::parse::builder::GrammarBuilder::with_flags).
+    PushFlags { mask_id: u32 },
 
     /// Restore the words saved by the matching `PushFlags`.
+    ///
+    /// Builder source: [`GrammarBuilder::with_flags`](crate::parse::builder::GrammarBuilder::with_flags).
     PopFlags,
 
     // ── Captures ─────────────────────────────────────────────────────────────
-    CaptureBegin {
-        tag: Tag,
-    },
-    CaptureEnd {
-        tag: Tag,
-    },
+    /// Begin a legacy capture region tagged with `tag`.
+    ///
+    /// Builder source: [`GrammarBuilder::capture`](crate::parse::builder::GrammarBuilder::capture).
+    CaptureBegin { tag: Tag },
+    /// End a legacy capture region tagged with `tag`.
+    ///
+    /// Builder source: [`GrammarBuilder::capture`](crate::parse::builder::GrammarBuilder::capture).
+    CaptureEnd { tag: Tag },
 
     // ── Green/Red tree ───────────────────────────────────────────────────────
     //
@@ -163,30 +266,61 @@ pub enum Insn {
     // loop iteration is permanently committed.
     /// Open a syntax node.  Emits `TreeEvent::NodeOpen`.
     /// `field` labels this node as a named child of its parent when present.
+    ///
+    /// Builder source: [`GrammarBuilder::node`](crate::parse::builder::GrammarBuilder::node),
+    /// [`GrammarBuilder::node_with_field`](crate::parse::builder::GrammarBuilder::node_with_field).
     NodeBegin {
         kind: SyntaxKind,
         field: Option<FieldId>,
     },
 
     /// Close the current syntax node.  Emits `TreeEvent::NodeClose`.
+    ///
+    /// Builder source: [`GrammarBuilder::node`](crate::parse::builder::GrammarBuilder::node),
+    /// [`GrammarBuilder::node_with_field`](crate::parse::builder::GrammarBuilder::node_with_field).
     NodeEnd,
 
     /// Begin a leaf token; saves `(kind, is_trivia, pos)` on the token-open
     /// side-stack.  Does **not** emit a `TreeEvent` yet.
-    TokenBegin {
-        kind: SyntaxKind,
-        is_trivia: bool,
-    },
+    ///
+    /// Builder source: [`GrammarBuilder::token`](crate::parse::builder::GrammarBuilder::token),
+    /// [`GrammarBuilder::trivia`](crate::parse::builder::GrammarBuilder::trivia).
+    TokenBegin { kind: SyntaxKind, is_trivia: bool },
 
     /// End a leaf token; pops the token-open side-stack and emits
     /// `TreeEvent::Token { start, end, kind, is_trivia }`.
+    ///
+    /// Builder source: [`GrammarBuilder::token`](crate::parse::builder::GrammarBuilder::token),
+    /// [`GrammarBuilder::trivia`](crate::parse::builder::GrammarBuilder::trivia).
     TokenEnd,
 
     /// Record an expected label at the current position for diagnostics, then continue.
     /// Used by [`expect_label`](crate::parse::builder::GrammarBuilder::expect_label).
-    RecordExpectedLabel {
-        label_id: u32,
-    },
+    ///
+    /// Builder source: [`GrammarBuilder::expect_label`](crate::parse::builder::GrammarBuilder::expect_label).
+    RecordExpectedLabel { label_id: u32 },
+
+    // ── Diagnostic context ("while parsing") ─────────────────────────────────
+    /// Push a "while parsing ..." label onto the diagnostic context stack.
+    /// Paired with [`Insn::PopDiagnosticContext`]; usually emitted as a bracket
+    /// pair around rule bodies by `GrammarBuilder::context_rule`.
+    PushDiagnosticContext { label_id: u32 },
+
+    /// Pop the innermost diagnostic context entry.
+    PopDiagnosticContext,
+
+    // ── Dynamic hints ────────────────────────────────────────────────────────
+    /// Attach a human-readable hint at this position if it is at (or beyond)
+    /// the current furthest error position.
+    ///
+    /// The hint is an interned string ID in the grammar's shared string pool.
+    SetHint { hint_id: SymbolId },
+
+    // ── Optional runtime tracing ─────────────────────────────────────────────
+    /// Runtime trace waypoint (only emitted when builder trace mode is enabled).
+    ///
+    /// `label_id` is an interned string ID in the grammar's shared string pool.
+    TracePoint { label_id: SymbolId },
 
     // ── Error recovery ───────────────────────────────────────────────────────
     //
@@ -194,20 +328,24 @@ pub enum Insn {
     // sync_rule matches (or EOI), then continue at resume. Used by
     // [`recover_until`](crate::parse::builder::GrammarBuilder::recover_until).
     /// Start a recoverable region. On failure, skip until `sync_rule` matches, then jump to resume.
-    RecoverUntil {
-        sync_rule: RuleId,
-        resume: InsnId,
-    },
+    ///
+    /// Builder source: [`GrammarBuilder::recover_until`](crate::parse::builder::GrammarBuilder::recover_until).
+    RecoverUntil { sync_rule: RuleId, resume: InsnId },
     /// After sync rule matched during recovery; pops the recovery frame and continues.
+    ///
+    /// Builder source: [`GrammarBuilder::recover_until`](crate::parse::builder::GrammarBuilder::recover_until).
     RecoveryResume,
 
     // ── Accept ───────────────────────────────────────────────────────────────
+    /// Accept the parse successfully.
+    ///
+    /// Builder source: [`GrammarBuilder::accept`](crate::parse::builder::GrammarBuilder::accept).
     Accept,
 }
 
 // ─── Literal table ────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct LiteralTable<'a> {
     pub data: &'a [u8],
     pub offsets: &'a [u32],
@@ -230,7 +368,7 @@ impl LiteralTable<'_> {
 /// Layout mirrors [`LiteralTable`]: all [`FlagMaskWord`] entries are
 /// concatenated into `data`; `offsets[m]..offsets[m+1]` gives the slice
 /// for mask `m`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct FlagMaskTable<'a> {
     /// All `FlagMaskWord` entries concatenated.
     pub data: &'a [FlagMaskWord],
@@ -254,7 +392,7 @@ impl FlagMaskTable<'_> {
 /// VM bytecode and lookup tables, borrowing backing storage (e.g. from [`crate::parse::builder::BuiltGraph`]).
 ///
 /// For generated static grammars, use `ParseGraph<'static>` with `&'static` slices.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ParseGraph<'a> {
     pub insns: &'a [Insn],
     pub rule_entry: &'a [InsnId],
@@ -371,6 +509,10 @@ impl GrammarNames for ParseGraph<'_> {
             .get(label_id as usize)
             .map(|&sym| self.strings.resolve(sym))
     }
+
+    fn resolve_symbol(&self, id: SymbolId) -> Option<&str> {
+        Some(self.strings.resolve(id))
+    }
 }
 
 impl<'a> GrammarNames for &'a ParseGraph<'a> {
@@ -384,5 +526,9 @@ impl<'a> GrammarNames for &'a ParseGraph<'a> {
 
     fn class_label(&self, label_id: u32) -> Option<&str> {
         ParseGraph::class_label(self, label_id)
+    }
+
+    fn resolve_symbol(&self, id: SymbolId) -> Option<&str> {
+        Some(self.strings.resolve(id))
     }
 }

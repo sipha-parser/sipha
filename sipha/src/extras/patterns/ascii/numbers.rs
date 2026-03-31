@@ -4,39 +4,41 @@ use crate::types::CharClass;
 use super::classes;
 
 #[inline]
-fn digits1(g: &mut GrammarBuilder, digit: CharClass) {
-    g.class(digit);
-    g.zero_or_more(|g| {
-        g.class(digit);
-    });
+fn digits1(g: &mut GrammarBuilder, digit: CharClass, label: &str) {
+    g.consume_while_class1_with_label(digit, label);
 }
 
 #[inline]
-fn digits1_uscore(g: &mut GrammarBuilder, digit: CharClass) {
-    g.class(digit);
+fn digits0_uscore(g: &mut GrammarBuilder, digit: CharClass, label: &str) {
     g.zero_or_more(|g| {
         g.choice(
             |g| {
-                g.class(digit);
+                g.class_with_label(digit, label);
             },
             |g| {
                 g.byte(b'_');
-                g.class(digit);
+                g.class_with_label(digit, label);
             },
         );
     });
 }
 
+#[inline]
+fn digits1_uscore(g: &mut GrammarBuilder, digit: CharClass, label: &str) {
+    g.class_with_label(digit, label);
+    digits0_uscore(g, digit, label);
+}
+
 /// ASCII decimal digits: `[0-9]+`.
 #[inline]
 pub fn dec_digits1(g: &mut GrammarBuilder) {
-    digits1(g, classes::DIGIT);
+    digits1(g, classes::DIGIT, "digit");
 }
 
 /// ASCII hex digits: `[0-9a-fA-F]+`.
 #[inline]
 pub fn hex_digits1(g: &mut GrammarBuilder) {
-    digits1(g, classes::HEX_DIGIT);
+    digits1(g, classes::HEX_DIGIT, "hex digit");
 }
 
 /// ASCII decimal digits with `_` separators: `[0-9] ([0-9] | '_' [0-9])*`.
@@ -44,13 +46,37 @@ pub fn hex_digits1(g: &mut GrammarBuilder) {
 /// Guarantees `_` only appears **between** digits.
 #[inline]
 pub fn dec_digits1_uscore(g: &mut GrammarBuilder) {
-    digits1_uscore(g, classes::DIGIT);
+    digits1_uscore(g, classes::DIGIT, "digit");
 }
 
 /// ASCII hex digits with `_` separators: `[0-9a-fA-F] ([0-9a-fA-F] | '_' [0-9a-fA-F])*`.
 #[inline]
 pub fn hex_digits1_uscore(g: &mut GrammarBuilder) {
-    digits1_uscore(g, classes::HEX_DIGIT);
+    digits1_uscore(g, classes::HEX_DIGIT, "hex digit");
+}
+
+/// ASCII binary digits: `[01]+`.
+#[inline]
+pub fn bin_digits1(g: &mut GrammarBuilder) {
+    digits1(g, classes::BIN_DIGIT, "binary digit");
+}
+
+/// ASCII octal digits: `[0-7]+`.
+#[inline]
+pub fn oct_digits1(g: &mut GrammarBuilder) {
+    digits1(g, classes::OCT_DIGIT, "octal digit");
+}
+
+/// ASCII binary digits with `_` separators.
+#[inline]
+pub fn bin_digits1_uscore(g: &mut GrammarBuilder) {
+    digits1_uscore(g, classes::BIN_DIGIT, "binary digit");
+}
+
+/// ASCII octal digits with `_` separators.
+#[inline]
+pub fn oct_digits1_uscore(g: &mut GrammarBuilder) {
+    digits1_uscore(g, classes::OCT_DIGIT, "octal digit");
 }
 
 /// A minimal JSON-style number:
@@ -80,9 +106,9 @@ pub fn number_json(g: &mut GrammarBuilder) {
     });
 
     g.optional(|g| {
-        g.choice(|g| { g.byte(b'e'); }, |g| { g.byte(b'E'); });
+        g.byte_either(b'e', b'E');
         g.optional(|g| {
-            g.choice(|g| { g.byte(b'+'); }, |g| { g.byte(b'-'); });
+            g.byte_either(b'+', b'-');
         });
         dec_digits1(g);
     });
@@ -103,17 +129,7 @@ pub fn number_json_uscore(g: &mut GrammarBuilder) {
         |g| {
             g.class(CharClass::EMPTY.with_range(b'1', b'9'));
             // Remaining integer digits, allowing `_` between digits.
-            g.zero_or_more(|g| {
-                g.choice(
-                    |g| {
-                        g.class(classes::DIGIT);
-                    },
-                    |g| {
-                        g.byte(b'_');
-                        g.class(classes::DIGIT);
-                    },
-                );
-            });
+            digits0_uscore(g, classes::DIGIT, "digit");
         },
     );
 
@@ -123,11 +139,10 @@ pub fn number_json_uscore(g: &mut GrammarBuilder) {
     });
 
     g.optional(|g| {
-        g.choice(|g| { g.byte(b'e'); }, |g| { g.byte(b'E'); });
+        g.byte_either(b'e', b'E');
         g.optional(|g| {
-            g.choice(|g| { g.byte(b'+'); }, |g| { g.byte(b'-'); });
+            g.byte_either(b'+', b'-');
         });
         dec_digits1_uscore(g);
     });
 }
-

@@ -1,5 +1,6 @@
 //! Resolve rule / label / class names for display diagnostics.
 
+use crate::parse::string_table::SymbolId;
 use crate::types::RuleId;
 
 /// Tables used to turn numeric ids in [`Expected`](crate::diagnostics::error::Expected) into readable strings.
@@ -10,6 +11,12 @@ pub trait GrammarNames {
     fn rule_name(&self, id: RuleId) -> Option<&str>;
     fn expected_label(&self, id: u32) -> Option<&str>;
     fn class_label(&self, label_id: u32) -> Option<&str>;
+    /// Resolve an interned string from the grammar's [`StringTable`](crate::parse::string_table::StringTable).
+    ///
+    /// Used for dynamic hints and tracing labels.
+    fn resolve_symbol(&self, _id: SymbolId) -> Option<&str> {
+        None
+    }
 }
 
 /// Rule, expected-label, and class-label slices (e.g. from generated `static` tables).
@@ -31,5 +38,9 @@ impl GrammarNames for SliceGrammarNames<'_> {
 
     fn class_label(&self, label_id: u32) -> Option<&str> {
         self.class_labels.get(label_id as usize).copied()
+    }
+
+    fn resolve_symbol(&self, _id: SymbolId) -> Option<&str> {
+        None
     }
 }

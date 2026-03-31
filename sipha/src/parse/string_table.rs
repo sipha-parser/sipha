@@ -4,53 +4,61 @@
 //! construction. The frozen [`StringTable`] is stored in [`crate::parse::builder::BuiltGraph`]
 //! and borrowed by [`crate::parse::insn::ParseGraph`]. Indices are [`SymbolId`] values.
 
-use std::collections::HashMap;
+#[cfg(not(feature = "std"))]
+use alloc::{boxed::Box, vec::Vec};
+#[cfg(feature = "std")]
+use lasso::{Key, Rodeo, Spur};
+#[cfg(feature = "std")]
+use std::{boxed::Box, vec::Vec};
 
 /// Index into a [`StringTable`] / [`StringInterner`] pool (stable for the lifetime of the table).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SymbolId(pub u32);
 
 /// Builder-time interner: deduplicates strings and assigns [`SymbolId`] indices.
+#[cfg(feature = "std")]
 pub struct StringInterner {
-    pool: Vec<Box<str>>,
-    lookup: HashMap<String, SymbolId>,
+    rodeo: Rodeo<Spur>,
 }
 
+#[cfg(feature = "std")]
 impl StringInterner {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            pool: Vec::new(),
-            lookup: HashMap::new(),
+            rodeo: Rodeo::new(),
         }
     }
 
     /// Insert `s` if missing; return its stable id.
     pub fn intern(&mut self, s: &str) -> SymbolId {
-        if let Some(&id) = self.lookup.get(s) {
-            return id;
-        }
-        let id = SymbolId(u32::try_from(self.pool.len()).unwrap_or(0));
-        self.pool.push(s.into());
-        self.lookup.insert(s.to_string(), id);
-        id
+        let key = self.rodeo.get_or_intern(s);
+        SymbolId(u32::try_from(key.into_usize()).unwrap_or(0))
     }
 
     /// Drop the lookup map and return the frozen table for embedding in [`BuiltGraph`](crate::parse::builder::BuiltGraph).
     #[must_use]
     pub fn finish(self) -> StringTable {
-        StringTable::Owned(self.pool)
+        let mut pool: Vec<Box<str>> = vec![Box::<str>::from(""); self.rodeo.len()];
+        for (key, s) in self.rodeo.iter() {
+            let idx = key.into_usize();
+            if idx < pool.len() {
+                pool[idx] = s.into();
+            }
+        }
+        StringTable::Owned(pool)
     }
 
     /// Resolve a symbol while still building (e.g. error messages).
     #[must_use]
     pub fn resolve(&self, id: SymbolId) -> &str {
-        self.pool
-            .get(id.0 as usize)
-            .map_or("?", std::convert::AsRef::as_ref)
+        Spur::try_from_usize(id.0 as usize)
+            .and_then(|k| self.rodeo.try_resolve(&k))
+            .unwrap_or("?")
     }
 }
 
+#[cfg(feature = "std")]
 impl Default for StringInterner {
     fn default() -> Self {
         Self::new()
@@ -71,7 +79,7 @@ impl StringTable {
         match self {
             Self::Owned(v) => v
                 .get(id.0 as usize)
-                .map_or("?", std::convert::AsRef::as_ref),
+                .map_or("?", core::convert::AsRef::as_ref),
             Self::Static(s) => s.get(id.0 as usize).copied().unwrap_or("?"),
         }
     }
@@ -80,7 +88,7 @@ impl StringTable {
     #[must_use]
     pub fn pool_strings_for_codegen(&self) -> Vec<&str> {
         match self {
-            Self::Owned(v) => v.iter().map(std::convert::AsRef::as_ref).collect(),
+            Self::Owned(v) => v.iter().map(core::convert::AsRef::as_ref).collect(),
             Self::Static(s) => s.to_vec(),
         }
     }

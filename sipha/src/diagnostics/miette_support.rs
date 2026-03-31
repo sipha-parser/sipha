@@ -38,8 +38,10 @@ pub struct MietteParseDiagnostic {
     source: miette::NamedSource<String>,
     /// Byte offset of the error (used for the primary label span).
     offset: usize,
-    /// Hints from [`Diagnostic::hints`] (e.g. "did you mean 'x'?").
-    hints: Vec<&'static str>,
+    /// Hints from [`Diagnostic::hints`], already resolved to strings.
+    hints: Vec<String>,
+    /// "While parsing ..." context lines (already formatted, may be empty).
+    context: Vec<String>,
 }
 
 impl MietteParseDiagnostic {
@@ -74,12 +76,28 @@ impl MietteParseDiagnostic {
         let name_str = name.into();
         let offset = diagnostic.furthest as usize;
         let source = miette::NamedSource::new(name_str, source_str);
-        let hints = diagnostic.hints.clone();
+        let hints: Vec<String> = diagnostic
+            .hints
+            .iter()
+            .map(|&id| {
+                let s = names.and_then(|n| n.resolve_symbol(id)).unwrap_or("?");
+                s.to_string()
+            })
+            .collect();
+        let context = diagnostic
+            .context_chain
+            .iter()
+            .map(|&id| {
+                let label = names.and_then(|n| n.expected_label(id)).unwrap_or("?");
+                format!("  while parsing: {label}")
+            })
+            .collect();
         Self {
             expected_msg,
             source,
             offset,
             hints,
+            context,
         }
     }
 }
@@ -114,15 +132,13 @@ impl miette::Diagnostic for MietteParseDiagnostic {
     }
 
     fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
-        if self.hints.is_empty() {
+        if self.hints.is_empty() && self.context.is_empty() {
             None
         } else {
-            let s = self
-                .hints
-                .iter()
-                .map(|h| format!("  hint: {h}"))
-                .collect::<Vec<_>>()
-                .join("\n");
+            let mut parts: Vec<String> = Vec::new();
+            parts.extend(self.context.iter().cloned());
+            parts.extend(self.hints.iter().map(|h| format!("  hint: {h}")));
+            let s = parts.join("\n");
             Some(Box::new(HintDisplay(s)))
         }
     }

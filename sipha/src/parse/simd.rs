@@ -45,7 +45,12 @@ pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
     // --- x86_64 fast path ---------------------------------------------------
     #[cfg(target_arch = "x86_64")]
     {
-        if n >= 32 && is_x86_feature_detected!("avx2") {
+        #[cfg(feature = "std")]
+        let has_avx2 = is_x86_feature_detected!("avx2");
+        #[cfg(not(feature = "std"))]
+        let has_avx2 = false;
+
+        if n >= 32 && has_avx2 {
             // SAFETY: bounds checked above; avx2 detected at runtime.
             return unsafe { eq_avx2(a.add(off), b, n) };
         }
@@ -67,15 +72,15 @@ pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
 #[target_feature(enable = "sse2")]
 #[allow(clippy::cast_ptr_alignment)] // _mm_loadu_si128 requires *const __m128i; load is unaligned-safe
 #[inline]
-unsafe fn load_u128(p: *const u8) -> std::arch::x86_64::__m128i {
-    use std::arch::x86_64::_mm_loadu_si128;
+unsafe fn load_u128(p: *const u8) -> core::arch::x86_64::__m128i {
+    use core::arch::x86_64::_mm_loadu_si128;
     _mm_loadu_si128(p.cast())
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
-    use std::arch::x86_64::{_mm_cmpeq_epi8, _mm_movemask_epi8};
+    use core::arch::x86_64::{_mm_cmpeq_epi8, _mm_movemask_epi8};
 
     let mut i = 0usize;
 
@@ -100,15 +105,15 @@ unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
 #[target_feature(enable = "avx2")]
 #[allow(clippy::cast_ptr_alignment)] // _mm256_loadu_si256 requires *const __m256i
 #[inline]
-unsafe fn load_u256(p: *const u8) -> std::arch::x86_64::__m256i {
-    use std::arch::x86_64::_mm256_loadu_si256;
+unsafe fn load_u256(p: *const u8) -> core::arch::x86_64::__m256i {
+    use core::arch::x86_64::_mm256_loadu_si256;
     _mm256_loadu_si256(p.cast())
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
-    use std::arch::x86_64::{_mm256_cmpeq_epi8, _mm256_movemask_epi8};
+    use core::arch::x86_64::{_mm256_cmpeq_epi8, _mm256_movemask_epi8};
 
     let mut i = 0usize;
 
@@ -126,7 +131,7 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
 
     // Handle 16-byte residual (AVX2 implies SSE2).
     if i + 16 <= n {
-        use std::arch::x86_64::{_mm_cmpeq_epi8, _mm_movemask_epi8};
+        use core::arch::x86_64::{_mm_cmpeq_epi8, _mm_movemask_epi8};
         let va = load_u128(a.add(i));
         let vb = load_u128(b.add(i));
         let eq = _mm_cmpeq_epi8(va, vb);

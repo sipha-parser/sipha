@@ -28,4 +28,3 @@ pub fn line_comment_hash(g: &mut GrammarBuilder) {
 pub fn line_comment_lua_double_dash(g: &mut GrammarBuilder) {
     line_comment_prefix(g, b"--");
 }
-

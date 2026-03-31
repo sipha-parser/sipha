@@ -15,6 +15,12 @@ fn insn_tokens(insn: &Insn) -> TokenStream {
         Insn::Byte { byte, on_fail } => quote! {
             Insn::Byte { byte: #byte, on_fail: #on_fail }
         },
+        Insn::ByteEither { a, b, on_fail } => quote! {
+            Insn::ByteEither { a: #a, b: #b, on_fail: #on_fail }
+        },
+        Insn::ByteIn3 { a, b, c, on_fail } => quote! {
+            Insn::ByteIn3 { a: #a, b: #b, c: #c, on_fail: #on_fail }
+        },
         Insn::ByteRange { lo, hi, on_fail } => quote! {
             Insn::ByteRange { lo: #lo, hi: #hi, on_fail: #on_fail }
         },
@@ -35,6 +41,16 @@ fn insn_tokens(insn: &Insn) -> TokenStream {
         Insn::Literal { lit_id, on_fail } => quote! {
             Insn::Literal { lit_id: #lit_id, on_fail: #on_fail }
         },
+        Insn::LiteralSmall {
+            len,
+            bytes,
+            on_fail,
+        } => {
+            let [b0, b1, b2, b3, b4, b5, b6, b7] = *bytes;
+            quote! {
+                Insn::LiteralSmall { len: #len, bytes: [#b0, #b1, #b2, #b3, #b4, #b5, #b6, #b7], on_fail: #on_fail }
+            }
+        }
         Insn::EndOfInput { on_fail } => quote! {
             Insn::EndOfInput { on_fail: #on_fail }
         },
@@ -73,6 +89,22 @@ fn insn_tokens(insn: &Insn) -> TokenStream {
         Insn::ByteDispatch { table_id } => quote! {
             Insn::ByteDispatch { table_id: #table_id }
         },
+        Insn::ConsumeWhileClass {
+            class,
+            label_id,
+            min,
+            on_fail,
+        } => {
+            let [w0, w1, w2, w3] = class.0;
+            quote! {
+                Insn::ConsumeWhileClass {
+                    class: CharClass([#w0, #w1, #w2, #w3]),
+                    label_id: #label_id,
+                    min: #min,
+                    on_fail: #on_fail,
+                }
+            }
+        }
         Insn::IfFlag { flag_id, on_fail } => quote! {
             Insn::IfFlag { flag_id: #flag_id, on_fail: #on_fail }
         },
@@ -103,6 +135,18 @@ fn insn_tokens(insn: &Insn) -> TokenStream {
         Insn::RecordExpectedLabel { label_id } => quote! {
             Insn::RecordExpectedLabel { label_id: #label_id }
         },
+        Insn::PushDiagnosticContext { label_id } => quote! {
+            Insn::PushDiagnosticContext { label_id: #label_id }
+        },
+        Insn::PopDiagnosticContext => quote! { Insn::PopDiagnosticContext },
+        Insn::SetHint { hint_id } => {
+            let id = hint_id.0;
+            quote! { Insn::SetHint { hint_id: SymbolId(#id) } }
+        }
+        Insn::TracePoint { label_id } => {
+            let id = label_id.0;
+            quote! { Insn::TracePoint { label_id: SymbolId(#id) } }
+        }
         Insn::RecoverUntil { sync_rule, resume } => quote! {
             Insn::RecoverUntil { sync_rule: #sync_rule, resume: #resume }
         },

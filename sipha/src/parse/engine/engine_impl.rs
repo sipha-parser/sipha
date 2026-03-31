@@ -2,12 +2,23 @@ use super::error::{ParseError, RecoverMultiResult};
 use super::frames::{Frame, SnapEntry};
 use super::output::ParseOutput;
 use super::tree_events::insert_error_node_events;
+#[cfg(feature = "partial-reparse")]
+use super::vm::run_from;
 use super::vm::{run, VmState};
+#[cfg(feature = "trace")]
+use super::ParseTracer;
 use crate::diagnostics::error::ErrorContext;
 use crate::parse::context::ParseContext;
+#[cfg(feature = "trace")]
+use crate::parse::engine::VmObserver;
+use crate::parse::insn::ParseGraph;
+#[cfg(feature = "std")]
+use crate::parse::memo;
+#[cfg(feature = "std")]
 use crate::parse::memo::MemoTable;
 use crate::types::{CaptureEvent, Pos, SyntaxKind, TreeEvent};
-use crate::{parse::insn::ParseGraph, parse::memo};
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 pub struct Engine {
     stack: Vec<Frame>,
@@ -16,10 +27,14 @@ pub struct Engine {
     /// In-progress token spans: `(kind, is_trivia, start_pos)`.
     /// Pushed by `TokenBegin`, popped by `TokenEnd`.
     open_tokens: Vec<(SyntaxKind, bool, Pos)>,
+    #[cfg(feature = "std")]
     memo: Option<MemoTable>,
     error_ctx: ErrorContext,
+    context_stack: Vec<u32>,
     flags: Vec<u64>,
     ctx_snapshots: Vec<SnapEntry>,
+    #[cfg(feature = "trace")]
+    rule_stack: Vec<crate::types::RuleId>,
 }
 
 impl Engine {
@@ -35,17 +50,24 @@ impl Engine {
             events: Vec::with_capacity(capture_cap),
             tree_events: Vec::with_capacity(capture_cap),
             open_tokens: Vec::with_capacity(16),
+            #[cfg(feature = "std")]
             memo: None,
             error_ctx: ErrorContext::new(),
+            context_stack: Vec::with_capacity(16),
             flags: Vec::with_capacity(4),
             ctx_snapshots: Vec::with_capacity(64),
+            #[cfg(feature = "trace")]
+            rule_stack: Vec::with_capacity(64),
         }
     }
 
     #[must_use]
-    pub fn with_memo(mut self) -> Self {
-        self.memo = Some(MemoTable::new());
-        self
+    #[cfg(feature = "std")]
+    pub fn with_memo(self) -> Self {
+        Self {
+            memo: Some(MemoTable::new()),
+            ..self
+        }
     }
 
     /// Parse the input against the grammar.
@@ -84,18 +106,132 @@ impl Engine {
                 events: &mut self.events,
                 tree_events: &mut self.tree_events,
                 open_tokens: &mut self.open_tokens,
+                #[cfg(feature = "std")]
                 memo: &mut self.memo,
                 error_ctx: &mut self.error_ctx,
+                context_stack: &mut self.context_stack,
                 flags: &mut self.flags,
                 ctx_snapshots: &mut self.ctx_snapshots,
                 multi_errors: &mut None,
                 max_errors: 0,
+                #[cfg(feature = "trace")]
+                observer: None,
+                #[cfg(feature = "trace")]
+                tracer: None,
+                #[cfg(feature = "trace")]
+                rule_stack: &mut self.rule_stack,
             },
         )
         .map(|consumed| ParseOutput {
             consumed,
-            events: std::mem::take(&mut self.events),
-            tree_events: std::mem::take(&mut self.tree_events),
+            events: core::mem::take(&mut self.events),
+            tree_events: core::mem::take(&mut self.tree_events),
+        })
+    }
+
+    /// Parse a specific rule starting at `start_pos` within `input`.
+    ///
+    /// Feature-gated experimental API used for partial reparsing.
+    ///
+    /// The rule is treated as an entrypoint: when it reaches `Return`, the VM will treat
+    /// returning to a sentinel address as success and return the current `pos` as `consumed`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(ParseError::NoMatch(_))` on parse failure, or `Err(ParseError::BadGraph(_))`
+    /// if `rule` is out of range or the graph is invalid.
+    #[cfg(feature = "partial-reparse")]
+    pub fn parse_rule_at_with_context(
+        &mut self,
+        graph: &ParseGraph<'_>,
+        input: &[u8],
+        rule: crate::types::RuleId,
+        start_pos: Pos,
+        context: &ParseContext,
+    ) -> Result<ParseOutput, ParseError> {
+        self.reset_for_parse(context);
+
+        let entry = *graph
+            .rule_entry
+            .get(rule as usize)
+            .ok_or(ParseError::BadGraph(
+                super::error::BadGraphKind::RuleEntryOutOfRange { rule },
+            ))?;
+
+        // Seed a sentinel return address so rules ending in `Return` can be used as entrypoints.
+        self.stack.push(Frame::Return { ret_ip: u32::MAX });
+
+        run_from(
+            graph,
+            input,
+            &mut VmState {
+                stack: &mut self.stack,
+                events: &mut self.events,
+                tree_events: &mut self.tree_events,
+                open_tokens: &mut self.open_tokens,
+                #[cfg(feature = "std")]
+                memo: &mut self.memo,
+                error_ctx: &mut self.error_ctx,
+                context_stack: &mut self.context_stack,
+                flags: &mut self.flags,
+                ctx_snapshots: &mut self.ctx_snapshots,
+                multi_errors: &mut None,
+                max_errors: 0,
+                #[cfg(feature = "trace")]
+                observer: None,
+                #[cfg(feature = "trace")]
+                tracer: None,
+                #[cfg(feature = "trace")]
+                rule_stack: &mut self.rule_stack,
+            },
+            entry,
+            start_pos,
+        )
+        .map(|consumed| ParseOutput {
+            consumed,
+            events: core::mem::take(&mut self.events),
+            tree_events: core::mem::take(&mut self.tree_events),
+        })
+    }
+
+    /// Like [`parse_with_context`](Self::parse_with_context) but with a VM observer hook.
+    ///
+    /// Requires the `trace` feature.
+    #[cfg(feature = "trace")]
+    pub fn parse_with_observer(
+        &mut self,
+        graph: &ParseGraph<'_>,
+        input: &[u8],
+        context: &ParseContext,
+        observer: &mut dyn VmObserver,
+    ) -> Result<ParseOutput, ParseError> {
+        self.reset_for_parse(context);
+
+        run(
+            graph,
+            input,
+            &mut VmState {
+                stack: &mut self.stack,
+                events: &mut self.events,
+                tree_events: &mut self.tree_events,
+                open_tokens: &mut self.open_tokens,
+                #[cfg(feature = "std")]
+                memo: &mut self.memo,
+                error_ctx: &mut self.error_ctx,
+                context_stack: &mut self.context_stack,
+                flags: &mut self.flags,
+                ctx_snapshots: &mut self.ctx_snapshots,
+                multi_errors: &mut None,
+                max_errors: 0,
+                observer: Some(observer),
+                tracer: None,
+                rule_stack: &mut self.rule_stack,
+            },
+        )
+        .map(|consumed| ParseOutput {
+            consumed,
+            events: core::mem::take(&mut self.events),
+            tree_events: core::mem::take(&mut self.tree_events),
         })
     }
 
@@ -120,18 +256,26 @@ impl Engine {
                 events: &mut self.events,
                 tree_events: &mut self.tree_events,
                 open_tokens: &mut self.open_tokens,
+                #[cfg(feature = "std")]
                 memo: &mut self.memo,
                 error_ctx: &mut self.error_ctx,
+                context_stack: &mut self.context_stack,
                 flags: &mut self.flags,
                 ctx_snapshots: &mut self.ctx_snapshots,
                 multi_errors: &mut None,
                 max_errors: 0,
+                #[cfg(feature = "trace")]
+                observer: None,
+                #[cfg(feature = "trace")]
+                tracer: None,
+                #[cfg(feature = "trace")]
+                rule_stack: &mut self.rule_stack,
             },
         ) {
             Ok(consumed) => Ok(ParseOutput {
                 consumed,
-                events: std::mem::take(&mut self.events),
-                tree_events: std::mem::take(&mut self.tree_events),
+                events: core::mem::take(&mut self.events),
+                tree_events: core::mem::take(&mut self.tree_events),
             }),
             Err(e) => {
                 if let Some(kind) = context.error_node_kind() {
@@ -140,8 +284,8 @@ impl Engine {
                 Err((
                     ParseOutput {
                         consumed: self.error_ctx.furthest,
-                        events: std::mem::take(&mut self.events),
-                        tree_events: std::mem::take(&mut self.tree_events),
+                        events: core::mem::take(&mut self.events),
+                        tree_events: core::mem::take(&mut self.tree_events),
                     },
                     e,
                 ))
@@ -204,18 +348,26 @@ impl Engine {
                 events: &mut self.events,
                 tree_events: &mut self.tree_events,
                 open_tokens: &mut self.open_tokens,
+                #[cfg(feature = "std")]
                 memo: &mut self.memo,
                 error_ctx: &mut self.error_ctx,
+                context_stack: &mut self.context_stack,
                 flags: &mut self.flags,
                 ctx_snapshots: &mut self.ctx_snapshots,
                 multi_errors: &mut multi_errors,
                 max_errors: cap,
+                #[cfg(feature = "trace")]
+                observer: None,
+                #[cfg(feature = "trace")]
+                tracer: None,
+                #[cfg(feature = "trace")]
+                rule_stack: &mut self.rule_stack,
             },
         ) {
             Ok(consumed) => Ok(ParseOutput {
                 consumed,
-                events: std::mem::take(&mut self.events),
-                tree_events: std::mem::take(&mut self.tree_events),
+                events: core::mem::take(&mut self.events),
+                tree_events: core::mem::take(&mut self.tree_events),
             }),
             Err(e) => {
                 errors.push(e);
@@ -225,8 +377,8 @@ impl Engine {
                 Err(RecoverMultiResult {
                     partial: ParseOutput {
                         consumed: self.error_ctx.furthest,
-                        events: std::mem::take(&mut self.events),
-                        tree_events: std::mem::take(&mut self.tree_events),
+                        events: core::mem::take(&mut self.events),
+                        tree_events: core::mem::take(&mut self.tree_events),
                     },
                     errors,
                 })
@@ -241,7 +393,14 @@ impl Engine {
 
     #[must_use]
     pub fn memo_len(&self) -> Option<usize> {
-        self.memo.as_ref().map(memo::MemoTable::len)
+        #[cfg(feature = "std")]
+        {
+            return self.memo.as_ref().map(memo::MemoTable::len);
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            return None;
+        }
     }
 
     #[must_use]
@@ -255,13 +414,58 @@ impl Engine {
         self.tree_events.clear();
         self.open_tokens.clear();
         self.error_ctx.clear();
+        self.context_stack.clear();
         self.ctx_snapshots.clear();
+        #[cfg(feature = "trace")]
+        self.rule_stack.clear();
+        #[cfg(feature = "std")]
         if let Some(m) = &mut self.memo {
             m.clear();
         }
 
         self.flags.clear();
         self.flags.extend_from_slice(context.words());
+    }
+}
+
+#[cfg(feature = "trace")]
+impl Engine {
+    /// Like [`parse_with_context`](Self::parse_with_context) but with a runtime tracer.
+    pub fn parse_with_tracer(
+        &mut self,
+        graph: &ParseGraph<'_>,
+        input: &[u8],
+        context: &ParseContext,
+        tracer: &mut dyn ParseTracer,
+    ) -> Result<ParseOutput, ParseError> {
+        self.reset_for_parse(context);
+
+        run(
+            graph,
+            input,
+            &mut VmState {
+                stack: &mut self.stack,
+                events: &mut self.events,
+                tree_events: &mut self.tree_events,
+                open_tokens: &mut self.open_tokens,
+                #[cfg(feature = "std")]
+                memo: &mut self.memo,
+                error_ctx: &mut self.error_ctx,
+                context_stack: &mut self.context_stack,
+                flags: &mut self.flags,
+                ctx_snapshots: &mut self.ctx_snapshots,
+                multi_errors: &mut None,
+                max_errors: 0,
+                observer: None,
+                tracer: Some(tracer),
+                rule_stack: &mut self.rule_stack,
+            },
+        )
+        .map(|consumed| ParseOutput {
+            consumed,
+            events: core::mem::take(&mut self.events),
+            tree_events: core::mem::take(&mut self.tree_events),
+        })
     }
 }
 
