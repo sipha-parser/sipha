@@ -517,7 +517,10 @@ mod tests {
         let graph = ParseGraph {
             insns: &[],
             rule_entry: &[0],
-            literals: LiteralTable { data: &[], offsets: &[0] },
+            literals: LiteralTable {
+                data: &[],
+                offsets: &[0],
+            },
             jump_tables: &[],
             flag_masks: FlagMaskTable {
                 data: &[],

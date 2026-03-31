@@ -72,4 +72,3 @@ fn main() {
         println!("{lsp_diag:?}");
     }
 }
-

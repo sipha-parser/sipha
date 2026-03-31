@@ -96,8 +96,7 @@ fn visible_children(node: &SyntaxNode, options: &TreeDisplayOptions) -> Vec<Visi
     // We walk the green children directly so we can preserve child index → field id.
     let green = node.green();
     let mut off = node.offset();
-    let mut tmp: Vec<(SyntaxElement, Option<FieldId>)> = Vec::new();
-    tmp.reserve(green.children.len());
+    let mut tmp: Vec<(SyntaxElement, Option<FieldId>)> = Vec::with_capacity(green.children.len());
 
     for (i, child) in green.children.iter().enumerate() {
         let start = off;
@@ -190,7 +189,16 @@ fn measure_alignment(
 ) -> Alignment {
     let mut a = Alignment::default();
     let mut visited = HashSet::new();
-    measure_node(root, options, kind_name, field_name, 0, None, &mut a, &mut visited);
+    measure_node(
+        root,
+        options,
+        kind_name,
+        field_name,
+        0,
+        None,
+        &mut a,
+        &mut visited,
+    );
     a
 }
 
@@ -207,7 +215,8 @@ fn measure_node(
     let id = node_id(node);
     if !visited.insert(id) {
         // Still count the header line; don’t recurse.
-        let label_len = kind_name(node.kind()).len() + field_label_str(field, options, field_name).len();
+        let label_len =
+            kind_name(node.kind()).len() + field_label_str(field, options, field_name).len();
         let loc_len = loc_str(node.text_range(), options).len();
         ensure_len(&mut a.label_max_by_depth, depth);
         ensure_len(&mut a.loc_max_by_depth, depth);
@@ -216,7 +225,8 @@ fn measure_node(
         return;
     }
 
-    let label_len = kind_name(node.kind()).len() + field_label_str(field, options, field_name).len();
+    let label_len =
+        kind_name(node.kind()).len() + field_label_str(field, options, field_name).len();
     let loc_len = loc_str(node.text_range(), options).len();
     ensure_len(&mut a.label_max_by_depth, depth);
     ensure_len(&mut a.loc_max_by_depth, depth);
@@ -227,22 +237,41 @@ fn measure_node(
         for child in visible_children(node, options) {
             match child.elem {
                 SyntaxElement::Node(n) => {
-                    measure_node(&n, options, kind_name, field_name, depth + 1, child.field, a, visited);
+                    measure_node(
+                        &n,
+                        options,
+                        kind_name,
+                        field_name,
+                        depth + 1,
+                        child.field,
+                        a,
+                        visited,
+                    );
                 }
                 SyntaxElement::Token(t) => {
-                    let label_len =
-                        kind_name(t.kind()).len() + field_label_str(child.field, options, field_name).len();
+                    let label_len = kind_name(t.kind()).len()
+                        + field_label_str(child.field, options, field_name).len();
                     let loc_len = loc_str(t.text_range(), options).len();
                     ensure_len(&mut a.label_max_by_depth, depth + 1);
                     ensure_len(&mut a.loc_max_by_depth, depth + 1);
-                    a.label_max_by_depth[depth + 1] = a.label_max_by_depth[depth + 1].max(label_len);
+                    a.label_max_by_depth[depth + 1] =
+                        a.label_max_by_depth[depth + 1].max(label_len);
                     a.loc_max_by_depth[depth + 1] = a.loc_max_by_depth[depth + 1].max(loc_len);
                 }
             }
         }
     } else {
         for child in node.child_nodes() {
-            measure_node(&child, options, kind_name, field_name, depth + 1, None, a, visited);
+            measure_node(
+                &child,
+                options,
+                kind_name,
+                field_name,
+                depth + 1,
+                None,
+                a,
+                visited,
+            );
         }
     }
 
@@ -276,7 +305,9 @@ fn field_label_str(
     if !options.show_field_labels {
         return String::new();
     }
-    let Some(fid) = field else { return String::new() };
+    let Some(fid) = field else {
+        return String::new();
+    };
     if let Some(name) = field_name(fid) {
         format!("  {{field:{name}}}")
     } else {

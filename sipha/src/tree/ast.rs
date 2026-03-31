@@ -1,4 +1,4 @@
-//! Typed CST (rowan-like) wrappers over [`SyntaxNode`](crate::tree::red::SyntaxNode).
+//! Typed CST (rowan-like) wrappers over [`SyntaxNode`].
 //!
 //! This module is intentionally lightweight: it provides a small trait for typed
 //! node wrappers and a set of convenience accessors for casting and traversing.
@@ -87,4 +87,3 @@ impl AstNodeExt for SyntaxNode {
         self.child_tokens().filter(move |t| t.kind() == kind)
     }
 }
-

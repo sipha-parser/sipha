@@ -1,5 +1,5 @@
-use sipha::prelude::*;
 use sipha::SyntaxKinds;
+use sipha::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
 #[repr(u16)]
@@ -97,9 +97,7 @@ fn compile_term(src: &[u8], term: &Term, out: &mut Vec<Op>) -> Result<(), String
 
 fn compile_factor(src: &[u8], factor: &Factor, out: &mut Vec<Op>) -> Result<(), String> {
     let mut it = factor.syntax().children().filter(|e| !e.is_trivia());
-    let first = it
-        .next()
-        .ok_or_else(|| "factor: empty".to_string())?;
+    let first = it.next().ok_or_else(|| "factor: empty".to_string())?;
 
     match first {
         sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::Number.into_syntax_kind() => {
@@ -134,13 +132,21 @@ fn run_vm(ops: &[Op]) -> Result<i64, String> {
         match op {
             Op::Push(n) => stack.push(n),
             Op::Add => {
-                let b = stack.pop().ok_or_else(|| "vm: stack underflow (add rhs)".to_string())?;
-                let a = stack.pop().ok_or_else(|| "vm: stack underflow (add lhs)".to_string())?;
+                let b = stack
+                    .pop()
+                    .ok_or_else(|| "vm: stack underflow (add rhs)".to_string())?;
+                let a = stack
+                    .pop()
+                    .ok_or_else(|| "vm: stack underflow (add lhs)".to_string())?;
                 stack.push(a + b);
             }
             Op::Mul => {
-                let b = stack.pop().ok_or_else(|| "vm: stack underflow (mul rhs)".to_string())?;
-                let a = stack.pop().ok_or_else(|| "vm: stack underflow (mul lhs)".to_string())?;
+                let b = stack
+                    .pop()
+                    .ok_or_else(|| "vm: stack underflow (mul rhs)".to_string())?;
+                let a = stack
+                    .pop()
+                    .ok_or_else(|| "vm: stack underflow (mul lhs)".to_string())?;
                 stack.push(a * b);
             }
         }

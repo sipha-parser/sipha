@@ -1,6 +1,6 @@
+use sipha::SyntaxKinds;
 use sipha::prelude::*;
 use sipha::sipha_grammar;
-use sipha::SyntaxKinds;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
 #[repr(u16)]

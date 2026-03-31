@@ -1,11 +1,11 @@
+#[cfg(feature = "trace")]
+use super::ParseTracer;
 use super::error::{ParseError, RecoverMultiResult};
 use super::frames::{Frame, SnapEntry};
 use super::output::ParseOutput;
 use super::tree_events::insert_error_node_events;
 use super::vm::run_from;
-use super::vm::{run, VmState};
-#[cfg(feature = "trace")]
-use super::ParseTracer;
+use super::vm::{VmState, run};
 use crate::diagnostics::error::ErrorContext;
 use crate::parse::context::ParseContext;
 #[cfg(feature = "trace")]
@@ -489,11 +489,11 @@ impl Engine {
     pub fn memo_len(&self) -> Option<usize> {
         #[cfg(feature = "std")]
         {
-            return self.memo.as_ref().map(memo::MemoTable::len);
+            self.memo.as_ref().map(memo::MemoTable::len)
         }
         #[cfg(not(feature = "std"))]
         {
-            return None;
+            None
         }
     }
 

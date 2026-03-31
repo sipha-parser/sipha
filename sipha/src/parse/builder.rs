@@ -841,7 +841,7 @@ impl GrammarBuilder {
             .class_labels
             .iter()
             .enumerate()
-            .find(|(_, &s)| s == sym)
+            .find(|&(_, &s)| s == sym)
         {
             u32::try_from(i).unwrap_or(0)
         } else {
@@ -946,7 +946,7 @@ impl GrammarBuilder {
             .class_labels
             .iter()
             .enumerate()
-            .find(|(_, &s)| s == sym)
+            .find(|&(_, &s)| s == sym)
         {
             u32::try_from(i).unwrap_or(0)
         } else {
@@ -1686,7 +1686,7 @@ impl GrammarBuilder {
             .expected_labels
             .iter()
             .enumerate()
-            .find(|(_, &s)| s == sym)
+            .find(|&(_, &s)| s == sym)
         {
             u32::try_from(i).unwrap_or(0)
         } else {
@@ -1724,7 +1724,7 @@ impl GrammarBuilder {
             .expected_labels
             .iter()
             .enumerate()
-            .find(|(_, &s)| s == sym)
+            .find(|&(_, &s)| s == sym)
         {
             u32::try_from(i).unwrap_or(0)
         } else {

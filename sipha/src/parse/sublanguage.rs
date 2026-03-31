@@ -132,7 +132,7 @@ pub fn apply_sublanguages(
                         let embedded_ctx = sublanguages[i]
                             .error_kind
                             .map(|k| ParseContext::new().with_error_node_kind(k))
-                            .unwrap_or_else(ParseContext::new);
+                            .unwrap_or_default();
 
                         let embedded_out = match engine.parse_with_context(
                             &sublanguages[i].embedded,

@@ -1,8 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{
-    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Error, Expr, Fields,
-};
+use syn::{parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Error, Expr, Fields};
 
 fn parse_kind_expr(attrs: &[Attribute]) -> Result<Expr, Error> {
     for attr in attrs {
@@ -21,9 +19,8 @@ fn parse_kind_expr(attrs: &[Attribute]) -> Result<Expr, Error> {
             }
         })?;
 
-        return kind_expr.ok_or_else(|| {
-            Error::new_spanned(attr, "missing `kind = ...` in #[ast(...)]")
-        });
+        return kind_expr
+            .ok_or_else(|| Error::new_spanned(attr, "missing `kind = ...` in #[ast(...)]"));
     }
 
     Err(Error::new(
@@ -45,22 +42,17 @@ pub fn derive_ast_node(input: TokenStream) -> TokenStream {
     let field_access = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Unnamed(u) if u.unnamed.len() == 1 => quote!(self.0),
-            _ => {
-                return Error::new(
-                    s.fields.span(),
-                    "AstNode can only be derived for tuple structs with exactly one field (SyntaxNode)",
-                )
-                .to_compile_error()
-                .into()
-            }
-        },
-        Data::Enum(e) => {
-            return Error::new(
-                e.enum_token.span,
-                "AstNode can only be derived for structs",
+            _ => return Error::new(
+                s.fields.span(),
+                "AstNode can only be derived for tuple structs with exactly one field (SyntaxNode)",
             )
             .to_compile_error()
-            .into()
+            .into(),
+        },
+        Data::Enum(e) => {
+            return Error::new(e.enum_token.span, "AstNode can only be derived for structs")
+                .to_compile_error()
+                .into()
         }
         Data::Union(u) => {
             return Error::new(
@@ -92,4 +84,3 @@ pub fn derive_ast_node(input: TokenStream) -> TokenStream {
     }
     .into()
 }
-

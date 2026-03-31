@@ -98,6 +98,8 @@ impl LineIndex {
     /// replaced with replacement character so column alignment is approximate.
     #[must_use]
     pub fn snippet_at(&self, source: &[u8], offset: Pos) -> String {
+        use core::fmt::Write as _;
+
         let (line_0, col_0) = self.line_col(offset);
         let line_1 = line_0 + 1;
         let span = self.line_range(line_0, source.len());
@@ -108,7 +110,6 @@ impl LineIndex {
         let caret_pos = col_0.min(col_limit) as usize;
 
         let mut out = String::with_capacity(trimmed.len() + 32);
-        use core::fmt::Write as _;
         let _ = writeln!(out, "  {line_1} | {trimmed}");
         out.push_str("      | ");
         out.extend(core::iter::repeat_n(' ', caret_pos));

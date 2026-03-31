@@ -615,12 +615,13 @@ impl SemanticDiagnostic {
         out.push_str(&line_index.snippet_at(source, self.span.start));
 
         if !self.related.is_empty() {
+            use core::fmt::Write as _;
             for rel in &self.related {
                 let (rl, rc) = line_index.line_col_1based(rel.span.start);
                 out.push_str("\n\nrelated: ");
                 out.push_str(&rel.message);
                 out.push_str(" at ");
-                out.push_str(&format!("{rl}:{rc}"));
+                let _ = write!(out, "{rl}:{rc}");
                 if (rel.span.start as usize) < source.len() {
                     out.push('\n');
                     out.push_str(&line_index.snippet_at(source, rel.span.start));

@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::parse::context::ParseContext;
 use crate::parse::engine::{Engine, ParseError, ParseOutput};
-use crate::parse::incremental::{reparse_with_output_and_stats, ReuseStats, TextEdit};
+use crate::parse::incremental::{ReuseStats, TextEdit, reparse_with_output_and_stats};
 use crate::parse::insn::ParseGraph;
 use crate::tree::green::{GreenElement, GreenNode};
 use crate::tree::red::SyntaxNode;

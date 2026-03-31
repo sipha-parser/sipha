@@ -1,7 +1,7 @@
 //! Parallel parsing helpers (requires `std` + `parallel`).
 //!
 //! This module is intentionally conservative: it parallelizes **across independent
-//! inputs** by running one [`Engine`](crate::parse::engine::Engine) per worker thread.
+//! inputs** by running one [`Engine`] per worker thread.
 //! A single PEG parse remains sequential.
 
 use rayon::prelude::*;

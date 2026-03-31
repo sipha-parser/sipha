@@ -1,8 +1,8 @@
 [package]
 name = "sipha"
 version = "3.0.0"
-edition = "2021"
-rust-version = "1.70"
+edition = "2024"
+rust-version = "1.85"
 description = "PEG parser, syntax trees, and code generation"
 license = "MIT"
 repository = "https://github.com/sipha-parser/sipha"
@@ -74,6 +74,10 @@ required-features = ["std"]
 
 [[example]]
 name = "tiny_lang_recovery"
+required-features = ["std"]
+
+[[example]]
+name = "parse_any_rule_typed_cst"
 required-features = ["std"]
 
 [[example]]

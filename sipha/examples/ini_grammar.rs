@@ -1,5 +1,5 @@
-use sipha::prelude::*;
 use sipha::SyntaxKinds;
+use sipha::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
 #[repr(u16)]
@@ -210,7 +210,11 @@ theme = dark # inline comment
 
     // Typed CST: find all pairs and headers with typed wrappers.
     let root: Root = doc.root().ast().unwrap();
-    let pair_count = root.syntax().descendant_nodes().filter_map(|n| n.ast::<Pair>()).count();
+    let pair_count = root
+        .syntax()
+        .descendant_nodes()
+        .filter_map(|n| n.ast::<Pair>())
+        .count();
     let header_count = root
         .syntax()
         .descendant_nodes()

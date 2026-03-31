@@ -7,7 +7,7 @@
 //! Requires the `walk` feature.
 
 use super::red::{SyntaxNode, SyntaxToken};
-use super::walk::{walk, Visitor, WalkOptions, WalkResult};
+use super::walk::{Visitor, WalkOptions, WalkResult, walk};
 
 /// Options for emitting a syntax tree to string.
 #[derive(Clone, Debug)]

@@ -79,9 +79,9 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub use sipha_macros::sipha_grammar;
 pub use sipha_macros::AstNode;
 pub use sipha_macros::SyntaxKinds;
+pub use sipha_macros::sipha_grammar;
 
 pub mod diagnostics;
 #[cfg(feature = "std")]
@@ -109,22 +109,22 @@ pub mod prelude {
         };
         #[cfg(feature = "std")]
         pub use crate::parse::expr::{
-            left_assoc_infix_level, postfix_chain, right_assoc_infix_level, separated1_rule_list,
-            separated_rule_list, LeftAssocInfixLevel,
+            LeftAssocInfixLevel, left_assoc_infix_level, postfix_chain, right_assoc_infix_level,
+            separated_rule_list, separated1_rule_list,
         };
         pub use crate::parse::insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph};
         #[cfg(feature = "std")]
         pub use crate::parse::memo::MemoTable;
         pub use crate::parse::sublanguage::{
-            apply_sublanguages, EmbeddedSpan, SubLanguage, SubLanguageError,
+            EmbeddedSpan, SubLanguage, SubLanguageError, apply_sublanguages,
         };
 
         #[cfg_attr(docsrs, doc(cfg(feature = "incremental")))]
         #[cfg(feature = "incremental")]
         pub use crate::parse::incremental::{
-            build_green_tree_with_reuse, build_green_tree_with_reuse_stats, reparse,
-            reparse_with_output, reparse_with_output_and_stats, ReparseResult, ReuseStats,
-            TextEdit,
+            ReparseResult, ReuseStats, TextEdit, build_green_tree_with_reuse,
+            build_green_tree_with_reuse_stats, reparse, reparse_with_output,
+            reparse_with_output_and_stats,
         };
 
         #[cfg(feature = "parallel")]
@@ -132,12 +132,12 @@ pub mod prelude {
 
         #[cfg(feature = "partial-reparse")]
         pub use crate::parse::partial_reparse::{
-            reparse_partial_or_fallback, PartialReparseConfig, PartialReparseResult,
+            PartialReparseConfig, PartialReparseResult, reparse_partial_or_fallback,
         };
 
         #[cfg(feature = "experimental_parallel_units")]
         pub use crate::parse::parallel_units::{
-            parse_units_parallel, stitch_unit_syntax_root, stitch_unit_trees, UnitRange,
+            UnitRange, parse_units_parallel, stitch_unit_syntax_root, stitch_unit_trees,
         };
     }
 
@@ -146,26 +146,26 @@ pub mod prelude {
         #[cfg(feature = "std")]
         pub use crate::tree::ast::{AstNode, AstNodeExt};
         #[cfg(feature = "std")]
-        pub use crate::tree::green::{build_green_tree, GreenElement, GreenNode, GreenToken};
+        pub use crate::tree::green::{GreenElement, GreenNode, GreenToken, build_green_tree};
         #[cfg(feature = "std")]
         pub use crate::tree::green_builder::GreenBuilder;
         #[cfg(feature = "std")]
         pub use crate::tree::red::{SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia};
         #[cfg(feature = "std")]
-        pub use crate::tree::tree_display::{format_syntax_tree, TreeDisplayOptions};
+        pub use crate::tree::tree_display::{TreeDisplayOptions, format_syntax_tree};
         #[cfg(feature = "std")]
         pub use crate::tree::trivia::{
             newline, replace_leading_trivia, replace_trailing_trivia, space,
         };
 
         #[cfg(feature = "walk")]
-        pub use crate::tree::walk::{walk, Visitor, WalkOptions, WalkResult};
+        pub use crate::tree::walk::{Visitor, WalkOptions, WalkResult, walk};
 
         #[cfg(feature = "emit")]
-        pub use crate::tree::emit::{syntax_root_to_string, EmitOptions};
+        pub use crate::tree::emit::{EmitOptions, syntax_root_to_string};
 
         #[cfg(feature = "transform")]
-        pub use crate::tree::transform::{transform, TransformResult, Transformer};
+        pub use crate::tree::transform::{TransformResult, Transformer, transform};
     }
 
     /// Line index, parsed document, span maps, and diagnostic types.
@@ -178,7 +178,7 @@ pub mod prelude {
         #[cfg(feature = "std")]
         pub use crate::diagnostics::parsed_doc::ParsedDoc;
         #[cfg(feature = "std")]
-        pub use crate::diagnostics::source_map::{map_offset, SpanMap, SpanMapping};
+        pub use crate::diagnostics::source_map::{SpanMap, SpanMapping, map_offset};
         pub use crate::diagnostics::{GrammarNames, SliceGrammarNames};
 
         #[cfg(feature = "miette")]
@@ -188,9 +188,8 @@ pub mod prelude {
 
         #[cfg(feature = "lsp")]
         pub use crate::diagnostics::lsp::{
-            byte_offset_to_position, parse_diagnostic_to_lsp, parse_error_to_lsp,
-            position_to_byte_offset, semantic_diagnostic_to_lsp, span_to_range, LspDiagnostic,
-            Position, Range,
+            LspDiagnostic, Position, Range, byte_offset_to_position, parse_diagnostic_to_lsp,
+            parse_error_to_lsp, position_to_byte_offset, semantic_diagnostic_to_lsp, span_to_range,
         };
 
         #[cfg(feature = "utf16")]
@@ -209,7 +208,7 @@ pub mod prelude {
 
         #[cfg(feature = "display")]
         pub use crate::extras::display::{
-            to_cfg_dot, to_peg, to_rule_dep_dot, to_rule_dep_dot_with_options, RuleDepDotOptions,
+            RuleDepDotOptions, to_cfg_dot, to_peg, to_rule_dep_dot, to_rule_dep_dot_with_options,
         };
 
         #[cfg(feature = "sourcemap")]
@@ -220,59 +219,59 @@ pub mod prelude {
 
         #[cfg(feature = "diff")]
         pub use crate::extras::diff::{
-            assert_parse_eq, format_diff, syntax_node_to_sexp, trees_equal, trees_equal_semantic,
-            SexpOptions,
+            SexpOptions, assert_parse_eq, format_diff, syntax_node_to_sexp, trees_equal,
+            trees_equal_semantic,
         };
     }
 
-    #[cfg(feature = "std")]
-    pub use self::diagnostics::{map_offset, SpanMap, SpanMapping};
     #[cfg(feature = "std")]
     pub use self::diagnostics::{
         Diagnostic, ErrorContext, Expected, GrammarNames, LineIndex, ParsedDoc, RelatedLocation,
         SemanticDiagnostic, Severity, SliceGrammarNames,
     };
-    #[cfg(feature = "std")]
-    pub use crate::parse::parse_to_doc::parse_to_doc;
     #[cfg(not(feature = "std"))]
     pub use self::diagnostics::{
         Diagnostic, ErrorContext, Expected, GrammarNames, SliceGrammarNames,
     };
     #[cfg(feature = "std")]
+    pub use self::diagnostics::{SpanMap, SpanMapping, map_offset};
+    #[cfg(feature = "std")]
     pub use self::parse::{
-        apply_sublanguages, left_assoc_infix_level, right_assoc_infix_level, BadGraphKind,
-        BuiltGraph, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable, GrammarBuilder, Insn,
-        LeftAssocInfixLevel, LiteralTable, MemoTable, ParseContext, ParseError, ParseGraph,
-        ParseOutput, RecoverMultiResult, Repeat, SubLanguage, SubLanguageError,
+        BadGraphKind, BuiltGraph, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable,
+        GrammarBuilder, Insn, LeftAssocInfixLevel, LiteralTable, MemoTable, ParseContext,
+        ParseError, ParseGraph, ParseOutput, RecoverMultiResult, Repeat, SubLanguage,
+        SubLanguageError, apply_sublanguages, left_assoc_infix_level, right_assoc_infix_level,
     };
     #[cfg(not(feature = "std"))]
     pub use self::parse::{
-        apply_sublanguages, BadGraphKind, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable,
-        Insn, LiteralTable, ParseContext, ParseError, ParseGraph, ParseOutput, RecoverMultiResult,
-        SubLanguage, SubLanguageError,
+        BadGraphKind, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable, Insn, LiteralTable,
+        ParseContext, ParseError, ParseGraph, ParseOutput, RecoverMultiResult, SubLanguage,
+        SubLanguageError, apply_sublanguages,
     };
+    #[cfg(feature = "std")]
+    pub use crate::parse::parse_to_doc::parse_to_doc;
 
     #[cfg(feature = "std")]
     pub use self::tree::{
-        build_green_tree, format_syntax_tree, newline, replace_leading_trivia,
-        replace_trailing_trivia, space, GreenBuilder, GreenElement, GreenNode, GreenToken,
-        SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia, TreeDisplayOptions,
+        GreenBuilder, GreenElement, GreenNode, GreenToken, SyntaxElement, SyntaxNode, SyntaxToken,
+        TokenWithTrivia, TreeDisplayOptions, build_green_tree, format_syntax_tree, newline,
+        replace_leading_trivia, replace_trailing_trivia, space,
     };
     #[cfg(feature = "std")]
     pub use crate::tree::ast::{AstNode, AstNodeExt};
     pub use crate::types::{
-        classes, sort_spans, CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag,
-        TreeEvent,
+        CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag, TreeEvent, classes,
+        sort_spans,
     };
 
     #[cfg(feature = "walk")]
-    pub use self::tree::{walk, Visitor, WalkOptions, WalkResult};
+    pub use self::tree::{Visitor, WalkOptions, WalkResult, walk};
 
     #[cfg(feature = "emit")]
-    pub use self::tree::{syntax_root_to_string, EmitOptions};
+    pub use self::tree::{EmitOptions, syntax_root_to_string};
 
     #[cfg(feature = "transform")]
-    pub use self::tree::{transform, TransformResult, Transformer};
+    pub use self::tree::{TransformResult, Transformer, transform};
 
     #[cfg(feature = "miette")]
     pub use self::diagnostics::{MietteParseDiagnostic, MietteSemanticDiagnostic};
@@ -288,7 +287,7 @@ pub mod prelude {
 
     #[cfg(all(feature = "std", feature = "display"))]
     pub use self::extras::{
-        to_cfg_dot, to_peg, to_rule_dep_dot, to_rule_dep_dot_with_options, RuleDepDotOptions,
+        RuleDepDotOptions, to_cfg_dot, to_peg, to_rule_dep_dot, to_rule_dep_dot_with_options,
     };
 
     #[cfg(feature = "sourcemap")]
@@ -299,15 +298,16 @@ pub mod prelude {
 
     #[cfg(feature = "diff")]
     pub use self::extras::{
-        assert_parse_eq, format_diff, syntax_node_to_sexp, trees_equal, trees_equal_semantic,
-        SexpOptions,
+        SexpOptions, assert_parse_eq, format_diff, syntax_node_to_sexp, trees_equal,
+        trees_equal_semantic,
     };
 
     #[cfg_attr(docsrs, doc(cfg(feature = "incremental")))]
     #[cfg(feature = "incremental")]
     pub use self::parse::{
-        build_green_tree_with_reuse, build_green_tree_with_reuse_stats, reparse,
-        reparse_with_output, reparse_with_output_and_stats, ReparseResult, ReuseStats, TextEdit,
+        ReparseResult, ReuseStats, TextEdit, build_green_tree_with_reuse,
+        build_green_tree_with_reuse_stats, reparse, reparse_with_output,
+        reparse_with_output_and_stats,
     };
 
     #[cfg(feature = "parallel")]
@@ -315,11 +315,11 @@ pub mod prelude {
 
     #[cfg(feature = "partial-reparse")]
     pub use self::parse::{
-        reparse_partial_or_fallback, PartialReparseConfig, PartialReparseResult,
+        PartialReparseConfig, PartialReparseResult, reparse_partial_or_fallback,
     };
 
     #[cfg(feature = "experimental_parallel_units")]
     pub use self::parse::{
-        parse_units_parallel, stitch_unit_syntax_root, stitch_unit_trees, UnitRange,
+        UnitRange, parse_units_parallel, stitch_unit_syntax_root, stitch_unit_trees,
     };
 }

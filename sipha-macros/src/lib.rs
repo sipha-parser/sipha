@@ -4,10 +4,10 @@
 //!
 //! [sipha]: https://docs.rs/sipha
 
+mod ast_node;
 mod ir;
 mod lower;
 mod parse;
-mod ast_node;
 mod syntax_kinds;
 
 use proc_macro::TokenStream;
@@ -48,7 +48,7 @@ pub fn sipha_grammar(input: TokenStream) -> TokenStream {
     lower::lower_grammar(&grammar).into()
 }
 
-/// Derive [`IntoSyntaxKind`] and [`FromSyntaxKind`] for an enum of syntax kinds.
+/// Derive `IntoSyntaxKind` and `FromSyntaxKind` for an enum of syntax kinds.
 ///
 /// The enum must have `#[repr(u16)]`. Only unit variants are supported.
 #[proc_macro_derive(SyntaxKinds)]
