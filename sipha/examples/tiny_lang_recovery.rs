@@ -1,5 +1,5 @@
-use sipha::prelude::*;
 use sipha::SyntaxKinds;
+use sipha::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
 #[repr(u16)]
@@ -158,10 +158,8 @@ fn main() {
                 if let Some(doc) = ParsedDoc::from_slice(src, &multi.partial) {
                     // Typed CST on partial tree as well.
                     if let Some(root) = doc.root().ast::<Root>() {
-                        let stmts: Vec<Stmt> = sipha::tree::ast::AstNodeExt::children::<Stmt>(
-                            root.syntax(),
-                        )
-                        .collect();
+                        let stmts: Vec<Stmt> =
+                            sipha::tree::ast::AstNodeExt::children::<Stmt>(root.syntax()).collect();
                         println!("partial_stmts={}", stmts.len());
                     }
                     println!(

@@ -2,7 +2,7 @@ use crate::{parse::builder::GrammarBuilder, types::IntoSyntaxKind};
 
 use super::classes;
 
-/// ASCII keyword bytes plus "not followed by IDENT_CONT" boundary check.
+/// ASCII keyword bytes plus "not followed by `IDENT_CONT`" boundary check.
 ///
 /// Commonly used so `if` does not match the start of `ifdef`.
 #[inline]

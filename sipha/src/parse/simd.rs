@@ -74,7 +74,8 @@ pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
 #[inline]
 unsafe fn load_u128(p: *const u8) -> core::arch::x86_64::__m128i {
     use core::arch::x86_64::_mm_loadu_si128;
-    _mm_loadu_si128(p.cast())
+    // Rust 2024 requires explicit unsafe blocks inside `unsafe fn`.
+    unsafe { _mm_loadu_si128(p.cast()) }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -86,8 +87,8 @@ unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
 
     // Compare 16 bytes per iteration.
     while i + 16 <= n {
-        let va = load_u128(a.add(i));
-        let vb = load_u128(b.add(i));
+        let va = unsafe { load_u128(a.add(i)) };
+        let vb = unsafe { load_u128(b.add(i)) };
         let eq = _mm_cmpeq_epi8(va, vb);
         if _mm_movemask_epi8(eq) != 0xFFFF {
             return false;
@@ -96,7 +97,7 @@ unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
     }
 
     // Tail: up to 15 remaining bytes.
-    byte_eq_tail(a.add(i), b.add(i), n - i)
+    unsafe { byte_eq_tail(a.add(i), b.add(i), n - i) }
 }
 
 // ─── AVX2 (32-byte chunks) ───────────────────────────────────────────────────
@@ -107,7 +108,8 @@ unsafe fn eq_sse2(a: *const u8, b: *const u8, n: usize) -> bool {
 #[inline]
 unsafe fn load_u256(p: *const u8) -> core::arch::x86_64::__m256i {
     use core::arch::x86_64::_mm256_loadu_si256;
-    _mm256_loadu_si256(p.cast())
+    // Rust 2024 requires explicit unsafe blocks inside `unsafe fn`.
+    unsafe { _mm256_loadu_si256(p.cast()) }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -119,8 +121,8 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
 
     // Compare 32 bytes per iteration.
     while i + 32 <= n {
-        let va = load_u256(a.add(i));
-        let vb = load_u256(b.add(i));
+        let va = unsafe { load_u256(a.add(i)) };
+        let vb = unsafe { load_u256(b.add(i)) };
         let eq = _mm256_cmpeq_epi8(va, vb);
         // movemask returns i32; all 32 bits set is -1.
         if _mm256_movemask_epi8(eq) != -1i32 {
@@ -132,8 +134,8 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
     // Handle 16-byte residual (AVX2 implies SSE2).
     if i + 16 <= n {
         use core::arch::x86_64::{_mm_cmpeq_epi8, _mm_movemask_epi8};
-        let va = load_u128(a.add(i));
-        let vb = load_u128(b.add(i));
+        let va = unsafe { load_u128(a.add(i)) };
+        let vb = unsafe { load_u128(b.add(i)) };
         let eq = _mm_cmpeq_epi8(va, vb);
         if _mm_movemask_epi8(eq) != 0xFFFF {
             return false;
@@ -142,7 +144,7 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
     }
 
     // Final tail: up to 15 bytes.
-    byte_eq_tail(a.add(i), b.add(i), n - i)
+    unsafe { byte_eq_tail(a.add(i), b.add(i), n - i) }
 }
 
 // ─── Scalar tail ─────────────────────────────────────────────────────────────
@@ -152,7 +154,7 @@ unsafe fn eq_avx2(a: *const u8, b: *const u8, n: usize) -> bool {
 #[inline]
 unsafe fn byte_eq_tail(a: *const u8, b: *const u8, n: usize) -> bool {
     for i in 0..n {
-        if *a.add(i) != *b.add(i) {
+        if unsafe { *a.add(i) } != unsafe { *b.add(i) } {
             return false;
         }
     }

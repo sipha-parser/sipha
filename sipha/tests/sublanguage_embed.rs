@@ -1,7 +1,7 @@
 #![cfg(feature = "std")]
 
-use sipha::prelude::*;
 use sipha::SyntaxKinds;
+use sipha::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
 #[repr(u16)]

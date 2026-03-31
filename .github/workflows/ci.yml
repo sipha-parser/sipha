@@ -11,14 +11,14 @@ env:
 
 jobs:
   msrv:
-    name: MSRV (Rust 1.70) tests
+    name: MSRV (Rust 1.85) tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install Rust (MSRV)
-        uses: dtolnay/rust-toolchain@1.70.0
+        uses: dtolnay/rust-toolchain@1.85.0
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -117,17 +117,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-matrix-${{ matrix.flags }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-matrix-
 
       - name: Test sipha
         run: cargo test -p sipha ${{ matrix.flags }}

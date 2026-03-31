@@ -16,15 +16,9 @@ pub trait ParseTracer {
 
 /// Simple tracer that prints to stderr with indentation.
 #[cfg(feature = "std")]
+#[derive(Default)]
 pub struct PrintTracer {
     pub indent: usize,
-}
-
-#[cfg(feature = "std")]
-impl Default for PrintTracer {
-    fn default() -> Self {
-        Self { indent: 0 }
-    }
 }
 
 #[cfg(feature = "std")]

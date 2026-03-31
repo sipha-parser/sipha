@@ -95,12 +95,6 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-features
 
-      - name: Publish dry run (sipha-macros)
-        run: cargo publish -p sipha-macros --dry-run
-
-      - name: Publish dry run (sipha)
-        run: cargo publish -p sipha --dry-run
-
       - name: Publish sipha-macros
         run: cargo publish -p sipha-macros
 

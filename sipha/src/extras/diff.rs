@@ -8,9 +8,9 @@
 //! Use [`assert_parse_eq`] or the [`assert_parse!`](macro@crate::assert_parse) macro to compare a parsed
 //! tree against an expected S-expression string (e.g. `"(ROOT (EXPR (NUM \"1\")))"`).
 
-use crate::tree::emit::{syntax_root_to_string, EmitOptions};
+use crate::tree::emit::{EmitOptions, syntax_root_to_string};
 use crate::tree::red::SyntaxNode;
-pub use crate::tree::sexp::{syntax_node_to_sexp, SexpOptions};
+pub use crate::tree::sexp::{SexpOptions, syntax_node_to_sexp};
 
 /// Returns true if both trees emit the same string (same tokens and trivia).
 #[inline]

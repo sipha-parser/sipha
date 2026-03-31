@@ -350,7 +350,7 @@ fn format_char_class(class: CharClass) -> String {
     let mut ranges = Vec::new();
     for b in 0u8..=255 {
         if class.contains(b) {
-            if ranges.is_empty() || ranges.last().map_or(true, |(_, e)| *e != b.wrapping_sub(1)) {
+            if ranges.is_empty() || ranges.last().is_none_or(|(_, e)| *e != b.wrapping_sub(1)) {
                 ranges.push((b, b));
             } else {
                 let last = ranges.last_mut().unwrap();

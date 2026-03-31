@@ -42,7 +42,6 @@ impl TraceBuffer {
         self.full = false;
     }
 
-    #[must_use]
     pub fn steps(&self) -> impl Iterator<Item = &TraceStep> {
         let (a, b): (&[TraceStep], &[TraceStep]) = if self.full {
             (&self.buf[self.next..], &self.buf[..self.next])

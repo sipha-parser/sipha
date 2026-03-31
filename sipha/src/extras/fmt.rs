@@ -5,7 +5,7 @@
 
 use crate::tree::red::SyntaxNode;
 
-pub use crate::tree::emit::{syntax_root_to_string, EmitOptions};
+pub use crate::tree::emit::{EmitOptions, syntax_root_to_string};
 
 /// Format the tree to string, including all tokens and trivia (lossless round-trip).
 #[inline]

@@ -1,6 +1,6 @@
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use sipha::prelude::*;
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use sipha::SyntaxKinds;
+use sipha::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
 #[repr(u16)]

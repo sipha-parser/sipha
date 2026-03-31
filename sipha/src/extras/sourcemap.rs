@@ -11,7 +11,7 @@ use crate::tree::red::SyntaxNode;
 use crate::tree::transform::Transformer;
 use crate::types::Span;
 
-pub use crate::diagnostics::source_map::{map_offset, SpanMap, SpanMapping};
+pub use crate::diagnostics::source_map::{SpanMap, SpanMapping, map_offset};
 
 /// Run the transformer and build a span mapping from the new tree to the original.
 ///

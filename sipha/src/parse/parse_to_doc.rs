@@ -14,7 +14,7 @@ pub fn parse_to_doc(
 ) -> Result<ParsedDoc, ParseError> {
     let src = source.as_ref();
     let out = engine.parse(graph, src)?;
-    ParsedDoc::from_slice(src, &out)
-        .ok_or_else(|| ParseError::BadGraph(crate::parse::engine::BadGraphKind::InvalidTreeEvents))
+    ParsedDoc::from_slice(src, &out).ok_or(ParseError::BadGraph(
+        crate::parse::engine::BadGraphKind::InvalidTreeEvents,
+    ))
 }
-

@@ -5,7 +5,7 @@ mod graph;
 mod peg;
 
 pub use disasm::disasm;
-pub use graph::{to_cfg_dot, to_rule_dep_dot, to_rule_dep_dot_with_options, RuleDepDotOptions};
+pub use graph::{RuleDepDotOptions, to_cfg_dot, to_rule_dep_dot, to_rule_dep_dot_with_options};
 pub use peg::to_peg;
 
 #[cfg(test)]

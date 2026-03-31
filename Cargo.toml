@@ -2,6 +2,8 @@
 resolver = "2"
 members = ["sipha", "sipha-macros"]
 
+[workspace.lints]
+
 [workspace.lints.clippy]
-pedantic = "warn"
-nursery = "warn"
+result_large_err = "allow"
+too_many_arguments = "allow"

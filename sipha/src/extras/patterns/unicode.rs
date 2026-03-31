@@ -84,7 +84,7 @@ pub fn whitespace_char(g: &mut GrammarBuilder) {
 
 /// Match zero or more Unicode whitespace codepoints.
 pub fn whitespace0(g: &mut GrammarBuilder) {
-    g.zero_or_more(|g| whitespace_char(g));
+    g.zero_or_more(whitespace_char);
 }
 
 /// Match one or more Unicode whitespace codepoints.

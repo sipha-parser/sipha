@@ -102,7 +102,9 @@ fn main() {
     let mut engine = Engine::new();
 
     // Parse starting from *any* entry rule by name.
-    let expr_out = engine.parse_rule_named(&graph, b"123", "expr_root").unwrap();
+    let expr_out = engine
+        .parse_rule_named(&graph, b"123", "expr_root")
+        .unwrap();
     let expr_root = expr_out.syntax_root(b"123").unwrap();
     let typed_root: RootExpr = expr_root.ast().unwrap();
     let expr: Expr = typed_root.syntax().child().unwrap();
@@ -120,4 +122,3 @@ fn main() {
         .unwrap_err();
     eprintln!("expected failure: {err}");
 }
-

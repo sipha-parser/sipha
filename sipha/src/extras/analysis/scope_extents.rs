@@ -54,7 +54,7 @@ pub fn scope_at_offset<S: Copy>(extents: &[(S, (u32, u32))], offset: u32, defaul
     for (scope_id, (start, end)) in extents {
         if *start <= offset && offset < *end {
             let len = end - start;
-            if best.as_ref().map_or(true, |(_, best_len)| len < *best_len) {
+            if best.is_none_or(|(_, best_len)| len < best_len) {
                 best = Some((*scope_id, len));
             }
         }

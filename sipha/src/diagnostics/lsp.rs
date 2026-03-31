@@ -34,12 +34,12 @@ pub fn position_to_byte_offset(doc: &ParsedDoc, pos: Position) -> Option<Pos> {
         .line_col_utf16_to_byte(doc.source_str(), pos.line, pos.character)
 }
 
-fn severity_to_lsp(sev: Severity) -> Option<DiagnosticSeverity> {
+const fn severity_to_lsp(sev: Severity) -> DiagnosticSeverity {
     match sev {
-        Severity::Error => Some(DiagnosticSeverity::ERROR),
-        Severity::Warning => Some(DiagnosticSeverity::WARNING),
-        Severity::Deprecation => Some(DiagnosticSeverity::HINT),
-        Severity::Note => Some(DiagnosticSeverity::INFORMATION),
+        Severity::Error => DiagnosticSeverity::ERROR,
+        Severity::Warning => DiagnosticSeverity::WARNING,
+        Severity::Deprecation => DiagnosticSeverity::HINT,
+        Severity::Note => DiagnosticSeverity::INFORMATION,
     }
 }
 
@@ -67,11 +67,8 @@ pub fn parse_diagnostic_to_lsp(doc: &ParsedDoc, diag: &Diagnostic) -> LspDiagnos
 pub fn semantic_diagnostic_to_lsp(doc: &ParsedDoc, diag: &SemanticDiagnostic) -> LspDiagnostic {
     LspDiagnostic {
         range: span_to_range(doc, diag.span),
-        severity: severity_to_lsp(diag.severity),
-        code: diag
-            .code
-            .clone()
-            .map(lsp_types::NumberOrString::String),
+        severity: Some(severity_to_lsp(diag.severity)),
+        code: diag.code.clone().map(lsp_types::NumberOrString::String),
         code_description: None,
         source: Some("sipha".to_string()),
         message: diag.message.clone(),
@@ -92,4 +89,3 @@ pub fn parse_error_to_lsp(doc: &ParsedDoc, err: &ParseError) -> Option<LspDiagno
         ParseError::BadGraph(_) | ParseError::UnknownRuleName(_) => None,
     }
 }
-

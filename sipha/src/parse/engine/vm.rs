@@ -1,9 +1,9 @@
-use super::error::{no_match, BadGraphKind, ParseError};
+#[cfg(feature = "trace")]
+use super::VmObserver;
+use super::error::{BadGraphKind, ParseError, no_match};
 use super::flags::{flag_is_set, restore_snapshot};
 use super::frames::{Frame, SnapEntry};
 use super::utf8::decode_utf8;
-#[cfg(feature = "trace")]
-use super::VmObserver;
 use crate::diagnostics::error::{ErrorContext, Expected};
 use crate::parse::context::FlagMask;
 use crate::parse::insn::{Insn, ParseGraph};
@@ -886,10 +886,11 @@ mod tests {
             !diag.expected.is_empty(),
             "diagnostic should list expected tokens"
         );
-        assert!(diag
-            .expected
-            .iter()
-            .any(|e| matches!(e, Expected::Byte(0x61))));
+        assert!(
+            diag.expected
+                .iter()
+                .any(|e| matches!(e, Expected::Byte(0x61)))
+        );
     }
 
     #[test]

@@ -168,7 +168,7 @@ pub fn to_rule_dep_dot_with_options(graph: &BuiltGraph, opts: &RuleDepDotOptions
         .rule_names
         .iter()
         .enumerate()
-        .find(|(_, &sym)| graph.strings.resolve(sym) == "start")
+        .find(|&(_, &sym)| graph.strings.resolve(sym) == "start")
         .map_or(0, |(i, _)| i);
     let visible: HashSet<usize> = if opts.reachable_only && !graph.rule_names.is_empty() {
         reachable_rules_from(graph, start_rule)
@@ -180,7 +180,7 @@ pub fn to_rule_dep_dot_with_options(graph: &BuiltGraph, opts: &RuleDepDotOptions
         "digraph {\n\
          \tgraph [rankdir=LR, nodesep=0.5, ranksep=0.8, fontname=\"Helvetica\", fontsize=11, splines=line];\n\
          \tnode [shape=box, fontname=\"Helvetica\", fontsize=10, margin=\"0.25,0.15\", style=\"rounded,filled\", fillcolor=\"#f1f5f9\", color=\"#475569\"];\n\
-         \tedge [fontname=\"Helvetica\", fontsize=9, color=\"#6b7280\"];\n\n"
+         \tedge [fontname=\"Helvetica\", fontsize=9, color=\"#6b7280\"];\n\n",
     );
 
     // Emit node attributes for styling (so every visible node gets a style)

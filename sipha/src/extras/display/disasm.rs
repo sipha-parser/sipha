@@ -94,13 +94,15 @@ fn format_insn(graph: &BuiltGraph, _ip: InsnId, insn: Insn) -> String {
         Insn::PopFlags => "PopFlags".to_string(),
         Insn::CaptureBegin { tag } => format!("CaptureBegin tag={tag}"),
         Insn::CaptureEnd { tag } => format!("CaptureEnd tag={tag}"),
-        Insn::NodeBegin { kind, field } => match field {
-            Some(f) => format!(
-                "NodeBegin kind={kind} field={:?}",
-                graph.strings.resolve(graph.field_names[f as usize])
-            ),
-            None => format!("NodeBegin kind={kind}"),
-        },
+        Insn::NodeBegin { kind, field } => field.map_or_else(
+            || format!("NodeBegin kind={kind}"),
+            |f| {
+                format!(
+                    "NodeBegin kind={kind} field={:?}",
+                    graph.strings.resolve(graph.field_names[f as usize])
+                )
+            },
+        ),
         Insn::NodeEnd => "NodeEnd".to_string(),
         Insn::TokenBegin { kind, is_trivia } => {
             format!("TokenBegin kind={kind} trivia={is_trivia}")
@@ -132,14 +134,14 @@ fn format_insn(graph: &BuiltGraph, _ip: InsnId, insn: Insn) -> String {
 }
 
 fn resolve_label(graph: &BuiltGraph, table: &[SymbolId], label_id: u32, kind: &str) -> String {
-    match table
+    table
         .get(label_id as usize)
         .copied()
         .or_else(|| table.first().copied())
-    {
-        Some(sym) => graph.strings.resolve(sym).to_string(),
-        None => format!("{kind}_label#{label_id}"),
-    }
+        .map_or_else(
+            || format!("{kind}_label#{label_id}"),
+            |sym| graph.strings.resolve(sym).to_string(),
+        )
 }
 
 fn get_literal(graph: &BuiltGraph, id: u32) -> &[u8] {
