@@ -1,8 +1,6 @@
 use sipha::prelude::*;
-use sipha::SyntaxKinds;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
-#[repr(u16)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MdK {
     Root,
     CodeFence,
@@ -13,16 +11,59 @@ enum MdK {
     Newline,
     Ws,
     // embedded wrapper
-    Embedded,
+    EmbeddedWrapper,
     // json
-    JsonRoot,
-    JsonObj,
-    JsonString,
-    JsonLBrace,
-    JsonRBrace,
-    JsonColon,
-    JsonComma,
-    JsonWs,
+    Embedded(JsonK),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::SyntaxKinds)]
+#[repr(u16)]
+enum JsonK {
+    Root,
+    Obj,
+    String,
+    LBrace,
+    RBrace,
+    Colon,
+    Comma,
+    Ws,
+}
+
+impl sipha::types::IntoSyntaxKind for MdK {
+    #[inline]
+    fn into_syntax_kind(self) -> sipha::types::SyntaxKind {
+        const BASE_COUNT: u16 = 9; // MdK unit variants, up to EmbeddedWrapper
+        match self {
+            MdK::Root => 0,
+            MdK::CodeFence => 1,
+            MdK::CodeLang => 2,
+            MdK::CodeBody => 3,
+            MdK::Text => 4,
+            MdK::Ticks => 5,
+            MdK::Newline => 6,
+            MdK::Ws => 7,
+            MdK::EmbeddedWrapper => 8,
+            MdK::Embedded(jk) => BASE_COUNT + jk.into_syntax_kind(),
+        }
+    }
+}
+
+impl sipha::types::FromSyntaxKind for MdK {
+    fn from_syntax_kind(k: sipha::types::SyntaxKind) -> Option<Self> {
+        const BASE_COUNT: u16 = 9; // MdK unit variants, up to EmbeddedWrapper
+        match k {
+            0 => Some(MdK::Root),
+            1 => Some(MdK::CodeFence),
+            2 => Some(MdK::CodeLang),
+            3 => Some(MdK::CodeBody),
+            4 => Some(MdK::Text),
+            5 => Some(MdK::Ticks),
+            6 => Some(MdK::Newline),
+            7 => Some(MdK::Ws),
+            8 => Some(MdK::EmbeddedWrapper),
+            _ => JsonK::from_syntax_kind(k - BASE_COUNT).map(MdK::Embedded),
+        }
+    }
 }
 
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
@@ -35,15 +76,15 @@ fn kind_name(k: SyntaxKind) -> Option<&'static str> {
         MdK::Ticks => "TICKS",
         MdK::Newline => "NEWLINE",
         MdK::Ws => "WS",
-        MdK::Embedded => "EMBEDDED",
-        MdK::JsonRoot => "JSON_ROOT",
-        MdK::JsonObj => "JSON_OBJ",
-        MdK::JsonString => "JSON_STRING",
-        MdK::JsonLBrace => "JSON_LBRACE",
-        MdK::JsonRBrace => "JSON_RBRACE",
-        MdK::JsonColon => "JSON_COLON",
-        MdK::JsonComma => "JSON_COMMA",
-        MdK::JsonWs => "JSON_WS",
+        MdK::EmbeddedWrapper => "EMBEDDED",
+        MdK::Embedded(JsonK::Root) => "JSON_ROOT",
+        MdK::Embedded(JsonK::Obj) => "JSON_OBJ",
+        MdK::Embedded(JsonK::String) => "JSON_STRING",
+        MdK::Embedded(JsonK::LBrace) => "JSON_LBRACE",
+        MdK::Embedded(JsonK::RBrace) => "JSON_RBRACE",
+        MdK::Embedded(JsonK::Colon) => "JSON_COLON",
+        MdK::Embedded(JsonK::Comma) => "JSON_COMMA",
+        MdK::Embedded(JsonK::Ws) => "JSON_WS",
     })
 }
 
@@ -150,7 +191,7 @@ fn json_grammar() -> BuiltGraph {
 
     // The first defined rule is the grammar entrypoint.
     g.parser_rule("start", |g| {
-        g.node(MdK::JsonRoot, |g| {
+        g.node(MdK::Embedded(JsonK::Root), |g| {
             g.call("object");
             g.skip();
         });
@@ -159,7 +200,7 @@ fn json_grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("jws", |g| {
-        g.trivia(MdK::JsonWs, |g| {
+        g.trivia(MdK::Embedded(JsonK::Ws), |g| {
             g.zero_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -167,7 +208,7 @@ fn json_grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("jstring", |g| {
-        g.token(MdK::JsonString, |g| {
+        g.token(MdK::Embedded(JsonK::String), |g| {
             g.byte(b'"');
             g.zero_or_more(|g| {
                 g.neg_lookahead(|g| {
@@ -180,28 +221,28 @@ fn json_grammar() -> BuiltGraph {
     });
 
     g.parser_rule("lbrace", |g| {
-        g.token(MdK::JsonLBrace, |g| {
+        g.token(MdK::Embedded(JsonK::LBrace), |g| {
             g.byte(b'{');
         });
     });
     g.parser_rule("rbrace", |g| {
-        g.token(MdK::JsonRBrace, |g| {
+        g.token(MdK::Embedded(JsonK::RBrace), |g| {
             g.byte(b'}');
         });
     });
     g.parser_rule("colon", |g| {
-        g.token(MdK::JsonColon, |g| {
+        g.token(MdK::Embedded(JsonK::Colon), |g| {
             g.byte(b':');
         });
     });
     g.parser_rule("comma", |g| {
-        g.token(MdK::JsonComma, |g| {
+        g.token(MdK::Embedded(JsonK::Comma), |g| {
             g.byte(b',');
         });
     });
 
     g.parser_rule("pair", |g| {
-        g.node(MdK::JsonObj, |g| {
+        g.node(MdK::Embedded(JsonK::Obj), |g| {
             g.call("jstring");
             g.call("colon");
             g.call("jstring");
@@ -210,7 +251,7 @@ fn json_grammar() -> BuiltGraph {
 
     g.parser_rule("object", |g| {
         g.context_rule("json-object", |g| {
-            g.node(MdK::JsonObj, |g| {
+            g.node(MdK::Embedded(JsonK::Obj), |g| {
                 g.trace("json object");
                 g.call("lbrace");
                 g.optional(|g| {
@@ -242,20 +283,26 @@ fn main() {
         src,
         &host_out.tree_events,
         &[SubLanguage {
-            host_kind: MdK::CodeFence as SyntaxKind,
-            span: EmbeddedSpan::TokenKind(MdK::CodeBody as SyntaxKind),
+            host_kind: MdK::CodeFence.into_syntax_kind(),
+            span: EmbeddedSpan::TokenKind(MdK::CodeBody.into_syntax_kind()),
             embedded: json.as_graph(),
-            wrapper_kind: Some(MdK::Embedded as SyntaxKind),
-            error_kind: Some(MdK::Embedded as SyntaxKind),
+            wrapper_kind: Some(MdK::EmbeddedWrapper.into_syntax_kind()),
+            error_kind: Some(MdK::EmbeddedWrapper.into_syntax_kind()),
         }],
     );
 
     assert!(errors.is_empty(), "{errors:#?}");
     let green = sipha::tree::green::build_green_tree(src, &tree_events).unwrap();
     let root = sipha::tree::red::SyntaxNode::new_root(green);
+    let options = TreeDisplayOptions {
+        show_ranges: true,
+        show_offsets: true,
+        align_columns: true,
+        ..TreeDisplayOptions::default()
+    };
     println!(
         "{}",
-        sipha::tree::tree_display::format_syntax_tree(&root, &TreeDisplayOptions::default(), |k| {
+        sipha::tree::tree_display::format_syntax_tree(&root, &options, |k| {
             kind_name(k).unwrap_or("?").to_string()
         })
     );
