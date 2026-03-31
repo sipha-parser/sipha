@@ -66,6 +66,49 @@ let doc = ParsedDoc::from_slice(source_bytes, &out).unwrap();
 let root: &SyntaxNode = doc.root();
 ```
 
+## LSP integration (UTF-16 positions + diagnostics)
+
+Sipha uses **byte offsets** (`Pos`) and byte spans (`Span`) internally. LSP uses
+**UTF-16 code units** for `Position.character`, so you need conversions when
+implementing an LSP server.
+
+Enable features:
+
+```toml
+[dependencies]
+sipha = { version = "3", features = ["lsp"] }
+```
+
+Then you can:
+
+- Convert byte spans to LSP ranges (UTF-16):
+
+```rust
+use sipha::prelude::*;
+
+let range: Range = sipha::diagnostics::lsp::span_to_range(&doc, Span::new(0, 1));
+```
+
+- Convert parse errors into LSP diagnostics:
+
+```rust
+use sipha::prelude::*;
+
+let err: ParseError = /* engine.parse(...).unwrap_err() */;
+if let Some(diag) = sipha::diagnostics::lsp::parse_error_to_lsp(&doc, &err) {
+    // send `diag` to the client
+}
+```
+
+- Convert an LSP cursor position back to a byte offset:
+
+```rust
+use sipha::prelude::*;
+
+let pos = Position { line: 0, character: 3 };
+let byte_offset: Option<Pos> = sipha::diagnostics::lsp::position_to_byte_offset(&doc, pos);
+```
+
 ## S-expression snapshots for tests
 
 For grammar tests, comparing the full pretty tree output can be noisy. Use the built-in S-expression serializer:

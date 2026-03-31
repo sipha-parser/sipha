@@ -216,6 +216,24 @@ pub struct Diagnostic {
 const MAX_EXPECTED_DISPLAY: usize = 10;
 
 impl Diagnostic {
+    /// Primary source span to highlight for this parse error.
+    ///
+    /// Parse diagnostics are typically anchored at a single byte offset
+    /// ([`furthest`](Diagnostic::furthest)). This helper turns that point into a
+    /// usable span for editor integrations:
+    ///
+    /// - If `furthest < source_len`, highlights `[furthest, furthest + 1)`.
+    /// - If `furthest >= source_len`, highlights an empty span at EOF.
+    #[must_use]
+    pub fn primary_span(&self, source_len: usize) -> Span {
+        let len_pos = Pos::try_from(source_len).unwrap_or(Pos::MAX);
+        let start = self.furthest.min(len_pos);
+        if start >= len_pos {
+            return Span::new(len_pos, len_pos);
+        }
+        Span::new(start, (start + 1).min(len_pos))
+    }
+
     #[inline]
     fn context_lines(&self, names: Option<&dyn GrammarNames>) -> Vec<String> {
         self.context_chain

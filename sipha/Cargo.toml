@@ -27,6 +27,7 @@ emit = ["walk"]
 transform = []
 miette = ["dep:miette"]
 utf16 = []
+lsp = ["std", "utf16", "dep:lsp-types"]
 analysis = ["walk"]
 display = ["std"]
 sourcemap = ["transform"]
@@ -39,6 +40,7 @@ trace = []
 [dependencies]
 sipha-macros = { path = "../sipha-macros", version = "3.0" }
 miette = { version = "7", optional = true }
+lsp-types = { version = "0.97", optional = true }
 proc-macro2 = "1"
 quote = "1"
 prettyplease = { version = "0.2", optional = true }
@@ -73,3 +75,7 @@ required-features = ["std"]
 [[example]]
 name = "tiny_lang_recovery"
 required-features = ["std"]
+
+[[example]]
+name = "lsp_diagnostics"
+required-features = ["lsp"]

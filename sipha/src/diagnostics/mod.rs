@@ -14,5 +14,8 @@ pub mod source_map;
 #[cfg(feature = "utf16")]
 pub mod utf16;
 
+#[cfg(feature = "lsp")]
+pub mod lsp;
+
 #[cfg(feature = "miette")]
 pub mod miette_support;

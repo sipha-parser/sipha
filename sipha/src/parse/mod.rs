@@ -26,5 +26,7 @@ pub mod simd;
 pub mod string_table;
 
 pub mod engine;
+#[cfg(feature = "std")]
+pub mod parse_to_doc;
 
 pub mod sublanguage;

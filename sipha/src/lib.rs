@@ -186,6 +186,13 @@ pub mod prelude {
             MietteParseDiagnostic, MietteSemanticDiagnostic,
         };
 
+        #[cfg(feature = "lsp")]
+        pub use crate::diagnostics::lsp::{
+            byte_offset_to_position, parse_diagnostic_to_lsp, parse_error_to_lsp,
+            position_to_byte_offset, semantic_diagnostic_to_lsp, span_to_range, LspDiagnostic,
+            Position, Range,
+        };
+
         #[cfg(feature = "utf16")]
         pub use crate::diagnostics::utf16::{byte_offset_to_utf16, span_to_utf16_range, utf16_len};
     }
@@ -225,6 +232,8 @@ pub mod prelude {
         Diagnostic, ErrorContext, Expected, GrammarNames, LineIndex, ParsedDoc, RelatedLocation,
         SemanticDiagnostic, Severity, SliceGrammarNames,
     };
+    #[cfg(feature = "std")]
+    pub use crate::parse::parse_to_doc::parse_to_doc;
     #[cfg(not(feature = "std"))]
     pub use self::diagnostics::{
         Diagnostic, ErrorContext, Expected, GrammarNames, SliceGrammarNames,

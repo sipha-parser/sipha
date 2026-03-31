@@ -171,11 +171,43 @@ impl LineIndex {
         let line_src = source.get(line_start..line_end)?;
         let mut utf16_col = 0u32;
         for (i, c) in line_src.char_indices() {
-            if utf16_col >= character {
+            if utf16_col == character {
                 return Pos::try_from(line_start + i).ok();
+            }
+            if utf16_col > character {
+                // `character` points into the middle of a codepoint (shouldn't happen for
+                // valid LSP positions). Treat as invalid.
+                return None;
             }
             utf16_col += u32::try_from(c.len_utf16()).ok()?;
         }
+        if utf16_col == character {
+            Pos::try_from(line_start + line_src.len()).ok()
+        } else {
+            None
+        }
+    }
+
+    /// Convert (line, character) in UTF-16 code units to a byte offset, clamping out-of-range.
+    ///
+    /// If `(line, character)` is past the end of the line, returns the end-of-line offset.
+    /// This can be useful for editor cursors that may legally sit beyond EOL.
+    #[cfg(feature = "utf16")]
+    #[must_use]
+    pub fn line_col_utf16_to_byte_clamped(
+        &self,
+        source: &str,
+        line: u32,
+        character: u32,
+    ) -> Option<Pos> {
+        if let Some(p) = self.line_col_utf16_to_byte(source, line, character) {
+            return Some(p);
+        }
+        let line_start = self.line_start(line) as usize;
+        let source_len = source.len();
+        let line_span = self.line_range(line, source_len);
+        let line_end = line_span.end as usize;
+        let line_src = source.get(line_start..line_end)?;
         Pos::try_from(line_start + line_src.len()).ok()
     }
 
@@ -240,5 +272,32 @@ mod tests {
         let s = idx.snippet_at(src, 7);
         assert!(s.contains("let x = 1"));
         assert!(s.contains("^"));
+    }
+
+    #[cfg(feature = "utf16")]
+    #[test]
+    fn utf16_to_byte_out_of_range_returns_none() {
+        let src = "abc";
+        let idx = LineIndex::new(src.as_bytes());
+        // "abc" is 3 UTF-16 code units; asking for character 4 is past EOL.
+        assert_eq!(idx.line_col_utf16_to_byte(src, 0, 4), None);
+        assert!(idx.line_col_utf16_to_byte_clamped(src, 0, 4).is_some());
+    }
+
+    #[cfg(feature = "utf16")]
+    #[test]
+    fn utf16_to_byte_emoji_boundaries() {
+        // "x😀y" where 😀 is 2 UTF-16 code units.
+        let src = "x\u{1F600}y";
+        let idx = LineIndex::new(src.as_bytes());
+        let b0 = idx.line_col_utf16_to_byte(src, 0, 0).unwrap() as usize;
+        let b1 = idx.line_col_utf16_to_byte(src, 0, 1).unwrap() as usize;
+        let b3 = idx.line_col_utf16_to_byte(src, 0, 3).unwrap() as usize;
+        let b4 = idx.line_col_utf16_to_byte(src, 0, 4).unwrap() as usize;
+        assert_eq!(&src[b0..], src);
+        assert_eq!(&src[b1..], "\u{1F600}y");
+        // 3 UTF-16 code units means "x" + "😀" (2)
+        assert_eq!(&src[b3..], "y");
+        assert_eq!(b4, src.len());
     }
 }

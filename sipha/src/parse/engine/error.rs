@@ -36,6 +36,11 @@ pub enum BadGraphKind {
     PosOutOfRange { len: usize },
     /// `LiteralSmall` had an invalid length for its inline bytes.
     LiteralSmallLenOutOfRange { len: u8, bytes_len: u8 },
+    /// Parse output could not be converted into a valid syntax tree.
+    ///
+    /// This indicates an internal invariant violation (malformed builder/codegen output),
+    /// not a user source error.
+    InvalidTreeEvents,
 }
 
 impl core::fmt::Display for BadGraphKind {
@@ -80,6 +85,9 @@ impl core::fmt::Display for BadGraphKind {
                     f,
                     "`LiteralSmall` len out of range (len={len}, bytes_len={bytes_len})"
                 )
+            }
+            Self::InvalidTreeEvents => {
+                write!(f, "invalid tree events in parse output")
             }
         }
     }
