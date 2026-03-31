@@ -24,8 +24,23 @@
 //! [`Diagnostic::format_with_source`] with a [`LineIndex`].
 
 use super::grammar_names::GrammarNames;
+#[cfg(feature = "std")]
 use super::line_index::LineIndex;
+use crate::parse::string_table::SymbolId;
 use crate::{parse::insn::LiteralTable, types::Pos, types::RuleId, types::Span};
+
+#[cfg(not(feature = "std"))]
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+#[cfg(feature = "std")]
+use std::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 // ─── Expected token ───────────────────────────────────────────────────────────
 
@@ -95,7 +110,7 @@ impl Expected {
             Self::Literal(lit_id) => {
                 if let Some(tbl) = literals {
                     let bytes = tbl.get(*lit_id);
-                    if let Ok(s) = std::str::from_utf8(bytes) {
+                    if let Ok(s) = core::str::from_utf8(bytes) {
                         return format!("{s:?}");
                     }
                     format!("0x{bytes:X?}")
@@ -188,14 +203,55 @@ pub struct Diagnostic {
     pub furthest: Pos,
     /// What the parser expected to find at [`furthest`](Diagnostic::furthest).
     pub expected: Vec<Expected>,
-    /// Optional hints (e.g. "did you mean 'x'?", "add a semicolon here") shown after the expected message.
-    pub hints: Vec<&'static str>,
+    /// Optional hints (interned strings) shown after the expected message.
+    pub hints: Vec<SymbolId>,
+    /// Diagnostic context chain (innermost-first) captured when `furthest` advanced.
+    ///
+    /// Entries are `label_id`s that resolve through [`GrammarNames::expected_label`]
+    /// (or [`ParseGraph::expected_label`](crate::parse::insn::ParseGraph::expected_label)).
+    pub context_chain: Vec<u32>,
 }
 
 /// Maximum number of expected items to show before truncating with "(and N more)".
 const MAX_EXPECTED_DISPLAY: usize = 10;
 
 impl Diagnostic {
+    #[inline]
+    fn context_lines(&self, names: Option<&dyn GrammarNames>) -> Vec<String> {
+        self.context_chain
+            .iter()
+            .map(|&id| {
+                let label = names.and_then(|n| n.expected_label(id)).unwrap_or("?");
+                format!("  while parsing: {label}")
+            })
+            .collect()
+    }
+
+    #[inline]
+    fn hint_lines(&self, names: Option<&dyn GrammarNames>) -> Vec<String> {
+        self.hints
+            .iter()
+            .map(|&id| {
+                let s = names.and_then(|n| n.resolve_symbol(id)).unwrap_or("?");
+                format!("  hint: {s}")
+            })
+            .collect()
+    }
+
+    #[inline]
+    fn expected_string(
+        &self,
+        literals: Option<&LiteralTable<'_>>,
+        names: Option<&dyn GrammarNames>,
+    ) -> String {
+        let items: Vec<String> = self
+            .expected
+            .iter()
+            .map(|e| e.display(literals, names))
+            .collect();
+        format_expected_list(&items)
+    }
+
     /// Format the diagnostic using the grammar's literal, rule-name, and label tables (optional).
     ///
     /// If there are more than `MAX_EXPECTED_DISPLAY` (10) expected items, only the first
@@ -206,21 +262,19 @@ impl Diagnostic {
         literals: Option<&LiteralTable<'_>>,
         names: Option<&dyn GrammarNames>,
     ) -> String {
-        let items: Vec<String> = self
-            .expected
-            .iter()
-            .map(|e| e.display(literals, names))
-            .collect();
-
-        let expected_str = format_expected_list(&items);
+        let expected_str = self.expected_string(literals, names);
 
         let mut out = format!(
             "parse error at byte {}: expected {expected_str}",
             self.furthest
         );
-        for hint in &self.hints {
-            out.push_str("\n  hint: ");
-            out.push_str(hint);
+        for line in self.context_lines(names) {
+            out.push('\n');
+            out.push_str(&line);
+        }
+        for line in self.hint_lines(names) {
+            out.push('\n');
+            out.push_str(&line);
         }
         out
     }
@@ -230,6 +284,7 @@ impl Diagnostic {
     /// Uses `line_index` to resolve `furthest` to a line and column, then
     /// appends the line of source and a caret. If `source` is empty or
     /// `line_index` is for a different file, falls back to [`message`](Diagnostic::message).
+    #[cfg(feature = "std")]
     #[must_use]
     pub fn format_with_source(
         &self,
@@ -238,14 +293,7 @@ impl Diagnostic {
         literals: Option<&LiteralTable<'_>>,
         names: Option<&dyn GrammarNames>,
     ) -> String {
-        let expected_str = {
-            let items: Vec<String> = self
-                .expected
-                .iter()
-                .map(|e| e.display(literals, names))
-                .collect();
-            format_expected_list(&items)
-        };
+        let expected_str = self.expected_string(literals, names);
 
         let (line_1, col_1) = line_index.line_col_1based(self.furthest);
         let header = format!(
@@ -255,17 +303,25 @@ impl Diagnostic {
 
         if source.is_empty() || self.furthest as usize > source.len() {
             let mut out = header;
-            for hint in &self.hints {
-                out.push_str("\n  hint: ");
-                out.push_str(hint);
+            for line in self.context_lines(names) {
+                out.push('\n');
+                out.push_str(&line);
+            }
+            for line in self.hint_lines(names) {
+                out.push('\n');
+                out.push_str(&line);
             }
             return out;
         }
 
         let mut out = header;
-        for hint in &self.hints {
-            out.push_str("\n  hint: ");
-            out.push_str(hint);
+        for line in self.context_lines(names) {
+            out.push('\n');
+            out.push_str(&line);
+        }
+        for line in self.hint_lines(names) {
+            out.push('\n');
+            out.push_str(&line);
         }
         out.push('\n');
         out.push_str(&line_index.snippet_at(source, self.furthest));
@@ -273,8 +329,8 @@ impl Diagnostic {
     }
 }
 
-impl std::fmt::Display for Diagnostic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(&self.message(None, None))
     }
 }
@@ -312,8 +368,22 @@ pub struct ErrorContext {
     pub furthest: Pos,
     /// What the parser expected at `furthest` (deduplicated).
     pub expected: Vec<Expected>,
+    /// Diagnostic context chain captured when `furthest` advanced (innermost-first).
+    pub context_chain: Vec<u32>,
+    /// Hints (interned strings) attached to the furthest error position.
+    pub hints: Vec<SymbolId>,
     /// Scratch set for dedup (reused across `record` calls).
+    #[cfg(feature = "std")]
     seen: std::collections::HashSet<Expected>,
+    /// Scratch set for hint dedup.
+    #[cfg(feature = "std")]
+    seen_hints: std::collections::HashSet<SymbolId>,
+    /// no_std fallback: linear dedup set (small in practice).
+    #[cfg(not(feature = "std"))]
+    seen: alloc::vec::Vec<Expected>,
+    /// no_std fallback for hint dedup.
+    #[cfg(not(feature = "std"))]
+    seen_hints: alloc::vec::Vec<SymbolId>,
 }
 
 impl ErrorContext {
@@ -322,7 +392,16 @@ impl ErrorContext {
         Self {
             furthest: 0,
             expected: Vec::with_capacity(8),
+            context_chain: Vec::new(),
+            hints: Vec::new(),
+            #[cfg(feature = "std")]
             seen: std::collections::HashSet::with_capacity(8),
+            #[cfg(feature = "std")]
+            seen_hints: std::collections::HashSet::with_capacity(4),
+            #[cfg(not(feature = "std"))]
+            seen: alloc::vec::Vec::with_capacity(8),
+            #[cfg(not(feature = "std"))]
+            seen_hints: alloc::vec::Vec::with_capacity(4),
         }
     }
 
@@ -331,7 +410,10 @@ impl ErrorContext {
     pub fn clear(&mut self) {
         self.furthest = 0;
         self.expected.clear();
+        self.context_chain.clear();
+        self.hints.clear();
         self.seen.clear();
+        self.seen_hints.clear();
     }
 
     /// Record a terminal failure at `pos` expecting `what`.
@@ -339,15 +421,75 @@ impl ErrorContext {
     /// Only updates if `pos >= self.furthest`; clears existing expectations
     /// if `pos > self.furthest`.
     #[inline]
-    pub fn record(&mut self, pos: Pos, what: Expected) {
+    pub fn record(&mut self, pos: Pos, context_stack: &[u32], what: Expected) {
         if pos > self.furthest {
             self.furthest = pos;
+            self.context_chain.clear();
+            self.context_chain.extend_from_slice(context_stack);
+            self.hints.clear();
+            self.seen_hints.clear();
             self.expected.clear();
             self.seen.clear();
-            self.seen.insert(what.clone());
+            #[cfg(feature = "std")]
+            {
+                self.seen.insert(what.clone());
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                self.seen.push(what.clone());
+            }
             self.expected.push(what);
-        } else if pos == self.furthest && self.seen.insert(what.clone()) {
-            self.expected.push(what);
+        } else if pos == self.furthest {
+            #[cfg(feature = "std")]
+            let is_new = self.seen.insert(what.clone());
+            #[cfg(not(feature = "std"))]
+            let is_new = !self.seen.iter().any(|e| e == &what);
+            #[cfg(not(feature = "std"))]
+            if is_new {
+                self.seen.push(what.clone());
+            }
+            if is_new {
+                self.expected.push(what);
+            }
+        }
+    }
+
+    /// Record a dynamic hint at `pos`.
+    ///
+    /// If `pos` advances the furthest position, this resets the expected set and
+    /// context chain (so the hint stays coherent with subsequent expectations).
+    #[inline]
+    pub fn record_hint(&mut self, pos: Pos, context_stack: &[u32], hint_id: SymbolId) {
+        if pos > self.furthest {
+            self.furthest = pos;
+            self.context_chain.clear();
+            self.context_chain.extend_from_slice(context_stack);
+            self.expected.clear();
+            self.seen.clear();
+            self.hints.clear();
+            self.seen_hints.clear();
+
+            #[cfg(feature = "std")]
+            {
+                self.seen_hints.insert(hint_id);
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                self.seen_hints.push(hint_id);
+            }
+            self.hints.push(hint_id);
+        } else if pos == self.furthest {
+            #[cfg(feature = "std")]
+            let is_new = self.seen_hints.insert(hint_id);
+            #[cfg(not(feature = "std"))]
+            let is_new = !self.seen_hints.iter().any(|h| h == &hint_id);
+            #[cfg(not(feature = "std"))]
+            if is_new {
+                self.seen_hints.push(hint_id);
+            }
+            if is_new {
+                self.hints.push(hint_id);
+            }
         }
     }
 
@@ -357,7 +499,8 @@ impl ErrorContext {
         Diagnostic {
             furthest: self.furthest,
             expected: self.expected.clone(),
-            hints: Vec::new(),
+            hints: self.hints.clone(),
+            context_chain: self.context_chain.clone(),
         }
     }
 }
@@ -420,6 +563,7 @@ impl SemanticDiagnostic {
     /// Uses `line_index` to resolve `span.start` to a line and column, then
     /// appends the line of source and a caret. Callers can use [`ParsedDoc`](crate::diagnostics::parsed_doc::ParsedDoc)
     /// to get `source` and `line_index` from a successful parse.
+    #[cfg(feature = "std")]
     #[must_use]
     pub fn format_with_source(&self, source: &[u8], line_index: &LineIndex) -> String {
         let (line_1, col_1) = line_index.line_col_1based(self.span.start);
@@ -447,8 +591,26 @@ impl SemanticDiagnostic {
             return header;
         }
 
-        let snippet = line_index.snippet_at(source, self.span.start);
-        format!("{header}\n{snippet}")
+        let mut out = String::new();
+        out.push_str(&header);
+        out.push('\n');
+        out.push_str(&line_index.snippet_at(source, self.span.start));
+
+        if !self.related.is_empty() {
+            for rel in &self.related {
+                let (rl, rc) = line_index.line_col_1based(rel.span.start);
+                out.push_str("\n\nrelated: ");
+                out.push_str(&rel.message);
+                out.push_str(" at ");
+                out.push_str(&format!("{rl}:{rc}"));
+                if (rel.span.start as usize) < source.len() {
+                    out.push('\n');
+                    out.push_str(&line_index.snippet_at(source, rel.span.start));
+                }
+            }
+        }
+
+        out
     }
 
     /// Build a diagnostic for an error at the given span.
@@ -526,13 +688,15 @@ impl SemanticDiagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    extern crate alloc;
+    use alloc::vec;
 
     #[test]
     fn error_context_record_furthest() {
         let mut ctx = ErrorContext::new();
-        ctx.record(0, Expected::Byte(b'a'));
-        ctx.record(1, Expected::Byte(b'b'));
-        ctx.record(0, Expected::Byte(b'c')); // earlier, ignored
+        ctx.record(0, &[], Expected::Byte(b'a'));
+        ctx.record(1, &[], Expected::Byte(b'b'));
+        ctx.record(0, &[], Expected::Byte(b'c')); // earlier, ignored
         assert_eq!(ctx.furthest, 1);
         assert_eq!(ctx.expected.len(), 1);
         assert!(matches!(ctx.expected[0], Expected::Byte(b'b')));
@@ -541,9 +705,9 @@ mod tests {
     #[test]
     fn error_context_record_same_pos_dedup() {
         let mut ctx = ErrorContext::new();
-        ctx.record(5, Expected::Byte(b'x'));
-        ctx.record(5, Expected::EndOfInput);
-        ctx.record(5, Expected::Byte(b'x')); // duplicate, not added
+        ctx.record(5, &[], Expected::Byte(b'x'));
+        ctx.record(5, &[], Expected::EndOfInput);
+        ctx.record(5, &[], Expected::Byte(b'x')); // duplicate, not added
         assert_eq!(ctx.furthest, 5);
         assert_eq!(ctx.expected.len(), 2);
     }
@@ -551,11 +715,12 @@ mod tests {
     #[test]
     fn error_context_to_diagnostic() {
         let mut ctx = ErrorContext::new();
-        ctx.record(10, Expected::Literal(0));
-        ctx.record(10, Expected::EndOfInput);
+        ctx.record(10, &[], Expected::Literal(0));
+        ctx.record(10, &[], Expected::EndOfInput);
         let diag = ctx.to_diagnostic();
         assert_eq!(diag.furthest, 10);
         assert_eq!(diag.expected.len(), 2);
+        assert!(diag.hints.is_empty());
     }
 
     #[test]
@@ -580,5 +745,47 @@ mod tests {
         };
         assert_eq!(label.display(None, Some(&tables)), "statement");
         assert_eq!(label.display(None, None), "expected#0");
+    }
+
+    #[test]
+    fn error_context_snapshots_context_chain_on_furthest_advance() {
+        let mut ctx = ErrorContext::new();
+        // Initial furthest is 0; snapshotting only happens when furthest advances.
+        ctx.record(0, &[1, 2], Expected::Byte(b'a'));
+        assert_eq!(ctx.furthest, 0);
+        assert!(ctx.context_chain.is_empty());
+
+        ctx.record(1, &[1, 2], Expected::Byte(b'b'));
+        assert_eq!(ctx.furthest, 1);
+        assert_eq!(ctx.context_chain, vec![1, 2]);
+
+        // Same furthest: should not overwrite chain.
+        ctx.record(1, &[9], Expected::EndOfInput);
+        assert_eq!(ctx.context_chain, vec![1, 2]);
+
+        // Advance furthest: snapshot updates.
+        ctx.record(5, &[7], Expected::Byte(b'x'));
+        assert_eq!(ctx.furthest, 5);
+        assert_eq!(ctx.context_chain, vec![7]);
+    }
+
+    #[test]
+    fn error_context_record_hint_advances_furthest_and_resets_expected() {
+        let mut ctx = ErrorContext::new();
+        ctx.record(1, &[], Expected::Byte(b'a'));
+        assert_eq!(ctx.furthest, 1);
+        assert_eq!(ctx.expected.len(), 1);
+
+        // Hint at a later pos should advance furthest and clear expected.
+        ctx.record_hint(3, &[9], SymbolId(7));
+        assert_eq!(ctx.furthest, 3);
+        assert!(ctx.expected.is_empty());
+        assert_eq!(ctx.context_chain, vec![9]);
+        assert_eq!(ctx.hints, vec![SymbolId(7)]);
+
+        // Another hint at same pos appends (dedup still applies).
+        ctx.record_hint(3, &[1], SymbolId(7));
+        ctx.record_hint(3, &[1], SymbolId(8));
+        assert_eq!(ctx.hints, vec![SymbolId(7), SymbolId(8)]);
     }
 }

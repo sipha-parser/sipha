@@ -2,6 +2,8 @@ use crate::diagnostics::error::ErrorContext;
 #[cfg(feature = "miette")]
 use crate::diagnostics::grammar_names::GrammarNames;
 use crate::types::RuleId;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 /// Why the VM rejected bytecode as invalid.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,10 +28,16 @@ pub enum BadGraphKind {
     PartialCommitWithoutBacktrack,
     /// `PopFlags` without a matching `ContextSave` frame.
     PopFlagsStackUnderflow,
+    /// A snapshot mark pointed past the snapshot stack.
+    SnapshotMarkOutOfRange { mark: u32 },
+    /// A length could not be represented as a `Pos` (byte offset).
+    PosOutOfRange { len: usize },
+    /// `LiteralSmall` had an invalid length for its inline bytes.
+    LiteralSmallLenOutOfRange { len: u8, bytes_len: u8 },
 }
 
-impl std::fmt::Display for BadGraphKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for BadGraphKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::RuleEntryOutOfRange { rule } => {
                 write!(f, "rule entry missing for rule id {rule}")
@@ -59,6 +67,18 @@ impl std::fmt::Display for BadGraphKind {
             Self::PopFlagsStackUnderflow => {
                 write!(f, "`PopFlags` without matching `PushFlags` frame")
             }
+            Self::SnapshotMarkOutOfRange { mark } => {
+                write!(f, "snapshot mark out of range: {mark}")
+            }
+            Self::PosOutOfRange { len } => {
+                write!(f, "byte length out of range for Pos: {len}")
+            }
+            Self::LiteralSmallLenOutOfRange { len, bytes_len } => {
+                write!(
+                    f,
+                    "`LiteralSmall` len out of range (len={len}, bytes_len={bytes_len})"
+                )
+            }
         }
     }
 }
@@ -70,8 +90,8 @@ pub enum ParseError {
     BadGraph(BadGraphKind),
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NoMatch(d) => write!(f, "{d}"),
             Self::BadGraph(k) => write!(f, "malformed parse graph: {k}"),
@@ -79,6 +99,7 @@ impl std::fmt::Display for ParseError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for ParseError {}
 
 /// Result of parsing in multi-error recovery mode: partial output and all collected errors.
@@ -132,6 +153,8 @@ pub(super) fn no_match(error_ctx: &ErrorContext) -> ParseError {
 #[cfg(test)]
 mod tests {
     use super::BadGraphKind;
+    extern crate alloc;
+    use alloc::string::ToString;
 
     #[test]
     fn bad_graph_kind_display_is_actionable() {

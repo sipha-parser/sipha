@@ -16,20 +16,25 @@ all-features = true
 workspace = true
 
 [features]
-default = ["walk"]
-walk = []
-incremental = []
+default = ["std", "walk"]
+std = ["dep:lasso"]
+walk = ["std"]
+incremental = ["std"]
+parallel = ["std", "dep:rayon"]
+partial-reparse = ["std", "incremental"]
+experimental_parallel_units = ["parallel", "partial-reparse"]
 emit = ["walk"]
 transform = []
 miette = ["dep:miette"]
 utf16 = []
 analysis = ["walk"]
-display = []
+display = ["std"]
 sourcemap = ["transform"]
 fmt = ["emit"]
 diff = ["emit"]
 codegen-pretty = ["dep:prettyplease", "dep:syn"]
-patterns = []
+patterns = ["std"]
+trace = []
 
 [dependencies]
 sipha-macros = { path = "../sipha-macros", version = "3.0" }
@@ -38,23 +43,33 @@ proc-macro2 = "1"
 quote = "1"
 prettyplease = { version = "0.2", optional = true }
 syn = { version = "2", default-features = false, features = ["full", "parsing"], optional = true }
+lasso = { version = "0.7", optional = true }
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1"
 
-[[example]]
-name = "miette_errors"
-required-features = ["miette"]
-
-[[example]]
-name = "display_grammar"
-required-features = ["display"]
-
-[[example]]
-name = "incremental_reparse"
-required-features = ["incremental"]
-
 [[bench]]
 name = "parse"
 harness = false
+
+[[example]]
+name = "arithmetic_expr"
+required-features = ["std"]
+
+[[example]]
+name = "grammar_dsl"
+required-features = ["std"]
+
+[[example]]
+name = "ini_grammar"
+required-features = ["std"]
+
+[[example]]
+name = "sublanguage_markdown_json"
+required-features = ["std"]
+
+[[example]]
+name = "tiny_lang_recovery"
+required-features = ["std"]
