@@ -1,10 +1,8 @@
-# Fuzzing sipha
+# sipha fuzzing
 
-This directory contains a `cargo-fuzz` harness for the `sipha` crate.
+This directory is compatible with `cargo-fuzz`.
 
 ## Setup
-
-Install `cargo-fuzz`:
 
 ```bash
 cargo install cargo-fuzz
@@ -18,12 +16,15 @@ From the repository root:
 cargo fuzz run engine_parse
 ```
 
-Additional targets:
+## Tips
 
-```bash
-cargo fuzz run json_parse
-cargo fuzz run jsonc_parse
-cargo fuzz run unicode_parse
-cargo fuzz run macro_parse
-```
+- **Keep inputs small**: try `-max_len=4096` while iterating, then lift limits later.
+- **Make it reproducible**: add `-runs=1 <artifact_path>` to replay a crash.
+- **Let it run longer**: use `-timeout=10` (or higher) if targets do heavier work.
+
+## Targets
+
+- `engine_parse`: VM/backtracking/error-path stress on a small expression grammar
+- `memo_equivalence`: compare parse results with and without packrat memoisation
+- `incremental_reparse`: incremental reparse after random edits vs full reparse
 

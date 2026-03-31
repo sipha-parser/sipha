@@ -26,17 +26,13 @@ fn expr_grammar() -> BuiltGraph {
 
     g.lexer_rule("ws", |g| {
         g.trivia(K::Ws, |g| {
-            g.zero_or_more(|g| {
-                g.class(classes::WHITESPACE);
-            });
+            g.zero_or_more(|g| g.class(classes::WHITESPACE));
         });
     });
 
     g.lexer_rule("number", |g| {
         g.token(K::Number, |g| {
-            g.one_or_more(|g| {
-                g.class(classes::DIGIT);
-            });
+            g.one_or_more(|g| g.class(classes::DIGIT));
         });
     });
 
@@ -44,9 +40,7 @@ fn expr_grammar() -> BuiltGraph {
         g.node(K::Expr, |g| {
             g.call("mul");
             g.zero_or_more(|g| {
-                g.token(K::Plus, |g| {
-                    g.byte(b'+');
-                });
+                g.token(K::Plus, |g| g.byte(b'+'));
                 g.call("mul");
             });
         });
@@ -56,9 +50,7 @@ fn expr_grammar() -> BuiltGraph {
         g.node(K::BinExpr, |g| {
             g.call("atom");
             g.zero_or_more(|g| {
-                g.token(K::Star, |g| {
-                    g.byte(b'*');
-                });
+                g.token(K::Star, |g| g.byte(b'*'));
                 g.call("atom");
             });
         });
@@ -67,13 +59,9 @@ fn expr_grammar() -> BuiltGraph {
     g.parser_rule("atom", |g| {
         g.choice(|g| g.call("number"), |g| {
             g.node(K::ParenExpr, |g| {
-                g.token(K::LParen, |g| {
-                    g.byte(b'(');
-                });
+                g.token(K::LParen, |g| g.byte(b'('));
                 g.call("expr");
-                g.token(K::RParen, |g| {
-                    g.byte(b')');
-                });
+                g.token(K::RParen, |g| g.byte(b')'));
             });
         });
     });
@@ -92,9 +80,8 @@ fn expr_grammar() -> BuiltGraph {
 
 static BUILT: Lazy<BuiltGraph> = Lazy::new(expr_grammar);
 
-fuzz_target!(|data: &[u8]| {
+fn map_input(data: &[u8]) -> Vec<u8> {
     // Restrict to a small ASCII subset so the grammar has a chance to make progress.
-    // This keeps the fuzzer focused on VM correctness, backtracking, and error paths.
     let mut buf = Vec::with_capacity(data.len());
     for &b in data {
         let mapped = match b % 8 {
@@ -109,9 +96,28 @@ fuzz_target!(|data: &[u8]| {
         };
         buf.push(mapped);
     }
+    buf
+}
 
+fuzz_target!(|data: &[u8]| {
+    let input = map_input(data);
     let graph = BUILT.as_graph();
-    let mut engine = Engine::new();
-    let _ = engine.parse(&graph, &buf);
+
+    let mut e1 = Engine::new();
+    let r1 = e1.parse(&graph, &input);
+
+    let mut e2 = Engine::new().with_memo();
+    let r2 = e2.parse(&graph, &input);
+
+    match (r1, r2) {
+        (Ok(o1), Ok(o2)) => {
+            // Both should accept and consume the full input for this grammar.
+            // If this fails, it indicates a semantic mismatch between memoised and non-memoised execution.
+            assert_eq!(o1.consumed, o2.consumed);
+            assert_eq!(o1.consumed as usize, input.len());
+        }
+        (Err(_), Err(_)) => {}
+        _ => panic!("memoised vs non-memoised parse disagreement"),
+    }
 });
 

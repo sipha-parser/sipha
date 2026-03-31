@@ -9,29 +9,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-sipha = { path = "../sipha", features = ["incremental", "display", "analysis", "miette", "utf16", "emit", "transform", "sourcemap", "fmt", "diff"] }
-sipha-macros = { path = "../sipha-macros" }
+once_cell = "1"
+sipha = { path = "../sipha", default-features = true, features = ["incremental"] }
 
-[[bin]]
-name = "engine_parse"
-path = "fuzz_targets/engine_parse.rs"
-
-[[bin]]
-name = "json_parse"
-path = "fuzz_targets/json_parse.rs"
-
-[[bin]]
-name = "jsonc_parse"
-path = "fuzz_targets/jsonc_parse.rs"
-
-[[bin]]
-name = "unicode_parse"
-path = "fuzz_targets/unicode_parse.rs"
-
-[[bin]]
-name = "macro_parse"
-path = "fuzz_targets/macro_parse.rs"
-
-# Prevent this from interfering with workspace-level dependency resolution.
 [workspace]
+members = []
 

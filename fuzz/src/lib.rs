@@ -1,1 +1,2 @@
-pub mod grammars;
+// Empty library for cargo-fuzz.
+
