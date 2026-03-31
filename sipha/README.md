@@ -1,10 +1,93 @@
 # sipha
 
-[![Release to crates.io](https://github.com/sipha-parser/sipha/actions/workflows/release.yml/badge.svg)](https://github.com/sipha-parser/sipha/actions/workflows/release.yml)
+![Release to crates.io](https://github.com/sipha-parser/sipha/actions/workflows/release.yml/badge.svg)
 
 A PEG (Parsing Expression Grammar) parser with a stack-based VM, green/red syntax trees, and optional packrat memoisation.
 
 **More documentation:** [API on docs.rs](https://docs.rs/sipha) · [Cookbook](docs/COOKBOOK.md) (patterns for real grammars) · [Repository architecture](../ARCHITECTURE.md) (internals).
+
+Key capabilities:
+
+- A stack-based VM
+- Green/red syntax trees (with trivia)
+- Optional packrat memoisation (`Engine::with_memo`)
+- Diagnostics utilities (`LineIndex`, `ParsedDoc`, and error formatting)
+- Optional extras (DOT/PEG display, formatting, diffing, analysis) via features
+
+## Quick start
+
+```rust
+use sipha::prelude::*;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::SyntaxKinds)]
+#[repr(u16)]
+enum K {
+    Root,
+    Ws,
+    Number,
+}
+
+fn main() {
+    let mut g = GrammarBuilder::new();
+    g.set_trivia_rule("ws");
+
+    g.lexer_rule("ws", |g| {
+        g.trivia(K::Ws, |g| {
+            g.zero_or_more(|g| {
+                g.class(classes::WHITESPACE);
+            });
+        });
+    });
+
+    g.lexer_rule("number", |g| {
+        g.token(K::Number, |g| {
+            g.one_or_more(|g| {
+                g.class(classes::DIGIT);
+            });
+        });
+    });
+
+    g.parser_rule("start", |g| {
+        g.node(K::Root, |g| {
+            g.call("number");
+            g.skip(); // consume trailing trivia before EOI
+        });
+        g.end_of_input();
+        g.accept();
+    });
+
+    let built = g.finish().unwrap();
+    let graph = built.as_graph();
+
+    let src = b"  123  ";
+    let mut engine = Engine::new();
+    let out = engine.parse(&graph, src).unwrap();
+    let doc = ParsedDoc::from_slice(src, &out).unwrap();
+
+    println!(
+        "{}",
+        sipha::tree::tree_display::format_syntax_tree(
+            doc.root(),
+            &TreeDisplayOptions::default(),
+            None
+        )
+    );
+}
+```
+
+## Examples
+
+Run from this repo:
+
+- `cargo run -p sipha --example arithmetic_expr`
+- `cargo run -p sipha --example ini_grammar`
+- `cargo run -p sipha --example tiny_lang_recovery`
+- `cargo run -p sipha --example grammar_dsl`
+- `cargo run -p sipha --example sublanguage_markdown_json`
+
+## Cookbook
+
+See `sipha/docs/COOKBOOK.md`.
 
 ## Features
 
@@ -17,7 +100,7 @@ A PEG (Parsing Expression Grammar) parser with a stack-based VM, green/red synta
 
 ### Cargo features
 
-**Default:** `walk` (red-tree visitor). Enable extras with `sipha = { version = "2", features = ["…"] }` (combine as needed).
+**Default:** `walk` (red-tree visitor). Enable extras with `sipha = { version = "3", features = ["…"] }` (combine as needed).
 
 | Feature | Depends on | Description |
 |---------|------------|-------------|
@@ -122,16 +205,11 @@ Run from this repo: `cargo run -p sipha --example <name>` (add `--features …` 
 
 | Example | Topic |
 |---------|--------|
-| `macro_grammar` | `sipha_grammar!` DSL |
-| `json_grammar` | Full JSON: SIMD literals, diagnostics, memo, byte dispatch |
-| `json_jsonc` | JSON with JSONC-style extensions |
-| `green_red_tree` | Green/red tree construction and trivia |
-| `context_flags` | Parse context flags |
-| `unicode_and_repeat` | Unicode terminals and repetition |
-| `parsed_doc_errors` | [`ParsedDoc`](https://docs.rs/sipha/latest/sipha/diagnostics/parsed_doc/struct.ParsedDoc.html) and line-indexed diagnostics |
-| `miette_errors` | Pretty errors (`--features miette`) |
-| `display_grammar` | PEG and DOT export (`--features display`) |
-| `incremental_reparse` | Reparse with green reuse (`--features incremental`) |
+| `arithmetic_expr` | Small expression grammar and tree building |
+| `grammar_dsl` | `sipha_grammar!` DSL |
+| `ini_grammar` | INI-like config grammar |
+| `tiny_lang_recovery` | Recovery patterns for a small language |
+| `sublanguage_markdown_json` | Sub-language embedding (markdown + JSON) |
 
 ## Safety note
 
