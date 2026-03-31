@@ -1,5 +1,6 @@
 # sipha
 
+[![CI](https://github.com/sipha-parser/sipha/actions/workflows/ci.yml/badge.svg)](https://github.com/sipha-parser/sipha/actions/workflows/ci.yml)
 [![Release to crates.io](https://github.com/sipha-parser/sipha/actions/workflows/release.yml/badge.svg)](https://github.com/sipha-parser/sipha/actions/workflows/release.yml)
 
 A PEG (Parsing Expression Grammar) parser with a stack-based VM, green/red syntax trees, and optional packrat memoisation.
