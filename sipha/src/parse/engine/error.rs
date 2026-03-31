@@ -3,7 +3,9 @@ use crate::diagnostics::error::ErrorContext;
 use crate::diagnostics::grammar_names::GrammarNames;
 use crate::types::RuleId;
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
+#[cfg(feature = "std")]
+use std::string::String;
 
 /// Why the VM rejected bytecode as invalid.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +90,8 @@ impl core::fmt::Display for BadGraphKind {
 pub enum ParseError {
     NoMatch(crate::diagnostics::error::Diagnostic),
     BadGraph(BadGraphKind),
+    /// The requested rule name was not found in the parse graph.
+    UnknownRuleName(String),
 }
 
 impl core::fmt::Display for ParseError {
@@ -95,6 +99,7 @@ impl core::fmt::Display for ParseError {
         match self {
             Self::NoMatch(d) => write!(f, "{d}"),
             Self::BadGraph(k) => write!(f, "malformed parse graph: {k}"),
+            Self::UnknownRuleName(name) => write!(f, "unknown rule name: {name}"),
         }
     }
 }
@@ -138,6 +143,14 @@ impl ParseError {
                 let src_str: String = source.into();
                 Some(
                     miette::Report::msg(format!("malformed parse graph: {kind}"))
+                        .with_source_code(miette::NamedSource::new(name_str, src_str)),
+                )
+            }
+            Self::UnknownRuleName(rule_name) => {
+                let name_str: String = name.into();
+                let src_str: String = source.into();
+                Some(
+                    miette::Report::msg(format!("unknown rule name: {rule_name}"))
                         .with_source_code(miette::NamedSource::new(name_str, src_str)),
                 )
             }

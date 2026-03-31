@@ -14,6 +14,14 @@ enum K {
     Ws,
 }
 
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Root)]
+struct Root(SyntaxNode);
+
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Stmt)]
+struct Stmt(SyntaxNode);
+
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
     K::from_syntax_kind(k).map(|k| match k {
         K::Root => "ROOT",
@@ -117,6 +125,12 @@ fn main() {
     match engine.parse_recovering_multi_with_context(&graph, src, &ctx, 16) {
         Ok(out) => {
             if let Some(doc) = ParsedDoc::from_slice(src, &out) {
+                // Typed CST: collect recovered statements (including error nodes).
+                let root: Root = doc.root().ast().unwrap();
+                let stmts: Vec<Stmt> =
+                    sipha::tree::ast::AstNodeExt::children::<Stmt>(root.syntax()).collect();
+                println!("stmts={}", stmts.len());
+
                 println!(
                     "{}",
                     sipha::tree::tree_display::format_syntax_tree(
@@ -142,6 +156,14 @@ fn main() {
                     }
                 }
                 if let Some(doc) = ParsedDoc::from_slice(src, &multi.partial) {
+                    // Typed CST on partial tree as well.
+                    if let Some(root) = doc.root().ast::<Root>() {
+                        let stmts: Vec<Stmt> = sipha::tree::ast::AstNodeExt::children::<Stmt>(
+                            root.syntax(),
+                        )
+                        .collect();
+                        println!("partial_stmts={}", stmts.len());
+                    }
                     println!(
                         "{}",
                         sipha::tree::tree_display::format_syntax_tree(
@@ -164,6 +186,11 @@ fn main() {
                 }
             }
             if let Some(doc) = ParsedDoc::from_slice(src, &multi.partial) {
+                if let Some(root) = doc.root().ast::<Root>() {
+                    let stmts: Vec<Stmt> =
+                        sipha::tree::ast::AstNodeExt::children::<Stmt>(root.syntax()).collect();
+                    println!("partial_stmts={}", stmts.len());
+                }
                 println!(
                     "{}",
                     sipha::tree::tree_display::format_syntax_tree(

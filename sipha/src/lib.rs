@@ -80,6 +80,7 @@
 extern crate alloc;
 
 pub use sipha_macros::sipha_grammar;
+pub use sipha_macros::AstNode;
 pub use sipha_macros::SyntaxKinds;
 
 pub mod diagnostics;
@@ -142,6 +143,8 @@ pub mod prelude {
 
     /// Syntax trees: green layer, red layer, trivia, display helpers.
     pub mod tree {
+        #[cfg(feature = "std")]
+        pub use crate::tree::ast::{AstNode, AstNodeExt};
         #[cfg(feature = "std")]
         pub use crate::tree::green::{build_green_tree, GreenElement, GreenNode, GreenToken};
         #[cfg(feature = "std")]
@@ -246,6 +249,8 @@ pub mod prelude {
         replace_trailing_trivia, space, GreenBuilder, GreenElement, GreenNode, GreenToken,
         SyntaxElement, SyntaxNode, SyntaxToken, TokenWithTrivia, TreeDisplayOptions,
     };
+    #[cfg(feature = "std")]
+    pub use crate::tree::ast::{AstNode, AstNodeExt};
     pub use crate::types::{
         classes, sort_spans, CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag,
         TreeEvent,

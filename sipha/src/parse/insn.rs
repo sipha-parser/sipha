@@ -421,6 +421,18 @@ impl ParseGraph<'_> {
             .map(|&sym| self.strings.resolve(sym))
     }
 
+    /// Look up a [`RuleId`] by rule name.
+    ///
+    /// This is the inverse of [`rule_name`](Self::rule_name).
+    #[must_use]
+    pub fn rule_id(&self, name: &str) -> Option<RuleId> {
+        self.rule_names.iter().enumerate().find_map(|(i, &sym)| {
+            (self.strings.resolve(sym) == name)
+                .then(|| RuleId::try_from(i).ok())
+                .flatten()
+        })
+    }
+
     /// Resolve [`Expected::Label`](crate::diagnostics::error::Expected::Label) text.
     #[must_use]
     #[inline]
@@ -488,6 +500,44 @@ impl ParseGraph<'_> {
                 .then(|| FieldId::try_from(i).ok())
                 .flatten()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FlagMaskTable, LiteralTable, ParseGraph};
+    use crate::parse::string_table::{StringTable, SymbolId};
+
+    #[test]
+    fn rule_id_roundtrips_with_rule_name() {
+        let pool: &'static [&'static str] = &["", "start", "expr", "stmt"];
+        let strings = StringTable::from_static_pool(pool);
+        let rule_names: &[SymbolId] = &[SymbolId(1), SymbolId(2), SymbolId(3)];
+
+        let graph = ParseGraph {
+            insns: &[],
+            rule_entry: &[0],
+            literals: LiteralTable { data: &[], offsets: &[0] },
+            jump_tables: &[],
+            flag_masks: FlagMaskTable {
+                data: &[],
+                offsets: &[0],
+            },
+            strings: &strings,
+            rule_names,
+            tag_names: &[],
+            class_labels: &[],
+            expected_labels: &[],
+            field_names: &[],
+        };
+
+        for (id, &sym) in rule_names.iter().enumerate() {
+            let name = graph.rule_name(id as u16).unwrap();
+            assert_eq!(name, strings.resolve(sym));
+            assert_eq!(graph.rule_id(name), Some(id as u16));
+        }
+
+        assert_eq!(graph.rule_id("does_not_exist"), None);
     }
 }
 

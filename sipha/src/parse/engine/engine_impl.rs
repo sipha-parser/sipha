@@ -2,7 +2,6 @@ use super::error::{ParseError, RecoverMultiResult};
 use super::frames::{Frame, SnapEntry};
 use super::output::ParseOutput;
 use super::tree_events::insert_error_node_events;
-#[cfg(feature = "partial-reparse")]
 use super::vm::run_from;
 use super::vm::{run, VmState};
 #[cfg(feature = "trace")]
@@ -16,9 +15,11 @@ use crate::parse::insn::ParseGraph;
 use crate::parse::memo;
 #[cfg(feature = "std")]
 use crate::parse::memo::MemoTable;
-use crate::types::{CaptureEvent, Pos, SyntaxKind, TreeEvent};
+use crate::types::{CaptureEvent, Pos, RuleId, SyntaxKind, TreeEvent};
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
+use alloc::{string::ToString, vec::Vec};
+#[cfg(feature = "std")]
+use std::string::ToString;
 
 pub struct Engine {
     stack: Vec<Frame>,
@@ -121,6 +122,99 @@ impl Engine {
                 #[cfg(feature = "trace")]
                 rule_stack: &mut self.rule_stack,
             },
+        )
+        .map(|consumed| ParseOutput {
+            consumed,
+            events: core::mem::take(&mut self.events),
+            tree_events: core::mem::take(&mut self.tree_events),
+        })
+    }
+
+    /// Parse the input starting from a specific rule id (treating it as an entrypoint).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(ParseError::NoMatch(_))` on parse failure, or `Err(ParseError::BadGraph(_))`
+    /// if `rule` is out of range or the graph is invalid.
+    pub fn parse_rule(
+        &mut self,
+        graph: &ParseGraph<'_>,
+        input: &[u8],
+        rule: RuleId,
+    ) -> Result<ParseOutput, ParseError> {
+        self.parse_rule_with_context(graph, input, rule, &ParseContext::new())
+    }
+
+    /// Like [`parse_rule`](Self::parse_rule) but resolves the rule by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(ParseError::UnknownRuleName(_))` if `rule_name` is not present in the graph.
+    pub fn parse_rule_named(
+        &mut self,
+        graph: &ParseGraph<'_>,
+        input: &[u8],
+        rule_name: &str,
+    ) -> Result<ParseOutput, ParseError> {
+        let rule = graph
+            .rule_id(rule_name)
+            .ok_or_else(|| ParseError::UnknownRuleName(rule_name.to_string()))?;
+        self.parse_rule(graph, input, rule)
+    }
+
+    /// Parse a specific rule starting at byte position 0, with an explicit [`ParseContext`].
+    ///
+    /// The rule is treated as an entrypoint: when it reaches `Return`, the VM will treat
+    /// returning to a sentinel address as success and return the current `pos` as `consumed`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(ParseError::NoMatch(_))` on parse failure, or `Err(ParseError::BadGraph(_))`
+    /// if `rule` is out of range or the graph is invalid.
+    pub fn parse_rule_with_context(
+        &mut self,
+        graph: &ParseGraph<'_>,
+        input: &[u8],
+        rule: RuleId,
+        context: &ParseContext,
+    ) -> Result<ParseOutput, ParseError> {
+        self.reset_for_parse(context);
+
+        let entry = *graph
+            .rule_entry
+            .get(rule as usize)
+            .ok_or(ParseError::BadGraph(
+                super::error::BadGraphKind::RuleEntryOutOfRange { rule },
+            ))?;
+
+        // Seed a sentinel return address so rules ending in `Return` can be used as entrypoints.
+        self.stack.push(Frame::Return { ret_ip: u32::MAX });
+
+        run_from(
+            graph,
+            input,
+            &mut VmState {
+                stack: &mut self.stack,
+                events: &mut self.events,
+                tree_events: &mut self.tree_events,
+                open_tokens: &mut self.open_tokens,
+                #[cfg(feature = "std")]
+                memo: &mut self.memo,
+                error_ctx: &mut self.error_ctx,
+                context_stack: &mut self.context_stack,
+                flags: &mut self.flags,
+                ctx_snapshots: &mut self.ctx_snapshots,
+                multi_errors: &mut None,
+                max_errors: 0,
+                #[cfg(feature = "trace")]
+                observer: None,
+                #[cfg(feature = "trace")]
+                tracer: None,
+                #[cfg(feature = "trace")]
+                rule_stack: &mut self.rule_stack,
+            },
+            entry,
+            0,
         )
         .map(|consumed| ParseOutput {
             consumed,

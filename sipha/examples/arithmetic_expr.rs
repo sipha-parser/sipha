@@ -16,6 +16,146 @@ enum K {
     Ws,
 }
 
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Root)]
+struct Root(SyntaxNode);
+
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Expr)]
+struct Expr(SyntaxNode);
+
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Term)]
+struct Term(SyntaxNode);
+
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Factor)]
+struct Factor(SyntaxNode);
+
+#[derive(Debug, Clone, Copy)]
+enum Op {
+    Push(i64),
+    Add,
+    Mul,
+}
+
+impl Op {
+    fn fmt_line(self) -> String {
+        match self {
+            Self::Push(n) => format!("PUSH {n}"),
+            Self::Add => "ADD".to_string(),
+            Self::Mul => "MUL".to_string(),
+        }
+    }
+}
+
+fn compile_expr(src: &[u8], expr: &Expr, out: &mut Vec<Op>) -> Result<(), String> {
+    let mut it = expr.syntax().children().filter(|e| !e.is_trivia());
+    let first = it
+        .find_map(|e| e.into_node())
+        .ok_or_else(|| "expr: missing first term".to_string())?;
+    compile_term(src, &Term(first), out)?;
+
+    while let Some(e) = it.next() {
+        match e {
+            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::Plus.into_syntax_kind() => {
+                let next_term = it
+                    .find_map(|e| e.into_node())
+                    .ok_or_else(|| "expr: expected term after '+'".to_string())?;
+                compile_term(src, &Term(next_term), out)?;
+                out.push(Op::Add);
+            }
+            _ => return Err("expr: unexpected element".to_string()),
+        }
+    }
+
+    Ok(())
+}
+
+fn compile_term(src: &[u8], term: &Term, out: &mut Vec<Op>) -> Result<(), String> {
+    let mut it = term.syntax().children().filter(|e| !e.is_trivia());
+    let first = it
+        .find_map(|e| e.into_node())
+        .ok_or_else(|| "term: missing first factor".to_string())?;
+    compile_factor(src, &Factor(first), out)?;
+
+    while let Some(e) = it.next() {
+        match e {
+            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::Star.into_syntax_kind() => {
+                let next_factor = it
+                    .find_map(|e| e.into_node())
+                    .ok_or_else(|| "term: expected factor after '*'".to_string())?;
+                compile_factor(src, &Factor(next_factor), out)?;
+                out.push(Op::Mul);
+            }
+            _ => return Err("term: unexpected element".to_string()),
+        }
+    }
+
+    Ok(())
+}
+
+fn compile_factor(src: &[u8], factor: &Factor, out: &mut Vec<Op>) -> Result<(), String> {
+    let mut it = factor.syntax().children().filter(|e| !e.is_trivia());
+    let first = it
+        .next()
+        .ok_or_else(|| "factor: empty".to_string())?;
+
+    match first {
+        sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::Number.into_syntax_kind() => {
+            let text = t.text();
+            let n: i64 = text
+                .parse()
+                .map_err(|_| format!("number: invalid int literal `{text}`"))?;
+            out.push(Op::Push(n));
+            Ok(())
+        }
+        sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::LParen.into_syntax_kind() => {
+            let inner_expr = it
+                .find_map(|e| e.into_node())
+                .ok_or_else(|| "factor: expected expr after '('".to_string())?;
+            compile_expr(src, &Expr(inner_expr), out)?;
+
+            let closing = it
+                .find_map(|e| e.into_token())
+                .ok_or_else(|| "factor: expected ')'".to_string())?;
+            if closing.kind() != K::RParen.into_syntax_kind() {
+                return Err("factor: expected ')'".to_string());
+            }
+            Ok(())
+        }
+        _ => Err("factor: expected number or parenthesized expr".to_string()),
+    }
+}
+
+fn run_vm(ops: &[Op]) -> Result<i64, String> {
+    let mut stack: Vec<i64> = Vec::new();
+    for &op in ops {
+        match op {
+            Op::Push(n) => stack.push(n),
+            Op::Add => {
+                let b = stack.pop().ok_or_else(|| "vm: stack underflow (add rhs)".to_string())?;
+                let a = stack.pop().ok_or_else(|| "vm: stack underflow (add lhs)".to_string())?;
+                stack.push(a + b);
+            }
+            Op::Mul => {
+                let b = stack.pop().ok_or_else(|| "vm: stack underflow (mul rhs)".to_string())?;
+                let a = stack.pop().ok_or_else(|| "vm: stack underflow (mul lhs)".to_string())?;
+                stack.push(a * b);
+            }
+        }
+    }
+    match stack.as_slice() {
+        [v] => Ok(*v),
+        _ => Err("vm: expected exactly one result value".to_string()),
+    }
+}
+
+fn header(title: &str) {
+    println!();
+    println!("== {title} ==");
+}
+
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
     K::from_syntax_kind(k).map(|k| match k {
         K::Root => "ROOT",
@@ -130,7 +270,7 @@ fn main() {
     let built = grammar();
     let graph = built.as_graph();
 
-    let src = b"1 + 2*(3+4)";
+    let src = b"1 + 2 * (3 * 5 + 4)";
     let mut engine = Engine::new();
     #[cfg(feature = "trace")]
     if std::env::var("SIPHA_TRACE").is_ok() {
@@ -162,13 +302,34 @@ fn main() {
     });
     let doc = ParsedDoc::from_slice(src, &out).unwrap();
 
-    let sexp = sipha::tree::sexp::syntax_node_to_sexp(
-        doc.root(),
-        &sipha::tree::sexp::SexpOptions {
-            include_trivia: false,
-            kind_to_name: Some(kind_name),
-            max_token_len: None,
-        },
+    // Typed CST: cast root and traverse structure with typed helpers.
+    let root: Root = doc.root().ast().unwrap();
+    let expr: Expr = root.syntax().child().unwrap();
+    let first_term: Term = expr.syntax().child().unwrap();
+    let _first_factor: Factor = first_term.syntax().child().unwrap();
+
+    header("input");
+    println!("{}", String::from_utf8_lossy(src));
+
+    let mut ops = Vec::new();
+    compile_expr(src, &expr, &mut ops).expect("compile to vm ops");
+
+    header("bytecode");
+    for (i, op) in ops.iter().copied().enumerate() {
+        println!("{i:>3}  {}", op.fmt_line());
+    }
+
+    let value = run_vm(&ops).expect("run vm");
+    header("result");
+    println!("{value}");
+
+    header("cst (tree)");
+    println!(
+        "{}",
+        sipha::tree::tree_display::format_syntax_tree(
+            doc.root(),
+            &TreeDisplayOptions::default(),
+            |k| kind_name(k).unwrap_or("?").to_string()
+        )
     );
-    println!("{sexp}");
 }

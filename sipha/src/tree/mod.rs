@@ -1,6 +1,7 @@
 //! Syntax tree types and utilities (green/red trees, trivia, display).
 
 pub mod emit;
+pub mod ast;
 pub mod green;
 pub mod green_builder;
 pub mod red;

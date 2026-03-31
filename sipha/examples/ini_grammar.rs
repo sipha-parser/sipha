@@ -18,6 +18,18 @@ enum K {
     Comment,
 }
 
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Root)]
+struct Root(SyntaxNode);
+
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Header)]
+struct Header(SyntaxNode);
+
+#[derive(Clone, Debug, sipha::AstNode)]
+#[ast(kind = K::Pair)]
+struct Pair(SyntaxNode);
+
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
     K::from_syntax_kind(k).map(|k| match k {
         K::Root => "ROOT",
@@ -195,6 +207,17 @@ theme = dark # inline comment
     let out = engine.parse(&graph, src).unwrap();
     let doc = ParsedDoc::from_slice(src, &out).unwrap();
     println!("{}", doc.source_str());
+
+    // Typed CST: find all pairs and headers with typed wrappers.
+    let root: Root = doc.root().ast().unwrap();
+    let pair_count = root.syntax().descendant_nodes().filter_map(|n| n.ast::<Pair>()).count();
+    let header_count = root
+        .syntax()
+        .descendant_nodes()
+        .filter_map(|n| n.ast::<Header>())
+        .count();
+    println!("headers={header_count} pairs={pair_count}");
+
     println!(
         "{}",
         sipha::tree::tree_display::format_syntax_tree(

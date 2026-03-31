@@ -7,6 +7,7 @@
 mod ir;
 mod lower;
 mod parse;
+mod ast_node;
 mod syntax_kinds;
 
 use proc_macro::TokenStream;
@@ -53,4 +54,13 @@ pub fn sipha_grammar(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(SyntaxKinds)]
 pub fn syntax_kinds_derive(input: TokenStream) -> TokenStream {
     syntax_kinds::derive_syntax_kinds(input)
+}
+
+/// Derive `sipha::tree::ast::AstNode` for a tuple-struct wrapper around `SyntaxNode`.
+///
+/// Requires an attribute of the form `#[ast(kind = Kind::Foo)]` (or any expression that
+/// evaluates to something implementing `IntoSyntaxKind`).
+#[proc_macro_derive(AstNode, attributes(ast))]
+pub fn ast_node_derive(input: TokenStream) -> TokenStream {
+    ast_node::derive_ast_node(input)
 }

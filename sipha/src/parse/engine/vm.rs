@@ -53,8 +53,7 @@ fn pos_from_len(len: usize) -> Result<Pos, ParseError> {
 
 /// Like [`run`], but start at a specific instruction pointer and byte offset.
 ///
-/// This is feature-gated because it is primarily useful for experimental partial reparsing.
-#[cfg(feature = "partial-reparse")]
+/// This is used by both partial reparsing and "parse from rule" entrypoints.
 pub(super) fn run_from(
     graph: &ParseGraph<'_>,
     input: &[u8],
