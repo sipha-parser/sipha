@@ -5,6 +5,7 @@
 //! [sipha]: https://docs.rs/sipha
 
 mod ast_node;
+mod ast_enum;
 mod ir;
 mod lower;
 mod parse;
@@ -63,4 +64,18 @@ pub fn syntax_kinds_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(AstNode, attributes(ast))]
 pub fn ast_node_derive(input: TokenStream) -> TokenStream {
     ast_node::derive_ast_node(input)
+}
+
+/// Derive `sipha::tree::ast::AstNode` for an enum wrapper around other `AstNode` types.
+///
+/// Each variant must be a tuple variant with exactly one field (a typed CST wrapper).
+/// Each variant requires `#[ast(kind = ...)]` mapping to the underlying syntax kind.
+///
+/// The derive also generates:
+/// - `as_<variant>() -> Option<&Inner>`
+/// - `into_<variant>(self) -> Option<Inner>`
+/// - `From<Inner> for Enum` for each variant
+#[proc_macro_derive(AstEnum, attributes(ast))]
+pub fn ast_enum_derive(input: TokenStream) -> TokenStream {
+    ast_enum::derive_ast_enum(input)
 }
