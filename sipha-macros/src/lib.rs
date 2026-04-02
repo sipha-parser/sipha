@@ -4,8 +4,8 @@
 //!
 //! [sipha]: https://docs.rs/sipha
 
-mod ast_node;
 mod ast_enum;
+mod ast_node;
 mod ir;
 mod lower;
 mod parse;

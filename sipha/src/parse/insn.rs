@@ -169,7 +169,8 @@ pub enum Insn {
     /// [`GrammarBuilder::optional`](crate::parse::builder::GrammarBuilder::optional),
     /// [`GrammarBuilder::cut`](crate::parse::builder::GrammarBuilder::cut).
     Commit { target: InsnId },
-    /// Succeed without consuming input: backtrack to the most recent choice point, then jump to `target`.
+    /// Succeed without consuming input: restore position (and capture/tree state) to the most recent
+    /// choice point, then jump to `target`.
     ///
     /// Builder source: [`GrammarBuilder::lookahead`](crate::parse::builder::GrammarBuilder::lookahead).
     BackCommit { target: InsnId },

@@ -79,8 +79,8 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub use sipha_macros::AstNode;
 pub use sipha_macros::AstEnum;
+pub use sipha_macros::AstNode;
 pub use sipha_macros::SyntaxKinds;
 pub use sipha_macros::sipha_grammar;
 

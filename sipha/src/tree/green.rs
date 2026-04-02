@@ -333,12 +333,23 @@ type BuildElem = (Option<FieldId>, GreenElement);
 /// Stack entry for building: (kind, field, children).
 type BuildStackEntry = (SyntaxKind, Option<FieldId>, Vec<BuildElem>);
 
-/// Remove and return trailing trivia tokens from `children` (from the end, while elements are trivia).
+/// True if `el` is trivia, or a syntax node whose subtree contains only trivia leaves (e.g. a
+/// grouped trivia wrapper around `WS` / comment tokens). Used when attaching leading trivia to the
+/// next opened node.
+fn green_element_is_trivia_tree(el: &GreenElement) -> bool {
+    match el {
+        GreenElement::Token(t) => t.is_trivia,
+        GreenElement::Node(n) => n.children.iter().all(green_element_is_trivia_tree),
+    }
+}
+
+/// Remove and return trailing trivia from `children` (from the end, while elements are trivia
+/// tokens or trivia-only subtrees).
 fn drain_trailing_trivia(children: &mut Vec<BuildElem>) -> Vec<BuildElem> {
     let n = children
         .iter()
         .rev()
-        .take_while(|(_, el)| el.is_trivia())
+        .take_while(|(_, el)| green_element_is_trivia_tree(el))
         .count();
     if n == 0 {
         return Vec::new();

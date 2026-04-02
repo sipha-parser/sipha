@@ -1,8 +1,7 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Error, Expr, Fields,
-    Ident,
+    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Error, Expr, Fields, Ident,
 };
 
 fn parse_kind_expr(attrs: &[Attribute]) -> Result<Expr, Error> {
@@ -87,7 +86,11 @@ pub fn derive_ast_enum(input: TokenStream) -> TokenStream {
         let v_ident = &v.ident;
         let kind_expr = match parse_kind_expr(&v.attrs) {
             Ok(k) => k,
-            Err(e) => return Error::new(v.span(), e.to_string()).to_compile_error().into(),
+            Err(e) => {
+                return Error::new(v.span(), e.to_string())
+                    .to_compile_error()
+                    .into()
+            }
         };
 
         let inner_ty = match &v.fields {
@@ -193,4 +196,3 @@ pub fn derive_ast_enum(input: TokenStream) -> TokenStream {
     }
     .into()
 }
-

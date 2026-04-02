@@ -429,12 +429,26 @@ fn run_from_impl(
             }
 
             Insn::BackCommit { target } => {
-                pos = pop_backtrack_pos(vm.stack)?;
+                pop_backtrack_commit(
+                    vm.stack,
+                    &mut pos,
+                    vm.events,
+                    vm.tree_events,
+                    vm.open_tokens,
+                    vm.context_stack,
+                )?;
                 ip = target;
             }
 
             Insn::NegBackCommit { target } => {
-                pos = pop_backtrack_pos(vm.stack)?;
+                pop_backtrack_commit(
+                    vm.stack,
+                    &mut pos,
+                    vm.events,
+                    vm.tree_events,
+                    vm.open_tokens,
+                    vm.context_stack,
+                )?;
                 ip = target;
                 do_fail(graph, input, &mut ip, &mut pos, vm)?;
             }
@@ -788,11 +802,36 @@ fn pop_backtrack(stack: &mut Vec<Frame>) -> Result<(), ParseError> {
     }
 }
 
+/// Pop the nearest `Backtrack` frame and restore position, captures, tree, and open-token state.
+///
+/// Used by [`Insn::BackCommit`] / [`Insn::NegBackCommit`] so positive/negative lookahead probes
+/// do not leave synthesized tree events behind when input is rewound.
 #[inline]
-fn pop_backtrack_pos(stack: &mut Vec<Frame>) -> Result<Pos, ParseError> {
+fn pop_backtrack_commit(
+    stack: &mut Vec<Frame>,
+    pos: &mut Pos,
+    events: &mut Vec<CaptureEvent>,
+    tree_events: &mut Vec<TreeEvent>,
+    open_tokens: &mut Vec<(SyntaxKind, bool, Pos)>,
+    context_stack: &mut Vec<u32>,
+) -> Result<(), ParseError> {
     loop {
         match stack.pop() {
-            Some(Frame::Backtrack { saved_pos, .. }) => return Ok(saved_pos),
+            Some(Frame::Backtrack {
+                saved_pos,
+                capture_mark,
+                tree_mark,
+                open_tokens_mark,
+                context_mark,
+                ..
+            }) => {
+                *pos = saved_pos;
+                events.truncate(capture_mark as usize);
+                tree_events.truncate(tree_mark as usize);
+                open_tokens.truncate(open_tokens_mark as usize);
+                context_stack.truncate(context_mark as usize);
+                return Ok(());
+            }
             Some(_) => {}
             None => {
                 return Err(ParseError::BadGraph(BadGraphKind::BacktrackStackUnderflow));
