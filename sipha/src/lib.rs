@@ -145,7 +145,7 @@ pub mod prelude {
     /// Syntax trees: green layer, red layer, trivia, display helpers.
     pub mod tree {
         #[cfg(feature = "std")]
-        pub use crate::tree::ast::{AstNode, AstNodeExt};
+        pub use crate::tree::ast::{AstNode, AstNodeExt, AstToken, AstTokenExt};
         #[cfg(feature = "std")]
         pub use crate::tree::green::{GreenElement, GreenNode, GreenToken, build_green_tree};
         #[cfg(feature = "std")]
@@ -259,7 +259,7 @@ pub mod prelude {
         replace_leading_trivia, replace_trailing_trivia, space,
     };
     #[cfg(feature = "std")]
-    pub use crate::tree::ast::{AstNode, AstNodeExt};
+    pub use crate::tree::ast::{AstNode, AstNodeExt, AstToken, AstTokenExt};
     pub use crate::types::{
         CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag, TreeEvent, classes,
         sort_spans,
