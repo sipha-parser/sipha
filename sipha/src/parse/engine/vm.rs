@@ -643,7 +643,14 @@ fn run_from_impl(
 
             // ── Error recovery ────────────────────────────────────────────────
             Insn::RecoverUntil { sync_rule, resume } => {
-                vm.stack.push(Frame::Recover { sync_rule, resume });
+                vm.stack.push(Frame::Recover {
+                    sync_rule,
+                    resume,
+                    capture_mark: u32::try_from(vm.events.len()).unwrap_or(0),
+                    tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
+                    open_tokens_mark: u32::try_from(vm.open_tokens.len()).unwrap_or(0),
+                    context_mark: u32::try_from(vm.context_stack.len()).unwrap_or(0),
+                });
                 ip += 1;
             }
 
@@ -755,15 +762,44 @@ fn do_fail(
                     }
                 }
             }
-            Some(
-                Frame::Recover { sync_rule, resume } | Frame::RecoverSync { sync_rule, resume },
-            ) => {
+            Some(Frame::Recover {
+                sync_rule,
+                resume,
+                capture_mark,
+                tree_mark,
+                open_tokens_mark,
+                context_mark,
+            }) => {
+                vm.events.truncate(capture_mark as usize);
+                vm.tree_events.truncate(tree_mark as usize);
+                vm.open_tokens.truncate(open_tokens_mark as usize);
+                vm.context_stack.truncate(context_mark as usize);
                 if let Some(errs) = vm.multi_errors {
                     errs.push(ParseError::NoMatch(vm.error_ctx.to_diagnostic()));
                     if errs.len() >= vm.max_errors {
                         return Err(ParseError::NoMatch(vm.error_ctx.to_diagnostic()));
                     }
                 }
+                recovery_advance(pos, input);
+                if (*pos as usize) >= input.len() {
+                    // Synced to EOI; don't jump back into the recovery body — keep popping.
+                } else {
+                    let entry =
+                        *graph
+                            .rule_entry
+                            .get(sync_rule as usize)
+                            .ok_or(ParseError::BadGraph(
+                                BadGraphKind::SyncRuleEntryOutOfRange { rule: sync_rule },
+                            ))?;
+                    vm.stack.push(Frame::RecoverSync { sync_rule, resume });
+                    vm.stack.push(Frame::Return { ret_ip: resume });
+                    *ip = entry;
+                    return Ok(());
+                }
+            }
+            Some(Frame::RecoverSync { sync_rule, resume }) => {
+                // Sync probing: advance without recording another diagnostic — the statement error was
+                // already collected when we first popped [`Frame::Recover`].
                 recovery_advance(pos, input);
                 if (*pos as usize) >= input.len() {
                     // Synced to EOI; don't jump back into the recovery body — keep popping.

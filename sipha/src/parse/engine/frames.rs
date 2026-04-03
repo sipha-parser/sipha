@@ -35,9 +35,17 @@ pub(super) enum Frame {
         snapshot_mark: u32,
     },
     /// Error recovery: on failure, skip until `sync_rule` matches then continue at resume.
+    ///
+    /// Marks snapshot the parse state at the start of the `recover_until` body; when the body fails,
+    /// the VM truncates captures / tree events / token stack / diagnostic context to these marks
+    /// before scanning for the sync rule (see `vm::do_fail`).
     Recover {
         sync_rule: RuleId,
         resume: InsnId,
+        capture_mark: u32,
+        tree_mark: u32,
+        open_tokens_mark: u32,
+        context_mark: u32,
     },
     /// Marker when trying the sync rule during recovery; popped by `RecoveryResume`.
     RecoverSync {
