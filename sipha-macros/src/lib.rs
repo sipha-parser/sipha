@@ -16,6 +16,10 @@ use syn::parse_macro_input;
 
 /// Expand a PEG grammar DSL into code that builds a sipha `BuiltGraph`.
 ///
+/// The expansion **runs the builder each time the expression executes**. If the same DSL is used
+/// in a hot path, build once and reuse — for example store the result in a
+/// [`std::sync::OnceLock`] / [`std::sync::LazyLock`] or wrap it in `SharedGrammar` from the `sipha` crate.
+///
 /// ## Directives
 ///
 /// - `@trivia rule_name;` — set the trivia rule (whitespace/comments).

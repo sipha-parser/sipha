@@ -102,7 +102,9 @@ pub mod prelude {
     /// at the crate root, for example `sipha::choices!(g, |g| g.literal(b"a"), |g| g.literal(b"b"))`.
     pub mod parse {
         #[cfg(feature = "std")]
-        pub use crate::parse::builder::{BuiltGraph, GrammarBuilder, GrammarChoiceFn, Repeat};
+        pub use crate::parse::builder::{
+            BuiltGraph, GrammarBuilder, GrammarChoiceFn, Repeat, SharedGrammar,
+        };
         pub use crate::parse::capture::CaptureNode;
         pub use crate::parse::context::{FlagId, ParseContext};
         pub use crate::parse::engine::{
@@ -240,8 +242,9 @@ pub mod prelude {
     pub use self::parse::{
         BadGraphKind, BuiltGraph, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable,
         GrammarBuilder, Insn, LeftAssocInfixLevel, LiteralTable, MemoTable, ParseContext,
-        ParseError, ParseGraph, ParseOutput, RecoverMultiResult, Repeat, SubLanguage,
-        SubLanguageError, apply_sublanguages, left_assoc_infix_level, right_assoc_infix_level,
+        ParseError, ParseGraph, ParseOutput, RecoverMultiResult, Repeat, SharedGrammar,
+        SubLanguage, SubLanguageError, apply_sublanguages, left_assoc_infix_level,
+        right_assoc_infix_level,
     };
     #[cfg(not(feature = "std"))]
     pub use self::parse::{

@@ -142,6 +142,14 @@
 //! the same way as between other tokens. [`delimited`](GrammarBuilder::delimited),
 //! [`preceded`](GrammarBuilder::preceded), and [`terminated`](GrammarBuilder::terminated) are
 //! thin sequences for readability.
+//!
+//! ## Reusing a grammar
+//!
+//! [`GrammarBuilder`] is single-use: call [`finish`](GrammarBuilder::finish) once and keep the
+//! resulting [`BuiltGraph`]. The graph is immutable and safe for unlimited parses — call
+//! [`BuiltGraph::as_graph`] for each parse (or once per batch and reuse the [`ParseGraph`], which
+//! is [`Copy`]). Use [`SharedGrammar`] when multiple owners need cheap clones (for example
+//! storing grammar beside project state or sharing across threads).
 
 use crate::{
     parse::{
@@ -152,6 +160,7 @@ use crate::{
     types::{CharClass, FieldId, InsnId, IntoSyntaxKind, RuleId, Tag},
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 /// Single choice closure for [`GrammarBuilder::choices`] and related.
 pub type GrammarChoiceFn = Box<dyn FnOnce(&mut GrammarBuilder)>;
@@ -316,6 +325,10 @@ impl FlagMaskInterner {
 /// Call [`as_graph`](BuiltGraph::as_graph) to obtain a [`ParseGraph`] that
 /// borrows from this value.  Keep `BuiltGraph` alive for as long as the
 /// `ParseGraph` (or any derived references) are in use.
+///
+/// This value is immutable after construction: reuse it for any number of parses, possibly with
+/// different [`crate::parse::engine::Engine`] instances and different inputs. For multi-owner
+/// sharing, wrap it in [`SharedGrammar`].
 pub struct BuiltGraph {
     pub insns: Vec<Insn>,
     pub rule_entry: Vec<InsnId>,
@@ -382,6 +395,43 @@ impl BuiltGraph {
         self.rule_names
             .get(i)
             .map_or("?", |&sym| self.strings.resolve(sym))
+    }
+}
+
+/// Reference-counted handle to a [`BuiltGraph`] for sharing one grammar across modules, threads, or
+/// long-lived state without copying the bytecode tables.
+#[derive(Clone)]
+pub struct SharedGrammar(Arc<BuiltGraph>);
+
+impl SharedGrammar {
+    #[must_use]
+    pub fn new(built: BuiltGraph) -> Self {
+        Self(Arc::new(built))
+    }
+
+    /// Borrow the VM view of this grammar for [`crate::parse::engine::Engine::parse`].
+    #[must_use]
+    pub fn graph(&self) -> ParseGraph<'_> {
+        self.0.as_graph()
+    }
+
+    #[must_use]
+    pub fn inner(&self) -> &BuiltGraph {
+        &self.0
+    }
+}
+
+impl From<BuiltGraph> for SharedGrammar {
+    fn from(built: BuiltGraph) -> Self {
+        Self::new(built)
+    }
+}
+
+impl std::ops::Deref for SharedGrammar {
+    type Target = BuiltGraph;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
