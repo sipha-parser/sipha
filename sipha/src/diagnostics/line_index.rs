@@ -4,6 +4,7 @@
 //! messages and IDE use.
 
 use crate::types::{Pos, Span};
+use memchr::memchr;
 
 /// Maps byte offsets to line and column.
 ///
@@ -20,16 +21,17 @@ impl LineIndex {
     /// one break (next line starts after `\n`).
     #[must_use]
     pub fn new(source: &[u8]) -> Self {
+        // Scan for `\n` only: next line always starts at the byte after `\n`, matching the
+        // previous `\r\n` handling (CRLF is one break; lone CR is not a line break).
         let mut line_starts = vec![0];
-        let mut i = 0;
+        let mut i = 0usize;
         while i < source.len() {
-            if source[i] == b'\n' {
-                line_starts.push(Pos::try_from(i + 1).unwrap_or(Pos::MAX));
-            } else if source[i] == b'\r' && i + 1 < source.len() && source[i + 1] == b'\n' {
-                line_starts.push(Pos::try_from(i + 2).unwrap_or(Pos::MAX));
-                i += 1;
-            }
-            i += 1;
+            let Some(rel) = memchr(b'\n', &source[i..]) else {
+                break;
+            };
+            let pos = i + rel;
+            line_starts.push(Pos::try_from(pos + 1).unwrap_or(Pos::MAX));
+            i = pos + 1;
         }
         Self { line_starts }
     }
@@ -247,6 +249,15 @@ mod tests {
         assert_eq!(idx.line_col(0), (0, 0));
         assert_eq!(idx.line_col(3), (0, 3));
         assert_eq!(idx.line_col_1based(3), (1, 4));
+    }
+
+    #[test]
+    fn line_index_crlf_one_break_before_b() {
+        let crlf = b"a\r\nb";
+        let idx = LineIndex::new(crlf);
+        assert_eq!(idx.line_count(), 2);
+        assert_eq!(idx.line_start(1), 3);
+        assert_eq!(idx.line_col(3), (1, 0));
     }
 
     #[test]

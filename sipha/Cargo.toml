@@ -17,7 +17,7 @@ workspace = true
 
 [features]
 default = ["std", "walk"]
-std = ["dep:lasso"]
+std = ["dep:lasso", "dep:memchr"]
 walk = ["std"]
 incremental = ["std"]
 parallel = ["std", "dep:rayon"]
@@ -46,6 +46,7 @@ quote = "1"
 prettyplease = { version = "0.2", optional = true }
 syn = { version = "2", default-features = false, features = ["full", "parsing"], optional = true }
 lasso = { version = "0.7", optional = true }
+memchr = { version = "2", optional = true }
 rayon = { version = "1", optional = true }
 
 [dev-dependencies]

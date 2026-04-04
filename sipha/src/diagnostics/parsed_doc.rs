@@ -50,7 +50,15 @@ impl ParsedDoc {
     /// tree events.
     #[must_use]
     pub fn from_slice(source: &[u8], output: &ParseOutput) -> Option<Self> {
-        Self::new(source.to_vec(), output)
+        let mut v = Vec::with_capacity(source.len());
+        v.extend_from_slice(source);
+        Self::new(v, output)
+    }
+
+    /// Recover the owned UTF-8 buffer (e.g. to reuse its capacity for another parse).
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.source
     }
 
     /// Reference to the syntax tree root.

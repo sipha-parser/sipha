@@ -9,6 +9,11 @@
 //! - Falls back to a plain slice comparison on other platforms, which the
 //!   compiler already lowers to `memcmp` / SIMD via auto-vectorisation.
 //!
+//! On **x86_64** with the `std` feature, AVX2 availability is probed once and
+//! stored in an atomic instead of calling `is_x86_feature_detected!` on every
+//! long literal match (grammars can issue thousands of [`literal_eq`](literal_eq)
+//! calls per parse).
+//!
 //! ## Why bother?
 //!
 //! For short keywords like `"true"` (4 bytes) the compiler generates a single
@@ -17,6 +22,26 @@
 //! deliver a measurable throughput gain.
 
 use crate::types::Pos;
+
+/// `2` = unset, `1` = AVX2 available, `0` = not available.
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
+static X86_AVX2_CACHED: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
+
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
+#[inline]
+fn x86_cached_has_avx2() -> bool {
+    use std::arch::is_x86_feature_detected;
+    use std::sync::atomic::Ordering;
+    match X86_AVX2_CACHED.load(Ordering::Relaxed) {
+        0 => false,
+        1 => true,
+        _ => {
+            let v = is_x86_feature_detected!("avx2");
+            X86_AVX2_CACHED.store(if v { 1 } else { 0 }, Ordering::Relaxed);
+            v
+        }
+    }
+}
 
 /// Compare `input[pos .. pos + lit.len()]` with `lit` and return whether
 /// they are equal.  Never panics (bounds are checked before the comparison).
@@ -45,13 +70,14 @@ pub fn literal_eq(input: &[u8], pos: Pos, lit: &[u8]) -> bool {
     // --- x86_64 fast path ---------------------------------------------------
     #[cfg(target_arch = "x86_64")]
     {
+        // `is_x86_feature_detected!` consults OS/cpu data each call — cache once per process.
         #[cfg(feature = "std")]
-        let has_avx2 = is_x86_feature_detected!("avx2");
+        let use_avx2 = n >= 32 && x86_cached_has_avx2();
         #[cfg(not(feature = "std"))]
-        let has_avx2 = false;
+        let use_avx2 = false;
 
-        if n >= 32 && has_avx2 {
-            // SAFETY: bounds checked above; avx2 detected at runtime.
+        if use_avx2 {
+            // SAFETY: bounds checked above; AVX2 verified at init.
             return unsafe { eq_avx2(a.add(off), b, n) };
         }
         if n >= 16 {
