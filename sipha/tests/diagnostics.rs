@@ -1,8 +1,9 @@
 #![cfg(feature = "std")]
 
-mod common;
+#[path = "common/grammar.rs"]
+mod grammar;
 
-use common::expr_grammar;
+use grammar::expr_grammar;
 use sipha::prelude::*;
 
 #[test]

@@ -2,7 +2,14 @@
 
 mod common;
 
-use common::{expr_grammar, parse_doc, sexp};
+use common::{expr_grammar, sexp};
+use sipha::prelude::*;
+
+fn parse_doc(graph: &ParseGraph<'_>, src: &[u8]) -> ParsedDoc {
+    let mut engine = Engine::new();
+    let out = engine.parse(graph, src).expect("parse should succeed");
+    ParsedDoc::from_slice(src, &out).expect("should produce syntax root")
+}
 
 #[test]
 fn parses_expression_and_builds_tree() {
