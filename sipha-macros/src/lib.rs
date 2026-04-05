@@ -8,8 +8,9 @@ mod ast_enum;
 mod ast_node;
 mod ir;
 mod lower;
+mod lex_kinds;
 mod parse;
-mod syntax_kinds;
+mod rule_kinds;
 
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
@@ -53,12 +54,22 @@ pub fn sipha_grammar(input: TokenStream) -> TokenStream {
     lower::lower_grammar(&grammar).into()
 }
 
-/// Derive `IntoSyntaxKind` and `FromSyntaxKind` for an enum of syntax kinds.
+/// Derive lexical discriminant encoding: [`IntoSyntaxKind`], [`FromSyntaxKind`], [`FromLexKind`].
 ///
-/// The enum must have `#[repr(u16)]`. Only unit variants are supported.
-#[proc_macro_derive(SyntaxKinds)]
-pub fn syntax_kinds_derive(input: TokenStream) -> TokenStream {
-    syntax_kinds::derive_syntax_kinds(input)
+/// The enum must have `#[repr(u16)]`. Only unit variants are supported. Implement
+/// [`LexKind`](sipha::types::LexKind) separately (for example `display_name` → `as_str()`).
+#[proc_macro_derive(LexKinds)]
+pub fn lex_kinds_derive(input: TokenStream) -> TokenStream {
+    lex_kinds::derive_lex_kinds(input)
+}
+
+/// Derive CST node discriminant encoding after a [`LexKinds`] enum.
+///
+/// Requires `#[sipha(lex = YourLexEnum)]` on this enum. Implement [`RuleKind`](sipha::types::RuleKind)
+/// separately.
+#[proc_macro_derive(RuleKinds, attributes(sipha))]
+pub fn rule_kinds_derive(input: TokenStream) -> TokenStream {
+    rule_kinds::derive_rule_kinds(input)
 }
 
 /// Derive `sipha::tree::ast::AstNode` for a tuple-struct wrapper around `SyntaxNode`.

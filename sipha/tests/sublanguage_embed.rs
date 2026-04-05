@@ -1,16 +1,13 @@
 #![cfg(feature = "std")]
 
-use sipha::SyntaxKinds;
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
-    Host,
+enum Lex {
     Body,
-    Embedded,
-    JsonRoot,
     JsonString,
     JsonLBrace,
     JsonRBrace,
@@ -18,13 +15,47 @@ enum K {
     Ws,
 }
 
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Lex::Body => "BODY",
+            Lex::JsonString => "JSON_STRING",
+            Lex::JsonLBrace => "JSON_LBRACE",
+            Lex::JsonRBrace => "JSON_RBRACE",
+            Lex::JsonColon => "JSON_COLON",
+            Lex::Ws => "WS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    Root,
+    Host,
+    Embedded,
+    JsonRoot,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        match self {
+            Rule::Root => "ROOT",
+            Rule::Host => "HOST",
+            Rule::Embedded => "EMBEDDED",
+            Rule::JsonRoot => "JSON_ROOT",
+        }
+    }
+}
+
 fn host_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
     g.set_trivia_rule("ws");
 
     g.parser_rule("start", |g| {
-        g.node(K::Root, |g| {
-            g.node(K::Host, |g| {
+        g.node(Rule::Root, |g| {
+            g.node(Rule::Host, |g| {
                 g.call("body");
             });
         });
@@ -32,7 +63,7 @@ fn host_grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("ws", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.zero_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -40,7 +71,7 @@ fn host_grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("body", |g| {
-        g.token(K::Body, |g| {
+        g.token(Lex::Body, |g| {
             g.literal(b"{\"a\":\"b\"}");
         });
     });
@@ -53,16 +84,16 @@ fn json_grammar() -> BuiltGraph {
     g.set_trivia_rule("ws");
 
     g.parser_rule("start", |g| {
-        g.node(K::JsonRoot, |g| {
-            g.token(K::JsonLBrace, |g| {
+        g.node(Rule::JsonRoot, |g| {
+            g.token(Lex::JsonLBrace, |g| {
                 g.byte(b'{');
             });
             g.call("jstring");
-            g.token(K::JsonColon, |g| {
+            g.token(Lex::JsonColon, |g| {
                 g.byte(b':');
             });
             g.call("jstring");
-            g.token(K::JsonRBrace, |g| {
+            g.token(Lex::JsonRBrace, |g| {
                 g.byte(b'}');
             });
             g.skip();
@@ -72,7 +103,7 @@ fn json_grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("ws", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.zero_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -80,7 +111,7 @@ fn json_grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("jstring", |g| {
-        g.token(K::JsonString, |g| {
+        g.token(Lex::JsonString, |g| {
             g.byte(b'"');
             g.zero_or_more(|g| {
                 g.neg_lookahead(|g| {
@@ -109,19 +140,20 @@ fn can_splice_embedded_tree_events() {
         src,
         &host_out.tree_events,
         &[SubLanguage {
-            host_kind: K::Host as SyntaxKind,
-            span: EmbeddedSpan::TokenKind(K::Body as SyntaxKind),
+            host_kind: Rule::Host.into_syntax_kind(),
+            span: EmbeddedSpan::TokenKind(Lex::Body.into_syntax_kind()),
             embedded: json.as_graph(),
-            wrapper_kind: Some(K::Embedded as SyntaxKind),
-            error_kind: Some(K::Embedded as SyntaxKind),
+            wrapper_kind: Some(Rule::Embedded.into_syntax_kind()),
+            error_kind: Some(Rule::Embedded.into_syntax_kind()),
         }],
     );
 
     assert!(errors.is_empty(), "{errors:#?}");
     assert!(
-        rewritten.iter().any(
-            |e| matches!(e, TreeEvent::NodeOpen { kind, .. } if *kind == K::Embedded as SyntaxKind)
-        ),
+        rewritten.iter().any(|e| matches!(
+            e,
+            TreeEvent::NodeOpen { kind, .. } if *kind == Rule::Embedded.into_syntax_kind()
+        )),
         "expected an Embedded wrapper node to be inserted"
     );
 }

@@ -9,6 +9,16 @@ use crate::types::RuleId;
 /// [`SliceGrammarNames`] for static `&[&str]` tables (e.g. tests or hand-written glue).
 pub trait GrammarNames {
     fn rule_name(&self, id: RuleId) -> Option<&str>;
+
+    /// User-facing text for [`Expected::Rule`](crate::diagnostics::error::Expected::Rule) in parse errors.
+    ///
+    /// Defaults to [`rule_name`](Self::rule_name). Grammars built with [`crate::parse::builder::GrammarBuilder`]
+    /// store a separate interned string (often derived from the rule name, or set via
+    /// [`parser_rule_with_diagnostic`](crate::parse::builder::GrammarBuilder::parser_rule_with_diagnostic)).
+    fn rule_diagnostic_display(&self, id: RuleId) -> Option<&str> {
+        self.rule_name(id)
+    }
+
     fn expected_label(&self, id: u32) -> Option<&str>;
     fn class_label(&self, label_id: u32) -> Option<&str>;
     /// Resolve an interned string from the grammar's [`StringTable`](crate::parse::string_table::StringTable).

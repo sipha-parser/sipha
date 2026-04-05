@@ -1,5 +1,6 @@
 //! Parse engine (VM).
 
+mod dispatch;
 mod engine_impl;
 mod error;
 mod flags;

@@ -4,12 +4,16 @@
 
 #[cfg(feature = "std")]
 pub mod builder;
+#[cfg(feature = "std")]
+pub mod lexer_batch;
 pub mod capture;
 #[cfg(feature = "std")]
 pub mod codegen;
 pub mod context;
 #[cfg(feature = "std")]
 pub mod expr;
+#[cfg(feature = "std")]
+pub(crate) mod graph_optimize;
 #[cfg_attr(docsrs, doc(cfg(feature = "incremental")))]
 #[cfg(feature = "incremental")]
 pub mod incremental;

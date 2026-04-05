@@ -81,7 +81,8 @@ extern crate alloc;
 
 pub use sipha_macros::AstEnum;
 pub use sipha_macros::AstNode;
-pub use sipha_macros::SyntaxKinds;
+pub use sipha_macros::LexKinds;
+pub use sipha_macros::RuleKinds;
 pub use sipha_macros::sipha_grammar;
 
 pub mod diagnostics;
@@ -105,6 +106,8 @@ pub mod prelude {
         pub use crate::parse::builder::{
             BuiltGraph, GrammarBuilder, GrammarChoiceFn, Repeat, SharedGrammar,
         };
+        #[cfg(feature = "std")]
+        pub use crate::parse::lexer_batch::{LexerKeywordSpec, LexerTokenLiteralSpec};
         pub use crate::parse::capture::CaptureNode;
         pub use crate::parse::context::{FlagId, ParseContext};
         pub use crate::parse::engine::{
@@ -115,7 +118,9 @@ pub mod prelude {
             LeftAssocInfixLevel, left_assoc_infix_level, postfix_chain, right_assoc_infix_level,
             separated_rule_list, separated1_rule_list,
         };
-        pub use crate::parse::insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph};
+        pub use crate::parse::insn::{
+            FlagMaskTable, Insn, InsnOpcode, LiteralTable, ParseGraph, opcode,
+        };
         #[cfg(feature = "std")]
         pub use crate::parse::memo::MemoTable;
         pub use crate::parse::sublanguage::{
@@ -241,16 +246,16 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use self::parse::{
         BadGraphKind, BuiltGraph, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable,
-        GrammarBuilder, Insn, LeftAssocInfixLevel, LiteralTable, MemoTable, ParseContext,
-        ParseError, ParseGraph, ParseOutput, RecoverMultiResult, Repeat, SharedGrammar,
-        SubLanguage, SubLanguageError, apply_sublanguages, left_assoc_infix_level,
+        GrammarBuilder, Insn, InsnOpcode, LeftAssocInfixLevel, LiteralTable, MemoTable,
+        ParseContext, ParseError, ParseGraph, ParseOutput, RecoverMultiResult, Repeat,
+        SharedGrammar, SubLanguage, SubLanguageError, apply_sublanguages, left_assoc_infix_level,
         right_assoc_infix_level,
     };
     #[cfg(not(feature = "std"))]
     pub use self::parse::{
-        BadGraphKind, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable, Insn, LiteralTable,
-        ParseContext, ParseError, ParseGraph, ParseOutput, RecoverMultiResult, SubLanguage,
-        SubLanguageError, apply_sublanguages,
+        BadGraphKind, CaptureNode, EmbeddedSpan, Engine, FlagId, FlagMaskTable, Insn, InsnOpcode,
+        LiteralTable, ParseContext, ParseError, ParseGraph, ParseOutput, RecoverMultiResult,
+        SubLanguage, SubLanguageError, apply_sublanguages,
     };
     #[cfg(feature = "std")]
     pub use crate::parse::parse_to_doc::parse_to_doc;
@@ -264,8 +269,8 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::tree::ast::{AstNode, AstNodeExt, AstToken, AstTokenExt};
     pub use crate::types::{
-        CharClass, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind, Tag, TreeEvent, classes,
-        sort_spans,
+        CharClass, FromLexKind, FromRuleKind, FromSyntaxKind, GrammarRuleName, IntoSyntaxKind,
+        LexKind, RuleKind, Span, SyntaxKind, Tag, TreeEvent, classes, sort_spans,
     };
 
     #[cfg(feature = "walk")]

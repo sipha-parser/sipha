@@ -84,6 +84,8 @@ pub(super) fn quote_string_pool_and_rule_tables(graph: &BuiltGraph) -> TokenStre
     let rule_ips = &graph.rule_entry;
 
     let rule_names = quote_symbol_slice("RULE_NAMES", &graph.rule_names);
+    let rule_diagnostic_labels =
+        quote_symbol_slice("RULE_DIAGNOSTIC_LABELS", &graph.rule_diagnostic_labels);
     let tag_names = quote_symbol_slice("TAG_NAMES", &graph.tag_names);
     let class_labels = quote_symbol_slice("CLASS_LABELS", &graph.class_labels);
     let expected_labels = quote_symbol_slice("EXPECTED_LABELS", &graph.expected_labels);
@@ -96,6 +98,7 @@ pub(super) fn quote_string_pool_and_rule_tables(graph: &BuiltGraph) -> TokenStre
         static RULE_ENTRY: &[u32] = &[ #( #rule_ips ),* ];
 
         #rule_names
+        #rule_diagnostic_labels
         #tag_names
         #class_labels
         #expected_labels

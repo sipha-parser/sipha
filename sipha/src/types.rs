@@ -15,16 +15,24 @@ pub type FieldId = u16;
 
 /// Stored discriminant for a syntax kind (used internally in green/red trees and events).
 ///
-/// Grammar authors can use either raw `u16` values or an enum that implements
-/// [`IntoSyntaxKind`] and [`FromSyntaxKind`], so you don't need to manage numbering manually.
-/// Use the [`SyntaxKinds`](crate::SyntaxKinds) derive macro for an enum with automatic
-/// discriminants 0, 1, 2, …
+/// Layout is a single `u16` space partitioned as:
+///
+/// - **Lexical kinds** (tokens + trivia): `0 .. FromLexKind::COUNT` for your [`LexKind`] enum.
+/// - **Rule kinds** (CST nodes): `FromLexKind::COUNT ..` for your [`RuleKind`] enum (see
+///   [`RuleKinds`](crate::RuleKinds) derive with `#[sipha(lex = YourLexEnum)]`).
+///
+/// Use [`LexKinds`](crate::LexKinds) / [`RuleKinds`](crate::RuleKinds) so discriminants and
+/// [`FromSyntaxKind`] agree. You can still use raw [`SyntaxKind`] values or a hand-rolled
+/// [`IntoSyntaxKind`] implementation for advanced embeddings.
 pub type SyntaxKind = u16;
 
 /// Converts a value into the internal [`SyntaxKind`] discriminant.
 ///
-/// Implement this for your enum (e.g. with `#[repr(u16)]`) so you can pass enum variants
-/// to [`GrammarBuilder::node`](crate::parse::builder::GrammarBuilder::node), [`GrammarBuilder::token`](crate::parse::builder::GrammarBuilder::token), and [`GrammarBuilder::trivia`](crate::parse::builder::GrammarBuilder::trivia).
+/// Implemented automatically by [`LexKinds`](crate::LexKinds) and [`RuleKinds`](crate::RuleKinds).
+/// Lower-level code (AST macros, queries) often refers to this trait; grammar entry points prefer
+/// [`LexKind`] for [`GrammarBuilder::token`](crate::parse::builder::GrammarBuilder::token) /
+/// [`GrammarBuilder::trivia`](crate::parse::builder::GrammarBuilder::trivia) and [`RuleKind`] for
+/// [`GrammarBuilder::node`](crate::parse::builder::GrammarBuilder::node).
 pub trait IntoSyntaxKind {
     fn into_syntax_kind(self) -> SyntaxKind;
 }
@@ -49,6 +57,60 @@ impl FromSyntaxKind for SyntaxKind {
     fn from_syntax_kind(k: SyntaxKind) -> Option<Self> {
         Some(k)
     }
+}
+
+/// Lexical token / trivia kinds — the low contiguous range of [`SyntaxKind`].
+///
+/// Use with [`GrammarBuilder::token`](crate::parse::builder::GrammarBuilder::token),
+/// [`GrammarBuilder::trivia`](crate::parse::builder::GrammarBuilder::trivia), and
+/// [`GrammarBuilder::keyword`](crate::parse::builder::GrammarBuilder::keyword). See
+/// [`LexKinds`](crate::LexKinds).
+pub trait LexKind: IntoSyntaxKind + Copy {
+    /// Stable name for diagnostics, diffs, and debug (often `SCREAMING_SNAKE`).
+    fn display_name(self) -> &'static str;
+}
+
+/// CST node kinds — stored at `SyntaxKind` offsets starting at [`FromLexKind::COUNT`].
+///
+/// Use with [`GrammarBuilder::node`](crate::parse::builder::GrammarBuilder::node) and
+/// [`GrammarBuilder::node_with_field`](crate::parse::builder::GrammarBuilder::node_with_field).
+/// See [`RuleKinds`](crate::RuleKinds).
+pub trait RuleKind: IntoSyntaxKind + Copy {
+    /// Stable name for diagnostics, diffs, and debug (often `SCREAMING_SNAKE`).
+    fn display_name(self) -> &'static str;
+}
+
+/// Name of a **registered** grammar rule — the string passed to
+/// [`GrammarBuilder::parser_rule`](crate::parse::builder::GrammarBuilder::parser_rule),
+/// [`GrammarBuilder::lexer_rule`](crate::parse::builder::GrammarBuilder::lexer_rule), or
+/// [`GrammarBuilder::rule`](crate::parse::builder::GrammarBuilder::rule).
+///
+/// Implement this on a unit enum of your rule names so call sites can use
+/// [`GrammarBuilder::call_rule`](crate::parse::builder::GrammarBuilder::call_rule) instead of raw
+/// `&str`, while [`GrammarBuilder::finish`](crate::parse::builder::GrammarBuilder::finish) still
+/// resolves forward references the same way as [`GrammarBuilder::call`](crate::parse::builder::GrammarBuilder::call).
+///
+/// This is **not** the same as [`RuleKind`]: that trait names **syntax node** discriminants in the
+/// CST; `GrammarRuleName` names **PEG rules** in the bytecode graph.
+pub trait GrammarRuleName: Copy {
+    /// Rule table key — must match the `name` argument used when the rule was defined.
+    fn rule_name(self) -> &'static str;
+}
+
+/// Decode only lexical discriminants (`k < Self::COUNT`).
+pub trait FromLexKind: Sized + Copy {
+    /// One past the last lexical discriminant; rule kinds start here.
+    const COUNT: u16;
+
+    fn try_from_lex(k: SyntaxKind) -> Option<Self>;
+}
+
+/// Decode only rule discriminants (`BASE .. BASE + COUNT`).
+pub trait FromRuleKind: Sized + Copy {
+    const BASE: u16;
+    const COUNT: u16;
+
+    fn try_from_rule(k: SyntaxKind) -> Option<Self>;
 }
 
 /// A half-open byte range [start, end) into the input.

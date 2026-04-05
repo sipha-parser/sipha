@@ -189,8 +189,23 @@ pub enum Insn {
     // ── O(1) Dispatch ────────────────────────────────────────────────────────
     /// Dispatch to an arm based on the next input byte using a precomputed 256-entry table.
     ///
+    /// If the peeked byte maps to `u32::MAX` in the table (or input is empty), and `fallback` is
+    /// not `u32::MAX`, continue at `fallback` **without consuming** input — this preserves PEG
+    /// “try the next ordered alternative” when a [`Choice`](Insn::Choice) spine is fused into
+    /// dispatch. Builder [`byte_dispatch`](crate::parse::builder::GrammarBuilder::byte_dispatch)
+    /// with a fallback body may leave holes in the table and set `fallback` instead of filling
+    /// every slot.
+    ///
     /// Builder source: [`GrammarBuilder::byte_dispatch`](crate::parse::builder::GrammarBuilder::byte_dispatch).
-    ByteDispatch { table_id: u32 },
+    ByteDispatch {
+        table_id: u32,
+        /// PEG continuation when no table entry matches the next byte (`u32::MAX` = use normal failure).
+        fallback: InsnId,
+        /// When true, a successful table hit pushes a backtrack frame like [`Insn::Choice`] so
+        /// mid-arm failure restores `saved_pos` and continues at `fallback`. Fused **prefix trie**
+        /// roots use this; inner trie nodes and flat fused dispatches use `false`.
+        push_choice_backtrack: bool,
+    },
 
     // ── Fused terminals ──────────────────────────────────────────────────────
     /// Consume a run of bytes matching `class`.
@@ -344,6 +359,189 @@ pub enum Insn {
     Accept,
 }
 
+/// Stable opcode ids for [`Insn::opcode`], generated dispatch tables, and future JIT.
+///
+/// Discriminants mirror the source order of [`Insn`]. When you add or reorder [`Insn`]
+/// variants, update [`InsnOpcode`] and [`Insn::opcode`] together.
+#[allow(dead_code)]
+pub mod opcode {
+    /// Opcode tag for [`Insn`] (same numeric order as the instruction enum).
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum InsnOpcode {
+        Byte = 0,
+        ByteEither = 1,
+        ByteIn3 = 2,
+        ByteRange = 3,
+        Class = 4,
+        Literal = 5,
+        LiteralSmall = 6,
+        EndOfInput = 7,
+        Fail = 8,
+        AnyChar = 9,
+        Char = 10,
+        CharRange = 11,
+        Jump = 12,
+        Call = 13,
+        Return = 14,
+        Choice = 15,
+        Commit = 16,
+        BackCommit = 17,
+        NegBackCommit = 18,
+        PartialCommit = 19,
+        ByteDispatch = 20,
+        ConsumeWhileClass = 21,
+        IfFlag = 22,
+        IfNotFlag = 23,
+        PushFlags = 24,
+        PopFlags = 25,
+        CaptureBegin = 26,
+        CaptureEnd = 27,
+        NodeBegin = 28,
+        NodeEnd = 29,
+        TokenBegin = 30,
+        TokenEnd = 31,
+        RecordExpectedLabel = 32,
+        PushDiagnosticContext = 33,
+        PopDiagnosticContext = 34,
+        SetHint = 35,
+        TracePoint = 36,
+        RecoverUntil = 37,
+        RecoveryResume = 38,
+        Accept = 39,
+    }
+
+    impl InsnOpcode {
+        #[must_use]
+        #[inline]
+        pub const fn as_u8(self) -> u8 {
+            self as u8
+        }
+    }
+
+    impl TryFrom<u8> for InsnOpcode {
+        type Error = ();
+
+        #[inline]
+        fn try_from(value: u8) -> Result<Self, Self::Error> {
+            if value > Self::Accept as u8 {
+                return Err(());
+            }
+            // SAFETY: `InsnOpcode` is `#[repr(u8)]` with discriminants 0..=39 contiguous.
+            Ok(unsafe { core::mem::transmute::<u8, InsnOpcode>(value) })
+        }
+    }
+
+    /// Byte-heavy terminals, [`Insn::Jump`], [`Insn::ByteDispatch`], [`Insn::ConsumeWhileClass`].
+    #[inline(always)]
+    pub const fn is_hot_scan_opcode(op: u8) -> bool {
+        op == InsnOpcode::Byte as u8
+            || op == InsnOpcode::ByteEither as u8
+            || op == InsnOpcode::ByteIn3 as u8
+            || op == InsnOpcode::ByteRange as u8
+            || op == InsnOpcode::Class as u8
+            || op == InsnOpcode::Literal as u8
+            || op == InsnOpcode::LiteralSmall as u8
+            || op == InsnOpcode::Jump as u8
+            || op == InsnOpcode::ByteDispatch as u8
+            || op == InsnOpcode::ConsumeWhileClass as u8
+    }
+}
+
+pub use opcode::InsnOpcode;
+
+impl Insn {
+    /// Stable opcode for this instruction (same order as [`InsnOpcode`]).
+    #[must_use]
+    #[inline]
+    pub fn opcode(&self) -> InsnOpcode {
+        match self {
+            Insn::Byte { .. } => InsnOpcode::Byte,
+            Insn::ByteEither { .. } => InsnOpcode::ByteEither,
+            Insn::ByteIn3 { .. } => InsnOpcode::ByteIn3,
+            Insn::ByteRange { .. } => InsnOpcode::ByteRange,
+            Insn::Class { .. } => InsnOpcode::Class,
+            Insn::Literal { .. } => InsnOpcode::Literal,
+            Insn::LiteralSmall { .. } => InsnOpcode::LiteralSmall,
+            Insn::EndOfInput { .. } => InsnOpcode::EndOfInput,
+            Insn::Fail => InsnOpcode::Fail,
+            Insn::AnyChar { .. } => InsnOpcode::AnyChar,
+            Insn::Char { .. } => InsnOpcode::Char,
+            Insn::CharRange { .. } => InsnOpcode::CharRange,
+            Insn::Jump { .. } => InsnOpcode::Jump,
+            Insn::Call { .. } => InsnOpcode::Call,
+            Insn::Return => InsnOpcode::Return,
+            Insn::Choice { .. } => InsnOpcode::Choice,
+            Insn::Commit { .. } => InsnOpcode::Commit,
+            Insn::BackCommit { .. } => InsnOpcode::BackCommit,
+            Insn::NegBackCommit { .. } => InsnOpcode::NegBackCommit,
+            Insn::PartialCommit { .. } => InsnOpcode::PartialCommit,
+            Insn::ByteDispatch { .. } => InsnOpcode::ByteDispatch,
+            Insn::ConsumeWhileClass { .. } => InsnOpcode::ConsumeWhileClass,
+            Insn::IfFlag { .. } => InsnOpcode::IfFlag,
+            Insn::IfNotFlag { .. } => InsnOpcode::IfNotFlag,
+            Insn::PushFlags { .. } => InsnOpcode::PushFlags,
+            Insn::PopFlags => InsnOpcode::PopFlags,
+            Insn::CaptureBegin { .. } => InsnOpcode::CaptureBegin,
+            Insn::CaptureEnd { .. } => InsnOpcode::CaptureEnd,
+            Insn::NodeBegin { .. } => InsnOpcode::NodeBegin,
+            Insn::NodeEnd => InsnOpcode::NodeEnd,
+            Insn::TokenBegin { .. } => InsnOpcode::TokenBegin,
+            Insn::TokenEnd => InsnOpcode::TokenEnd,
+            Insn::RecordExpectedLabel { .. } => InsnOpcode::RecordExpectedLabel,
+            Insn::PushDiagnosticContext { .. } => InsnOpcode::PushDiagnosticContext,
+            Insn::PopDiagnosticContext => InsnOpcode::PopDiagnosticContext,
+            Insn::SetHint { .. } => InsnOpcode::SetHint,
+            Insn::TracePoint { .. } => InsnOpcode::TracePoint,
+            Insn::RecoverUntil { .. } => InsnOpcode::RecoverUntil,
+            Insn::RecoveryResume => InsnOpcode::RecoveryResume,
+            Insn::Accept => InsnOpcode::Accept,
+        }
+    }
+
+    /// [`Self::opcode`] as a raw `u8` for tight tables and FFI.
+    #[must_use]
+    #[inline]
+    pub fn opcode_u8(&self) -> u8 {
+        self.opcode().as_u8()
+    }
+}
+
+#[cfg(test)]
+mod opcode_tests {
+    use super::Insn;
+    use super::opcode::InsnOpcode;
+
+    #[test]
+    fn opcode_u8_matches_insn_opcode_enum() {
+        assert_eq!(
+            Insn::Byte {
+                byte: b'x',
+                on_fail: 0
+            }
+            .opcode(),
+            InsnOpcode::Byte
+        );
+        assert_eq!(Insn::Fail.opcode(), InsnOpcode::Fail);
+        assert_eq!(Insn::Accept.opcode(), InsnOpcode::Accept);
+        assert_eq!(Insn::Jump { target: 0 }.opcode(), InsnOpcode::Jump);
+        assert_eq!(InsnOpcode::try_from(12u8).unwrap(), InsnOpcode::Jump);
+    }
+
+    #[test]
+    fn opcode_u8_matches_repr_u8_discriminant() {
+        let insn = Insn::Fail;
+        let tag = unsafe { *std::ptr::from_ref(&insn).cast::<u8>() };
+        assert_eq!(insn.opcode_u8(), tag);
+        let b = Insn::Byte {
+            byte: b'x',
+            on_fail: 0,
+        };
+        let tag_b = unsafe { *std::ptr::from_ref(&b).cast::<u8>() };
+        assert_eq!(b.opcode_u8(), tag_b);
+    }
+}
+
 // ─── Literal table ────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug)]
@@ -403,6 +601,8 @@ pub struct ParseGraph<'a> {
     /// Shared string pool; [`SymbolId`] values index into it.
     pub strings: &'a StringTable,
     pub rule_names: &'a [SymbolId],
+    /// Short labels for [`Expected::Rule`](crate::diagnostics::error::Expected::Rule); parallel to [`rule_names`](Self::rule_names).
+    pub rule_diagnostic_labels: &'a [SymbolId],
     pub tag_names: &'a [SymbolId],
     /// Labels for [`Insn::Class`] diagnostics; index 0 is the default "character class".
     pub class_labels: &'a [SymbolId],
@@ -418,6 +618,15 @@ impl ParseGraph<'_> {
     #[inline]
     pub fn rule_name(&self, id: RuleId) -> Option<&str> {
         self.rule_names
+            .get(id as usize)
+            .map(|&sym| self.strings.resolve(sym))
+    }
+
+    /// Text shown when this rule appears in a parse error expected-set.
+    #[must_use]
+    #[inline]
+    pub fn rule_diagnostic_display(&self, id: RuleId) -> Option<&str> {
+        self.rule_diagnostic_labels
             .get(id as usize)
             .map(|&sym| self.strings.resolve(sym))
     }
@@ -458,10 +667,17 @@ impl ParseGraph<'_> {
         self.rule_entry[0]
     }
 
+    /// Borrow the instruction at `id` (hot path: avoids copying a large [`Insn`] onto the stack).
+    #[must_use]
+    #[inline]
+    pub fn insn_ref(&self, id: InsnId) -> &Insn {
+        unsafe { self.insns.get_unchecked(id as usize) }
+    }
+
     #[must_use]
     #[inline]
     pub fn insn(&self, id: InsnId) -> Insn {
-        unsafe { *self.insns.get_unchecked(id as usize) }
+        *self.insn_ref(id)
     }
 
     #[must_use]
@@ -529,6 +745,7 @@ mod tests {
             },
             strings: &strings,
             rule_names,
+            rule_diagnostic_labels: rule_names,
             tag_names: &[],
             class_labels: &[],
             expected_labels: &[],
@@ -552,6 +769,10 @@ impl GrammarNames for ParseGraph<'_> {
             .map(|&sym| self.strings.resolve(sym))
     }
 
+    fn rule_diagnostic_display(&self, id: RuleId) -> Option<&str> {
+        ParseGraph::rule_diagnostic_display(self, id)
+    }
+
     fn expected_label(&self, id: u32) -> Option<&str> {
         self.expected_labels
             .get(id as usize)
@@ -572,6 +793,10 @@ impl GrammarNames for ParseGraph<'_> {
 impl<'a> GrammarNames for &'a ParseGraph<'a> {
     fn rule_name(&self, id: RuleId) -> Option<&str> {
         ParseGraph::rule_name(self, id)
+    }
+
+    fn rule_diagnostic_display(&self, id: RuleId) -> Option<&str> {
+        ParseGraph::rule_diagnostic_display(self, id)
     }
 
     fn expected_label(&self, id: u32) -> Option<&str> {

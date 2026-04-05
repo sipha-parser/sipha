@@ -157,7 +157,7 @@ use crate::{
         insn::{FlagMaskTable, Insn, LiteralTable, ParseGraph},
         string_table::{StringInterner, StringTable, SymbolId},
     },
-    types::{CharClass, FieldId, InsnId, IntoSyntaxKind, RuleId, Tag},
+    types::{CharClass, FieldId, GrammarRuleName, InsnId, LexKind, RuleId, RuleKind, Tag},
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -223,6 +223,25 @@ impl From<std::ops::RangeToInclusive<u32>> for Repeat {
 impl From<std::ops::RangeInclusive<u32>> for Repeat {
     fn from(r: std::ops::RangeInclusive<u32>) -> Self {
         Self::Between(*r.start(), *r.end())
+    }
+}
+
+/// Default user-facing label for [`Expected::Rule`](crate::diagnostics::error::Expected::Rule) when a rule
+/// is defined without [`GrammarBuilder::parser_rule_with_diagnostic`] /
+/// [`GrammarBuilder::lexer_rule_with_diagnostic`].
+///
+/// Keyword rules named `kw_foo` become `` `foo` `` (underscores → spaces). A few common parser rules get
+/// fixed phrases; otherwise snake_case is turned into separate words.
+#[must_use]
+pub fn default_rule_diagnostic_label(name: &str) -> String {
+    if let Some(rest) = name.strip_prefix("kw_") {
+        return format!("`{}`", rest.replace('_', " "));
+    }
+    match name {
+        "ident" => "identifier".into(),
+        "expr" => "expression".into(),
+        "semi" => "semicolon (`;`)".into(),
+        _ => name.replace('_', " "),
     }
 }
 
@@ -340,6 +359,8 @@ pub struct BuiltGraph {
     /// Interned strings for rule names, tags, labels, and fields.
     pub strings: StringTable,
     pub rule_names: Vec<SymbolId>,
+    /// Parallel to [`rule_names`](Self::rule_names); shown when a rule appears in parse error expected-sets.
+    pub rule_diagnostic_labels: Vec<SymbolId>,
     pub tag_names: Vec<SymbolId>,
     /// Labels for [`Insn::Class`] diagnostics; index 0 is the default "character class".
     pub class_labels: Vec<SymbolId>,
@@ -370,6 +391,7 @@ impl BuiltGraph {
             },
             strings: &self.strings,
             rule_names: &self.rule_names,
+            rule_diagnostic_labels: &self.rule_diagnostic_labels,
             tag_names: &self.tag_names,
             class_labels: &self.class_labels,
             expected_labels: &self.expected_labels,
@@ -449,6 +471,7 @@ pub struct GrammarBuilder {
     rule_entry: Vec<InsnId>,
     rule_by_name: HashMap<String, RuleId>,
     rule_names: Vec<SymbolId>,
+    rule_diagnostic_labels: Vec<SymbolId>,
     /// `(insn_addr, rule_name)` pairs resolved during [`finish`](Self::finish).
     pending_calls: Vec<(usize, String)>,
     /// `(insn_addr, sync_rule_name)` for [`RecoverUntil`](Insn::RecoverUntil); resolved in [`finish`](Self::finish).
@@ -505,6 +528,10 @@ pub struct GrammarBuilder {
 
     /// If `true`, [`trace`](Self::trace) emits runtime trace waypoints.
     trace_mode: bool,
+
+    /// If `true`, [`finish`](Self::finish) runs a post-pass that fuses eligible ordered-choice
+    /// spines into [`Insn::ByteDispatch`]. Default `true`.
+    optimize_graph: bool,
 }
 
 impl GrammarBuilder {
@@ -517,6 +544,7 @@ impl GrammarBuilder {
             rule_entry: Vec::new(),
             rule_by_name: HashMap::new(),
             rule_names: Vec::new(),
+            rule_diagnostic_labels: Vec::new(),
             pending_calls: Vec::new(),
             pending_recover: Vec::new(),
             tag_by_name: HashMap::new(),
@@ -534,7 +562,14 @@ impl GrammarBuilder {
             allow_rule_cycles: false,
             allow_unreachable_rules: true,
             trace_mode: false,
+            optimize_graph: true,
         }
+    }
+
+    /// Enable or disable the post-build bytecode optimizer (byte-first choice fusion).
+    pub fn set_optimize_graph(&mut self, enabled: bool) -> &mut Self {
+        self.optimize_graph = enabled;
+        self
     }
 
     /// Enable/disable emission of runtime trace waypoints via [`trace`](Self::trace).
@@ -586,6 +621,13 @@ impl GrammarBuilder {
     /// ```
     pub fn set_trivia_rule(&mut self, name: impl Into<String>) {
         self.trivia_rule = Some(name.into());
+    }
+
+    /// Like [`set_trivia_rule`](Self::set_trivia_rule), but takes a [`GrammarRuleName`](crate::types::GrammarRuleName).
+    #[inline]
+    pub fn set_trivia_rule_name<R: GrammarRuleName>(&mut self, rule: R) -> &mut Self {
+        self.set_trivia_rule(rule.rule_name());
+        self
     }
 
     /// Emit a call to the registered trivia rule right now.
@@ -668,7 +710,21 @@ impl GrammarBuilder {
     where
         F: FnOnce(&mut Self),
     {
-        self.rule_impl(name, body, true)
+        self.rule_impl(name, body, true, None)
+    }
+
+    /// Like [`parser_rule`](Self::parser_rule), but set the string used when this rule appears in
+    /// [`Expected::Rule`](crate::diagnostics::error::Expected::Rule) diagnostics.
+    pub fn parser_rule_with_diagnostic<F>(
+        &mut self,
+        name: &str,
+        diagnostic: &str,
+        body: F,
+    ) -> RuleId
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.rule_impl(name, body, true, Some(diagnostic))
     }
 
     /// Define a **lexer-level** rule with trivia skipping suppressed.
@@ -689,7 +745,15 @@ impl GrammarBuilder {
     where
         F: FnOnce(&mut Self),
     {
-        self.rule_impl(name, body, false)
+        self.rule_impl(name, body, false, None)
+    }
+
+    /// Like [`lexer_rule`](Self::lexer_rule), with a custom [`Expected::Rule`](crate::diagnostics::error::Expected::Rule) label.
+    pub fn lexer_rule_with_diagnostic<F>(&mut self, name: &str, diagnostic: &str, body: F) -> RuleId
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.rule_impl(name, body, false, Some(diagnostic))
     }
 
     /// Define a rule with neutral trivia behaviour (inherits the current mode).
@@ -707,7 +771,7 @@ impl GrammarBuilder {
     where
         F: FnOnce(&mut Self),
     {
-        let id = self.open_rule(name);
+        let id = self.open_rule(name, None);
         body(self);
         self.close_rule();
         id
@@ -717,13 +781,20 @@ impl GrammarBuilder {
     ///
     /// Only used by [`rule`](Self::rule), [`parser_rule`](Self::parser_rule), and
     /// [`lexer_rule`](Self::lexer_rule); each call must be paired with [`close_rule`](Self::close_rule).
-    fn open_rule(&mut self, name: &str) -> RuleId {
+    fn open_rule(&mut self, name: &str, diagnostic: Option<&str>) -> RuleId {
         let id = RuleId::try_from(self.rule_entry.len()).unwrap_or(0);
         self.rule_entry
             .push(InsnId::try_from(self.insns.len()).unwrap_or(0));
         self.rule_by_name.insert(name.to_string(), id);
         let sym = self.strings.intern(name);
         self.rule_names.push(sym);
+        let disp = if let Some(s) = diagnostic {
+            self.strings.intern(s)
+        } else {
+            let s = default_rule_diagnostic_label(name);
+            self.strings.intern(&s)
+        };
+        self.rule_diagnostic_labels.push(disp);
         id
     }
 
@@ -829,10 +900,17 @@ impl GrammarBuilder {
         }
     }
 
-    fn patch_table_id(&mut self, addr: InsnId, table_id: u32) {
+    fn patch_byte_dispatch(&mut self, addr: InsnId, table_id: u32, fallback: InsnId) {
         match &mut self.insns[addr as usize] {
-            Insn::ByteDispatch { table_id: t } => *t = table_id,
-            other => panic!("patch_table_id: expected ByteDispatch, got {other:?} at {addr}"),
+            Insn::ByteDispatch {
+                table_id: t,
+                fallback: f,
+                ..
+            } => {
+                *t = table_id;
+                *f = fallback;
+            }
+            other => panic!("patch_byte_dispatch: expected ByteDispatch, got {other:?} at {addr}"),
         }
     }
 
@@ -1136,6 +1214,13 @@ impl GrammarBuilder {
         self.emit(Insn::Call { rule: u16::MAX })
     }
 
+    /// Like [`call`](Self::call), but takes a type that implements [`GrammarRuleName`](crate::types::GrammarRuleName)
+    /// (typically your own `enum` of rule names with a `rule_name()` → `&'static str` mapping).
+    #[inline]
+    pub fn call_rule<R: GrammarRuleName>(&mut self, rule: R) -> InsnId {
+        self.call(rule.rule_name())
+    }
+
     /// Call a rule by its already-known [`RuleId`].
     ///
     /// Inside a [`parser_rule`](Self::parser_rule), a [`skip()`](Self::skip)
@@ -1198,7 +1283,7 @@ impl GrammarBuilder {
     ///   <body>
     /// NodeEnd
     /// ```
-    pub fn node<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
+    pub fn node<K: RuleKind, F>(&mut self, kind: K, body: F)
     where
         F: FnOnce(&mut Self),
     {
@@ -1222,7 +1307,7 @@ impl GrammarBuilder {
     ///   <body>
     /// NodeEnd
     /// ```
-    pub fn node_with_field<K: IntoSyntaxKind, F>(&mut self, kind: K, field: &str, body: F)
+    pub fn node_with_field<K: RuleKind, F>(&mut self, kind: K, field: &str, body: F)
     where
         F: FnOnce(&mut Self),
     {
@@ -1267,7 +1352,7 @@ impl GrammarBuilder {
     ///   <body>                           // auto_trivia forced off for token interior
     /// TokenEnd
     /// ```
-    pub fn token<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
+    pub fn token<K: LexKind, F>(&mut self, kind: K, body: F)
     where
         F: FnOnce(&mut Self),
     {
@@ -1306,7 +1391,7 @@ impl GrammarBuilder {
     ///   <body>                           // auto_trivia forced off for trivia interior
     /// TokenEnd
     /// ```
-    pub fn trivia<K: IntoSyntaxKind, F>(&mut self, kind: K, body: F)
+    pub fn trivia<K: LexKind, F>(&mut self, kind: K, body: F)
     where
         F: FnOnce(&mut Self),
     {
@@ -1325,7 +1410,7 @@ impl GrammarBuilder {
 
     /// Shorthand for a keyword token: `token(kind, |g| g.literal(word))`.
     /// Use for single-literals like `var`, `return`, `if`.
-    pub fn keyword<K: IntoSyntaxKind>(&mut self, kind: K, word: &'static [u8]) {
+    pub fn keyword<K: LexKind>(&mut self, kind: K, word: &'static [u8]) {
         self.token(kind, |g| {
             g.literal(word);
         });
@@ -1869,6 +1954,15 @@ impl GrammarBuilder {
         self.emit(Insn::RecoveryResume);
     }
 
+    /// Like [`recover_until`](Self::recover_until), but takes a [`GrammarRuleName`](crate::types::GrammarRuleName).
+    #[inline]
+    pub fn recover_until_rule<R: GrammarRuleName, F>(&mut self, sync_rule: R, body: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.recover_until(sync_rule.rule_name(), body);
+    }
+
     // ── Repetition ────────────────────────────────────────────────────────────
 
     /// Repeat `body` according to `range`.
@@ -1983,7 +2077,7 @@ impl GrammarBuilder {
     /// # Emits
     /// ```text
     /// (optional) <emission of skip()>                 // when auto_trivia == true
-    /// ByteDispatch { table_id: <patched> }
+    /// ByteDispatch { table_id: <patched>, fallback: <patched>, push_choice_backtrack: true }
     /// arm_0:
     ///   <body of arm_0>                               // auto_trivia forced off in arms
     ///   Jump { target: after }
@@ -2005,7 +2099,11 @@ impl GrammarBuilder {
         let prev = self.auto_trivia;
         self.auto_trivia = false;
 
-        let dispatch_ip = self.emit(Insn::ByteDispatch { table_id: u32::MAX });
+        let dispatch_ip = self.emit(Insn::ByteDispatch {
+            table_id: u32::MAX,
+            fallback: u32::MAX,
+            push_choice_backtrack: true,
+        });
         let mut table = [u32::MAX; 256];
         let mut exits = Vec::new();
 
@@ -2020,13 +2118,9 @@ impl GrammarBuilder {
             exits.push(self.emit(Insn::Jump { target: u32::MAX }));
         }
 
+        let mut fallback_ip = InsnId::MAX;
         if let Some(body) = fallback {
-            let fallback_start = self.current_ip();
-            for slot in &mut table {
-                if *slot == u32::MAX {
-                    *slot = fallback_start;
-                }
-            }
+            fallback_ip = self.current_ip();
             body(self);
             exits.push(self.emit(Insn::Jump { target: u32::MAX }));
         }
@@ -2037,7 +2131,7 @@ impl GrammarBuilder {
             self.patch(jmp, after);
         }
         self.jump_tables.push(table);
-        self.patch_table_id(dispatch_ip, table_id);
+        self.patch_byte_dispatch(dispatch_ip, table_id, fallback_ip);
 
         self.auto_trivia = prev;
     }
@@ -2143,6 +2237,19 @@ impl GrammarBuilder {
         self.literals.seal();
         self.flag_masks.seal();
 
+        let trivia_rid = self
+            .trivia_rule
+            .as_ref()
+            .and_then(|n| self.rule_by_name.get(n).copied());
+        if self.optimize_graph {
+            super::graph_optimize::optimize_graph(
+                &mut self.insns,
+                &mut self.jump_tables,
+                &mut self.rule_entry,
+                trivia_rid,
+            );
+        }
+
         Ok(BuiltGraph {
             insns: self.insns,
             rule_entry: self.rule_entry,
@@ -2153,6 +2260,7 @@ impl GrammarBuilder {
             flag_mask_offsets: self.flag_masks.offsets,
             strings: self.strings.finish(),
             rule_names: self.rule_names,
+            rule_diagnostic_labels: self.rule_diagnostic_labels,
             tag_names: self.tag_names,
             class_labels: self.class_labels,
             expected_labels: self.expected_labels,
@@ -2314,7 +2422,9 @@ impl GrammarBuilder {
                         stack.push(ip + 1);
                         stack.push(*alt as usize);
                     }
-                    Insn::ByteDispatch { table_id } => {
+                    Insn::ByteDispatch {
+                        table_id, fallback, ..
+                    } => {
                         let tid = *table_id as usize;
                         if tid < jump_tables.len() {
                             for target in &jump_tables[tid] {
@@ -2323,7 +2433,9 @@ impl GrammarBuilder {
                                 }
                             }
                         }
-                        stack.push(ip + 1);
+                        if *fallback != u32::MAX {
+                            stack.push(*fallback as usize);
+                        }
                     }
                     Insn::RecoverUntil { resume, .. } => {
                         stack.push(ip + 1);
@@ -2369,13 +2481,19 @@ impl GrammarBuilder {
     }
 
     /// Common implementation for [`parser_rule`] and [`lexer_rule`].
-    fn rule_impl<F>(&mut self, name: &str, body: F, with_trivia: bool) -> RuleId
+    fn rule_impl<F>(
+        &mut self,
+        name: &str,
+        body: F,
+        with_trivia: bool,
+        diagnostic: Option<&str>,
+    ) -> RuleId
     where
         F: FnOnce(&mut Self),
     {
         let prev = self.auto_trivia;
         self.auto_trivia = with_trivia;
-        let id = self.open_rule(name);
+        let id = self.open_rule(name, diagnostic);
         body(self);
         self.close_rule();
         self.auto_trivia = prev;

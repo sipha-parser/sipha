@@ -22,20 +22,20 @@
 //! [`separated1`](crate::parse::builder::GrammarBuilder::separated1) with plain [`call`](crate::parse::builder::GrammarBuilder::call)s.
 
 use crate::parse::builder::GrammarBuilder;
-use crate::types::IntoSyntaxKind;
+use crate::types::RuleKind;
 
 /// Closure type for a single choice arm in the builder.
 type BuilderChoice = Box<dyn FnOnce(&mut GrammarBuilder)>;
 
 /// Parameters for [`left_assoc_infix_level`].
-pub struct LeftAssocInfixLevel<'a, K: ?Sized> {
+pub struct LeftAssocInfixLevel<'a, N: ?Sized> {
     pub level_name: &'static str,
     pub lower_level_name: &'static str,
     pub ops: &'a [&'static str],
-    pub node_kind: &'a K,
-    pub wrapper_kind: Option<&'a K>,
+    pub node_kind: &'a N,
+    pub wrapper_kind: Option<&'a N>,
     pub rhs_field: Option<&'static str>,
-    pub rhs_wrapper_kind: Option<&'a K>,
+    pub rhs_wrapper_kind: Option<&'a N>,
 }
 
 /// Add a left-associative infix level: `level = lower ( op lower )*`.
@@ -64,9 +64,9 @@ pub struct LeftAssocInfixLevel<'a, K: ?Sized> {
 ///     },
 /// );
 /// ```
-pub fn left_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
+pub fn left_assoc_infix_level<N: RuleKind + Clone + 'static>(
     g: &mut GrammarBuilder,
-    cfg: &LeftAssocInfixLevel<'_, K>,
+    cfg: &LeftAssocInfixLevel<'_, N>,
 ) {
     let level_name = cfg.level_name;
     let lower_level_name = cfg.lower_level_name;
@@ -125,14 +125,14 @@ pub fn left_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
 /// // expr_power = unary ** expr_power | unary
 /// expr::right_assoc_infix_level(g, "expr_power", "unary", "op_power", &Kind::NodeBinaryExpr, None, None);
 /// ```
-pub fn right_assoc_infix_level<K: IntoSyntaxKind + Clone + 'static>(
+pub fn right_assoc_infix_level<N: RuleKind + Clone + 'static>(
     g: &mut GrammarBuilder,
     level_name: &'static str,
     lower_level_name: &'static str,
     op_rule: &'static str,
-    node_kind: &K,
+    node_kind: &N,
     rhs_field: Option<&'static str>,
-    rhs_wrapper_kind: Option<&K>,
+    rhs_wrapper_kind: Option<&N>,
 ) {
     g.parser_rule(level_name, |g| {
         let lower = lower_level_name;

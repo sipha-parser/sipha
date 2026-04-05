@@ -333,7 +333,11 @@ fn insn_label(insn: &Insn, graph: &BuiltGraph, _ip: InsnId) -> String {
         Insn::BackCommit { target } => format!("back_commit {target}"),
         Insn::PartialCommit { target } => format!("partial_commit {target}"),
         Insn::NegBackCommit { target } => format!("neg_back_commit {target}"),
-        Insn::ByteDispatch { table_id } => format!("byte_dispatch {table_id}"),
+        Insn::ByteDispatch {
+            table_id,
+            fallback,
+            push_choice_backtrack,
+        } => format!("byte_dispatch {table_id} fb={fallback} bt={push_choice_backtrack}"),
         Insn::IfFlag { flag_id, .. } => format!("if_flag {flag_id}"),
         Insn::IfNotFlag { flag_id, .. } => format!("if_not_flag {flag_id}"),
         Insn::PushFlags { mask_id } => format!("push_flags {mask_id}"),

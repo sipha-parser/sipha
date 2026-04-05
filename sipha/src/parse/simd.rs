@@ -1,6 +1,9 @@
 //! # SIMD-Accelerated Literal Comparison
 //!
-//! Provides a single entry-point [`literal_eq`] that:
+//! Provides [`literal_eq`] for table-backed literals and [`literal_small_eq`] for
+//! up-to-8-byte inline literals (scalar unaligned word compares, no `memcmp` setup).
+//!
+//! [`literal_eq`] additionally:
 //!
 //! - Returns immediately if the input doesn't have enough bytes.
 //! - For literals ≥ 32 bytes on AVX2 machines, compares 32 bytes per cycle.
@@ -22,6 +25,58 @@
 //! deliver a measurable throughput gain.
 
 use crate::types::Pos;
+
+/// Compare `input[off .. off + n]` with the first `n` bytes of `bytes` (`n ≤ 8`).
+///
+/// For `n == 0`, returns `true` without reading `input` (nothing to compare).
+/// Returns `false` if `off + n` is out of range or `n > 8`.
+#[must_use]
+#[inline]
+pub fn literal_small_eq(input: &[u8], off: usize, n: usize, bytes: &[u8; 8]) -> bool {
+    if n > 8 {
+        return false;
+    }
+    if n == 0 {
+        return true;
+    }
+    let Some(end) = off.checked_add(n) else {
+        return false;
+    };
+    if end > input.len() {
+        return false;
+    }
+    let p = input.as_ptr().wrapping_add(off);
+    let q = bytes.as_ptr();
+    // SAFETY: `end <= input.len()` and `n <= 8`; all pointer offsets stay within the compared regions.
+    unsafe {
+        match n {
+            1 => *p == *q,
+            2 => (p as *const u16).read_unaligned() == (q as *const u16).read_unaligned(),
+            3 => {
+                (p as *const u16).read_unaligned() == (q as *const u16).read_unaligned()
+                    && *p.add(2) == *q.add(2)
+            }
+            4 => (p as *const u32).read_unaligned() == (q as *const u32).read_unaligned(),
+            5 => {
+                (p as *const u32).read_unaligned() == (q as *const u32).read_unaligned()
+                    && *p.add(4) == *q.add(4)
+            }
+            6 => {
+                (p as *const u32).read_unaligned() == (q as *const u32).read_unaligned()
+                    && (p.add(4) as *const u16).read_unaligned()
+                        == (q.add(4) as *const u16).read_unaligned()
+            }
+            7 => {
+                (p as *const u32).read_unaligned() == (q as *const u32).read_unaligned()
+                    && (p.add(4) as *const u16).read_unaligned()
+                        == (q.add(4) as *const u16).read_unaligned()
+                    && *p.add(6) == *q.add(6)
+            }
+            8 => (p as *const u64).read_unaligned() == (q as *const u64).read_unaligned(),
+            _ => false,
+        }
+    }
+}
 
 /// `2` = unset, `1` = AVX2 available, `0` = not available.
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
@@ -185,4 +240,34 @@ unsafe fn byte_eq_tail(a: *const u8, b: *const u8, n: usize) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::literal_small_eq;
+
+    #[test]
+    fn literal_small_eq_lengths_and_alignment() {
+        let data = b"0123456789abcdefghij";
+        for n in 1..=8 {
+            for off in 0..12 {
+                if off + n > data.len() {
+                    continue;
+                }
+                let mut b = [0u8; 8];
+                b[..n].copy_from_slice(&data[off..off + n]);
+                assert!(
+                    literal_small_eq(data, off, n, &b),
+                    "n={n} off={off} should match"
+                );
+            }
+        }
+        let mut b = [0u8; 8];
+        b[..4].copy_from_slice(b"0123");
+        assert!(literal_small_eq(data, 0, 0, &b));
+        assert!(!literal_small_eq(data, 0, 9, &b));
+        assert!(!literal_small_eq(data, 100, 1, &b));
+        b[..4].copy_from_slice(b"xxxx");
+        assert!(!literal_small_eq(data, 0, 4, &b));
+    }
 }

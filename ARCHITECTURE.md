@@ -37,7 +37,7 @@ Optional tooling lives in **extras/** and is compiled only when the matching Car
 | Crate | Role |
 |-------|------|
 | **sipha** | Core: `parse/`, `tree/`, `diagnostics/`, `types/`, `extras/` (feature-gated). |
-| **sipha-macros** | `sipha_grammar!` DSL and `SyntaxKinds` derive. Parses macro input, lowers to `GrammarBuilder` calls. |
+| **sipha-macros** | `sipha_grammar!` DSL and `LexKinds` / `RuleKinds` derives. Parses macro input, lowers to `GrammarBuilder` calls. |
 
 ## Where to change what
 

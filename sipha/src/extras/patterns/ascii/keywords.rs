@@ -1,4 +1,4 @@
-use crate::{parse::builder::GrammarBuilder, types::IntoSyntaxKind};
+use crate::{parse::builder::GrammarBuilder, types::LexKind};
 
 use super::classes;
 
@@ -15,7 +15,7 @@ pub fn keyword_bytes(g: &mut GrammarBuilder, word: &'static [u8]) {
 
 /// Like [`keyword_bytes`], but wrapped in a token.
 #[inline]
-pub fn keyword_token<K: IntoSyntaxKind>(g: &mut GrammarBuilder, kind: K, word: &'static [u8]) {
+pub fn keyword_token<K: LexKind>(g: &mut GrammarBuilder, kind: K, word: &'static [u8]) {
     g.token(kind, |g| {
         keyword_bytes(g, word);
     });

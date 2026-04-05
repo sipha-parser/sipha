@@ -1,21 +1,41 @@
-use sipha::SyntaxKinds;
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 use sipha::sipha_grammar;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
+enum Lex {
     Ident,
     Ws,
 }
 
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Lex::Ident => "IDENT",
+            Lex::Ws => "WS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    Root,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        "ROOT"
+    }
+}
+
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
-    K::from_syntax_kind(k).map(|k| match k {
-        K::Root => "ROOT",
-        K::Ident => "IDENT",
-        K::Ws => "WS",
-    })
+    Lex::from_syntax_kind(k)
+        .map(LexKind::display_name)
+        .or_else(|| Rule::from_syntax_kind(k).map(RuleKind::display_name))
 }
 
 fn main() {
@@ -26,13 +46,13 @@ fn main() {
         @trivia ws;
         @start start;
 
-        #[lexer] ws = #[trivia(K::Ws)] ( (" " | "\t" | "\n" | "\r")* );
+        #[lexer] ws = #[trivia(Lex::Ws)] ( (" " | "\t" | "\n" | "\r")* );
 
         // The DSL intentionally keeps atoms simple (rule calls + string literals).
         // For byte classes/ranges, use `GrammarBuilder` directly.
-        #[lexer] ident = #[token(K::Ident)] ( "alpha" | "beta" | "gamma" );
+        #[lexer] ident = #[token(Lex::Ident)] ( "alpha" | "beta" | "gamma" );
 
-        #[parser] start = #[node(K::Root)] ( ident );
+        #[parser] start = #[node(Rule::Root)] ( ident );
     };
 
     let graph = built.as_graph();

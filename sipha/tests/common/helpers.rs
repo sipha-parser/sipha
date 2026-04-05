@@ -2,21 +2,12 @@
 
 use sipha::prelude::*;
 
-use super::grammar::K;
+use super::grammar::{Lex, Rule};
 
 fn kind_to_name(k: SyntaxKind) -> Option<&'static str> {
-    K::from_syntax_kind(k).map(|k| match k {
-        K::Root => "ROOT",
-        K::Expr => "EXPR",
-        K::BinExpr => "BIN_EXPR",
-        K::ParenExpr => "PAREN_EXPR",
-        K::Number => "NUMBER",
-        K::Plus => "PLUS",
-        K::Star => "STAR",
-        K::LParen => "LPAREN",
-        K::RParen => "RPAREN",
-        K::Ws => "WS",
-    })
+    Lex::from_syntax_kind(k)
+        .map(LexKind::display_name)
+        .or_else(|| Rule::from_syntax_kind(k).map(RuleKind::display_name))
 }
 
 pub fn sexp(node: &SyntaxNode) -> String {

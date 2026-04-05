@@ -1,11 +1,10 @@
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    RootExpr,
-    RootStmt,
-    Expr,
+enum Lex {
     Number,
     LetKw,
     Ident,
@@ -13,16 +12,47 @@ enum K {
     Ws,
 }
 
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Lex::Number => "NUMBER",
+            Lex::LetKw => "LET_KW",
+            Lex::Ident => "IDENT",
+            Lex::Eq => "EQ",
+            Lex::Ws => "WS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    RootExpr,
+    RootStmt,
+    Expr,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        match self {
+            Rule::RootExpr => "ROOT_EXPR",
+            Rule::RootStmt => "ROOT_STMT",
+            Rule::Expr => "EXPR",
+        }
+    }
+}
+
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::RootExpr)]
+#[ast(kind = Rule::RootExpr)]
 pub struct RootExpr(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::RootStmt)]
+#[ast(kind = Rule::RootStmt)]
 pub struct RootStmt(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Expr)]
+#[ast(kind = Rule::Expr)]
 pub struct Expr(SyntaxNode);
 
 fn grammar() -> BuiltGraph {
@@ -31,7 +61,7 @@ fn grammar() -> BuiltGraph {
 
     // Entry rules (so each can be parsed as a top-level).
     g.parser_rule("expr_root", |g| {
-        g.node(K::RootExpr, |g| {
+        g.node(Rule::RootExpr, |g| {
             g.call("expr");
             g.skip();
         });
@@ -40,7 +70,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.parser_rule("stmt_root", |g| {
-        g.node(K::RootStmt, |g| {
+        g.node(Rule::RootStmt, |g| {
             g.call("stmt");
             g.skip();
         });
@@ -49,7 +79,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("ws", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.one_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -57,7 +87,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("number", |g| {
-        g.token(K::Number, |g| {
+        g.token(Lex::Number, |g| {
             g.one_or_more(|g| {
                 g.class(classes::DIGIT);
             });
@@ -65,7 +95,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("ident", |g| {
-        g.token(K::Ident, |g| {
+        g.token(Lex::Ident, |g| {
             g.class(classes::IDENT_START);
             g.zero_or_more(|g| {
                 g.class(classes::IDENT_CONT);
@@ -75,18 +105,18 @@ fn grammar() -> BuiltGraph {
 
     // expr := number
     g.parser_rule("expr", |g| {
-        g.node(K::Expr, |g| {
+        g.node(Rule::Expr, |g| {
             g.call("number");
         });
     });
 
     // stmt := "let" ident "=" expr
     g.parser_rule("stmt", |g| {
-        g.token(K::LetKw, |g| {
+        g.token(Lex::LetKw, |g| {
             g.literal(b"let");
         });
         g.call("ident");
-        g.token(K::Eq, |g| {
+        g.token(Lex::Eq, |g| {
             g.byte(b'=');
         });
         g.call("expr");

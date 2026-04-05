@@ -116,7 +116,11 @@ fn format_insn_one_line(graph: &ParseGraph<'_>, insn: Insn) -> String {
         Insn::BackCommit { target } => format!("BackCommit {target}"),
         Insn::NegBackCommit { target } => format!("NegBackCommit {target}"),
         Insn::PartialCommit { target } => format!("PartialCommit {target}"),
-        Insn::ByteDispatch { table_id } => format!("ByteDispatch {table_id}"),
+        Insn::ByteDispatch {
+            table_id,
+            fallback,
+            push_choice_backtrack,
+        } => format!("ByteDispatch {table_id} fallback={fallback} push_bt={push_choice_backtrack}"),
         Insn::IfFlag { flag_id, .. } => format!("IfFlag {flag_id}"),
         Insn::IfNotFlag { flag_id, .. } => format!("IfNotFlag {flag_id}"),
         Insn::PushFlags { mask_id } => format!("PushFlags {mask_id}"),

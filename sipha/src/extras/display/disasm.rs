@@ -87,7 +87,13 @@ fn format_insn(graph: &BuiltGraph, _ip: InsnId, insn: Insn) -> String {
         Insn::BackCommit { target } => format!("BackCommit target={target}"),
         Insn::NegBackCommit { target } => format!("NegBackCommit target={target}"),
         Insn::PartialCommit { target } => format!("PartialCommit target={target}"),
-        Insn::ByteDispatch { table_id } => format!("ByteDispatch table_id={table_id}"),
+        Insn::ByteDispatch {
+            table_id,
+            fallback,
+            push_choice_backtrack,
+        } => format!(
+            "ByteDispatch table_id={table_id} fallback={fallback} push_bt={push_choice_backtrack}"
+        ),
         Insn::IfFlag { flag_id, on_fail } => format!("IfFlag {flag_id} on_fail={on_fail}"),
         Insn::IfNotFlag { flag_id, on_fail } => format!("IfNotFlag {flag_id} on_fail={on_fail}"),
         Insn::PushFlags { mask_id } => format!("PushFlags mask_id={mask_id}"),

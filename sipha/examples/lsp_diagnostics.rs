@@ -1,10 +1,30 @@
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
+enum Lex {
     Ws,
+}
+
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        "WS"
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    Root,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        "ROOT"
+    }
 }
 
 fn main() {
@@ -16,7 +36,7 @@ fn main() {
         let mut g = GrammarBuilder::new();
         g.set_trivia_rule("ws");
         g.parser_rule("start", |g| {
-            g.node(K::Root, |g| {
+            g.node(Rule::Root, |g| {
                 g.byte(b'a');
                 g.byte(b'b');
                 g.skip();
@@ -25,7 +45,7 @@ fn main() {
             g.accept();
         });
         g.lexer_rule("ws", |g| {
-            g.trivia(K::Ws, |g| {
+            g.trivia(Lex::Ws, |g| {
                 g.zero_or_more(|g| {
                     g.class(classes::WHITESPACE);
                 });
@@ -41,7 +61,7 @@ fn main() {
         let mut g = GrammarBuilder::new();
         g.set_trivia_rule("ws");
         g.parser_rule("start", |g| {
-            g.node(K::Root, |g| {
+            g.node(Rule::Root, |g| {
                 g.byte(b'a');
                 g.any_char();
                 g.skip();
@@ -50,7 +70,7 @@ fn main() {
             g.accept();
         });
         g.lexer_rule("ws", |g| {
-            g.trivia(K::Ws, |g| {
+            g.trivia(Lex::Ws, |g| {
                 g.zero_or_more(|g| {
                     g.class(classes::WHITESPACE);
                 });

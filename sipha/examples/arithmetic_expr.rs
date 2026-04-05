@@ -1,13 +1,10 @@
-use sipha::SyntaxKinds;
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
-    Expr,
-    Term,
-    Factor,
+enum Lex {
     Number,
     Plus,
     Star,
@@ -16,20 +13,54 @@ enum K {
     Ws,
 }
 
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Lex::Number => "NUMBER",
+            Lex::Plus => "PLUS",
+            Lex::Star => "STAR",
+            Lex::LParen => "LPAREN",
+            Lex::RParen => "RPAREN",
+            Lex::Ws => "WS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    Root,
+    Expr,
+    Term,
+    Factor,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        match self {
+            Rule::Root => "ROOT",
+            Rule::Expr => "EXPR",
+            Rule::Term => "TERM",
+            Rule::Factor => "FACTOR",
+        }
+    }
+}
+
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Root)]
+#[ast(kind = Rule::Root)]
 struct Root(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Expr)]
+#[ast(kind = Rule::Expr)]
 struct Expr(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Term)]
+#[ast(kind = Rule::Term)]
 struct Term(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Factor)]
+#[ast(kind = Rule::Factor)]
 struct Factor(SyntaxNode);
 
 #[derive(Debug, Clone, Copy)]
@@ -58,7 +89,7 @@ fn compile_expr(src: &[u8], expr: &Expr, out: &mut Vec<Op>) -> Result<(), String
 
     while let Some(e) = it.next() {
         match e {
-            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::Plus.into_syntax_kind() => {
+            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == Lex::Plus.into_syntax_kind() => {
                 let next_term = it
                     .find_map(|e| e.into_node())
                     .ok_or_else(|| "expr: expected term after '+'".to_string())?;
@@ -81,7 +112,7 @@ fn compile_term(src: &[u8], term: &Term, out: &mut Vec<Op>) -> Result<(), String
 
     while let Some(e) = it.next() {
         match e {
-            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::Star.into_syntax_kind() => {
+            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == Lex::Star.into_syntax_kind() => {
                 let next_factor = it
                     .find_map(|e| e.into_node())
                     .ok_or_else(|| "term: expected factor after '*'".to_string())?;
@@ -100,7 +131,7 @@ fn compile_factor(src: &[u8], factor: &Factor, out: &mut Vec<Op>) -> Result<(), 
     let first = it.next().ok_or_else(|| "factor: empty".to_string())?;
 
     match first {
-        sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::Number.into_syntax_kind() => {
+        sipha::tree::red::SyntaxElement::Token(t) if t.kind() == Lex::Number.into_syntax_kind() => {
             let text = t.text();
             let n: i64 = text
                 .parse()
@@ -108,7 +139,7 @@ fn compile_factor(src: &[u8], factor: &Factor, out: &mut Vec<Op>) -> Result<(), 
             out.push(Op::Push(n));
             Ok(())
         }
-        sipha::tree::red::SyntaxElement::Token(t) if t.kind() == K::LParen.into_syntax_kind() => {
+        sipha::tree::red::SyntaxElement::Token(t) if t.kind() == Lex::LParen.into_syntax_kind() => {
             let inner_expr = it
                 .find_map(|e| e.into_node())
                 .ok_or_else(|| "factor: expected expr after '('".to_string())?;
@@ -117,7 +148,7 @@ fn compile_factor(src: &[u8], factor: &Factor, out: &mut Vec<Op>) -> Result<(), 
             let closing = it
                 .find_map(|e| e.into_token())
                 .ok_or_else(|| "factor: expected ')'".to_string())?;
-            if closing.kind() != K::RParen.into_syntax_kind() {
+            if closing.kind() != Lex::RParen.into_syntax_kind() {
                 return Err("factor: expected ')'".to_string());
             }
             Ok(())
@@ -163,18 +194,9 @@ fn header(title: &str) {
 }
 
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
-    K::from_syntax_kind(k).map(|k| match k {
-        K::Root => "ROOT",
-        K::Expr => "EXPR",
-        K::Term => "TERM",
-        K::Factor => "FACTOR",
-        K::Number => "NUMBER",
-        K::Plus => "PLUS",
-        K::Star => "STAR",
-        K::LParen => "LPAREN",
-        K::RParen => "RPAREN",
-        K::Ws => "WS",
-    })
+    Lex::from_syntax_kind(k)
+        .map(LexKind::display_name)
+        .or_else(|| Rule::from_syntax_kind(k).map(RuleKind::display_name))
 }
 
 fn grammar() -> BuiltGraph {
@@ -190,7 +212,7 @@ fn grammar() -> BuiltGraph {
     // The first defined rule is the grammar entrypoint.
     g.parser_rule("start", |g| {
         g.context_rule("start", |g| {
-            g.node(K::Root, |g| {
+            g.node(Rule::Root, |g| {
                 g.call("expr");
                 g.skip();
             });
@@ -200,7 +222,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("ws", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.zero_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -208,7 +230,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("number", |g| {
-        g.token(K::Number, |g| {
+        g.token(Lex::Number, |g| {
             g.one_or_more(|g| {
                 g.class_with_label(classes::DIGIT, "digit");
             });
@@ -219,10 +241,10 @@ fn grammar() -> BuiltGraph {
     g.parser_rule("expr", |g| {
         g.context_rule("expression", |g| {
             g.trace("enter expr");
-            g.node(K::Expr, |g| {
+            g.node(Rule::Expr, |g| {
                 g.call("term");
                 g.zero_or_more(|g| {
-                    g.token(K::Plus, |g| {
+                    g.token(Lex::Plus, |g| {
                         g.byte(b'+');
                     });
                     g.call("term");
@@ -234,10 +256,10 @@ fn grammar() -> BuiltGraph {
     // term := factor ("*" factor)*
     g.parser_rule("term", |g| {
         g.context_rule("term", |g| {
-            g.node(K::Term, |g| {
+            g.node(Rule::Term, |g| {
                 g.call("factor");
                 g.zero_or_more(|g| {
-                    g.token(K::Star, |g| {
+                    g.token(Lex::Star, |g| {
                         g.byte(b'*');
                     });
                     g.call("factor");
@@ -249,18 +271,18 @@ fn grammar() -> BuiltGraph {
     // factor := number | "(" expr ")"
     g.parser_rule("factor", |g| {
         g.context_rule("factor", |g| {
-            g.node(K::Factor, |g| {
+            g.node(Rule::Factor, |g| {
                 g.choice(
                     |g| {
                         g.call("number");
                     },
                     |g| {
-                        g.token(K::LParen, |g| {
+                        g.token(Lex::LParen, |g| {
                             g.byte(b'(');
                         });
                         g.call("expr");
                         g.hint("did you forget a closing ')' ?");
-                        g.token(K::RParen, |g| {
+                        g.token(Lex::RParen, |g| {
                             g.byte(b')');
                         });
                     },

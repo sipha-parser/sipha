@@ -1,11 +1,10 @@
-use sipha::SyntaxKinds;
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
-    Stmt,
+enum Lex {
     Ident,
     Number,
     Let,
@@ -14,25 +13,48 @@ enum K {
     Ws,
 }
 
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Lex::Ident => "IDENT",
+            Lex::Number => "NUMBER",
+            Lex::Let => "LET",
+            Lex::Eq => "EQ",
+            Lex::Semi => "SEMI",
+            Lex::Ws => "WS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    Root,
+    Stmt,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        match self {
+            Rule::Root => "ROOT",
+            Rule::Stmt => "STMT",
+        }
+    }
+}
+
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Root)]
+#[ast(kind = Rule::Root)]
 struct Root(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Stmt)]
+#[ast(kind = Rule::Stmt)]
 struct Stmt(SyntaxNode);
 
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
-    K::from_syntax_kind(k).map(|k| match k {
-        K::Root => "ROOT",
-        K::Stmt => "STMT",
-        K::Ident => "IDENT",
-        K::Number => "NUMBER",
-        K::Let => "LET",
-        K::Eq => "EQ",
-        K::Semi => "SEMI",
-        K::Ws => "WS",
-    })
+    Lex::from_syntax_kind(k)
+        .map(LexKind::display_name)
+        .or_else(|| Rule::from_syntax_kind(k).map(RuleKind::display_name))
 }
 
 fn grammar() -> BuiltGraph {
@@ -43,7 +65,7 @@ fn grammar() -> BuiltGraph {
 
     // The first defined rule is the grammar entrypoint.
     g.parser_rule("start", |g| {
-        g.node(K::Root, |g| {
+        g.node(Rule::Root, |g| {
             g.zero_or_more(|g| {
                 g.recover_until("semi", |g| {
                     g.call("stmt");
@@ -59,7 +81,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("ws", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.zero_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -67,7 +89,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("ident", |g| {
-        g.token(K::Ident, |g| {
+        g.token(Lex::Ident, |g| {
             g.class(classes::IDENT_START);
             g.zero_or_more(|g| {
                 g.class(classes::IDENT_CONT);
@@ -76,7 +98,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("number", |g| {
-        g.token(K::Number, |g| {
+        g.token(Lex::Number, |g| {
             g.one_or_more(|g| {
                 g.class(classes::DIGIT);
             });
@@ -84,19 +106,19 @@ fn grammar() -> BuiltGraph {
     });
 
     g.parser_rule("semi", |g| {
-        g.token(K::Semi, |g| {
+        g.token(Lex::Semi, |g| {
             g.byte(b';');
         });
     });
 
     g.parser_rule("stmt", |g| {
         g.context_rule("statement", |g| {
-            g.node(K::Stmt, |g| {
+            g.node(Rule::Stmt, |g| {
                 g.trace("stmt");
-                g.keyword(K::Let, b"let");
+                g.keyword(Lex::Let, b"let");
                 g.hint("expected an identifier after 'let'");
                 g.call("ident");
-                g.token(K::Eq, |g| {
+                g.token(Lex::Eq, |g| {
                     g.byte(b'=');
                 });
                 g.hint("expected a number after '='");
@@ -114,7 +136,7 @@ fn main() {
 
     let src = b"let a=1; let =2; let c=; let d=4;";
     let mut engine = Engine::new();
-    let ctx = ParseContext::new().with_error_node_kind(K::Stmt as SyntaxKind);
+    let ctx = ParseContext::new().with_error_node_kind(Rule::Stmt.into_syntax_kind());
 
     #[cfg(feature = "trace")]
     if std::env::var("SIPHA_TRACE").is_ok() {

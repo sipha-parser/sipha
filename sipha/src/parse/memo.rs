@@ -22,9 +22,14 @@
 //! Keys are packed into a `u64`: `(rule_id as u64) << 32 | pos as u64`.
 //! Values are [`MemoEntry`]s stored in a plain `HashMap`.
 //!
-//! Capture events for successful rule invocations are stored in the entry as
-//! a `Box<[CaptureEvent]>`.  On a cache hit the events are extended into the
-//! engine's event buffer, then position is advanced — no re-parsing required.
+//! Successful hits append capture and tree event slices into **append-only pools**
+//! inside [`MemoTable`] (see `capture_pool` / `tree_pool`).  Each hit entry
+//! stores `(start, len)` ranges into those pools instead of a separate
+//! `Box<[T]>` per key, which reduces allocator churn when many positions are
+//! memoised.  Pools are cleared in [`MemoTable::clear`] while retaining capacity.
+//!
+//! The VM still keeps a full copy of events in its live buffers so outer rules
+//! see one contiguous stream; memo storage is a second copy for replay on hits.
 //!
 //! On a cache miss the entry stores only the `furthest` position reached
 //! during the failed attempt, so the error context can be updated correctly.
@@ -46,12 +51,13 @@ use crate::types::{CaptureEvent, Pos, RuleId, TreeEvent};
 #[derive(Clone, Debug)]
 pub enum MemoEntry {
     /// The rule matched, consuming input up to `end_pos`.
-    /// `events` holds every [`CaptureEvent`], `tree_events` every [`TreeEvent`],
-    /// emitted during the match.
+    /// Ranges index into [`MemoTable::capture_pool`] and [`MemoTable::tree_pool`].
     Hit {
         end_pos: Pos,
-        events: Box<[CaptureEvent]>,
-        tree_events: Box<[TreeEvent]>,
+        cap_start: u32,
+        cap_len: u32,
+        tree_start: u32,
+        tree_len: u32,
     },
     /// The rule failed.  `furthest` is the deepest position reached.
     Miss { furthest: Pos },
@@ -90,6 +96,18 @@ pub enum MemoReplay {
 /// parses via [`MemoTable::clear`]).
 pub struct MemoTable {
     table: HashMap<u64, MemoEntry>,
+    /// Append-only storage for [`MemoEntry::Hit`] capture suffixes.
+    capture_pool: Vec<CaptureEvent>,
+    /// Append-only storage for [`MemoEntry::Hit`] tree-event suffixes.
+    tree_pool: Vec<TreeEvent>,
+}
+
+#[inline]
+fn pool_slice<T: Copy>(pool: &[T], start: u32, len: u32) -> Option<&[T]> {
+    let s = start as usize;
+    let l = len as usize;
+    let end = s.checked_add(l)?;
+    pool.get(s..end)
 }
 
 impl MemoTable {
@@ -98,13 +116,17 @@ impl MemoTable {
     pub fn new() -> Self {
         Self {
             table: HashMap::with_capacity(4096),
+            capture_pool: Vec::with_capacity(8192),
+            tree_pool: Vec::with_capacity(8192),
         }
     }
 
-    /// Clear all entries (cheap — reuses allocation).
+    /// Clear all entries (cheap — reuses map and pool allocations).
     #[inline]
     pub fn clear(&mut self) {
         self.table.clear();
+        self.capture_pool.clear();
+        self.tree_pool.clear();
     }
 
     /// Look up a `(rule, pos)` pair.  Returns an *owned* [`MemoQuery`] so the
@@ -119,13 +141,23 @@ impl MemoTable {
             },
             Some(MemoEntry::Hit {
                 end_pos,
-                events,
-                tree_events,
-            }) => MemoQuery::Hit {
-                end_pos: *end_pos,
-                events: events.to_vec(),
-                tree_events: tree_events.to_vec(),
-            },
+                cap_start,
+                cap_len,
+                tree_start,
+                tree_len,
+            }) => {
+                let events = pool_slice(&self.capture_pool, *cap_start, *cap_len)
+                    .map(|s| s.to_vec())
+                    .unwrap_or_default();
+                let tree_events = pool_slice(&self.tree_pool, *tree_start, *tree_len)
+                    .map(|s| s.to_vec())
+                    .unwrap_or_default();
+                MemoQuery::Hit {
+                    end_pos: *end_pos,
+                    events,
+                    tree_events,
+                }
+            }
         }
     }
 
@@ -147,32 +179,48 @@ impl MemoTable {
             },
             Some(MemoEntry::Hit {
                 end_pos,
-                events: cached_events,
-                tree_events: cached_tree,
+                cap_start,
+                cap_len,
+                tree_start,
+                tree_len,
             }) => {
-                events.extend_from_slice(cached_events);
-                tree_events.extend_from_slice(cached_tree);
+                if let Some(cap) = pool_slice(&self.capture_pool, *cap_start, *cap_len) {
+                    events.reserve(cap.len());
+                    events.extend_from_slice(cap);
+                }
+                if let Some(tr) = pool_slice(&self.tree_pool, *tree_start, *tree_len) {
+                    tree_events.reserve(tr.len());
+                    tree_events.extend_from_slice(tr);
+                }
                 MemoReplay::Hit { end_pos: *end_pos }
             }
         }
     }
 
-    /// Store a successful result (capture events and tree events produced by the rule).
+    /// Store a successful result (suffixes appended during the rule).
     #[inline]
     pub fn insert_hit(
         &mut self,
         rule: RuleId,
         pos: Pos,
         end_pos: Pos,
-        events: Box<[CaptureEvent]>,
-        tree_events: Box<[TreeEvent]>,
+        captures: &[CaptureEvent],
+        tree: &[TreeEvent],
     ) {
+        let cap_len = u32::try_from(captures.len()).expect("memo capture run fits u32");
+        let tree_len = u32::try_from(tree.len()).expect("memo tree run fits u32");
+        let cap_start = u32::try_from(self.capture_pool.len()).expect("memo pool size fits u32");
+        self.capture_pool.extend_from_slice(captures);
+        let tree_start = u32::try_from(self.tree_pool.len()).expect("memo pool size fits u32");
+        self.tree_pool.extend_from_slice(tree);
         self.table.insert(
             pack(rule, pos),
             MemoEntry::Hit {
                 end_pos,
-                events,
-                tree_events,
+                cap_start,
+                cap_len,
+                tree_start,
+                tree_len,
             },
         );
     }

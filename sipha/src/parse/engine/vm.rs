@@ -1,5 +1,6 @@
 #[cfg(feature = "trace")]
 use super::VmObserver;
+use super::dispatch::STAGE_LOOKUP;
 use super::error::{BadGraphKind, ParseError, no_match};
 use super::flags::{flag_is_set, restore_snapshot};
 use super::frames::{Frame, SnapEntry};
@@ -64,6 +65,17 @@ pub(super) fn run_from(
     run_from_impl(graph, input, vm, start_ip, start_pos)
 }
 
+/// Single bounds-checked byte read for the parse loop (`pos` in range of `input_len`).
+#[inline(always)]
+fn byte_at(input_base: *const u8, input_len: usize, pos: Pos) -> Option<u8> {
+    let i = pos as usize;
+    if i < input_len {
+        Some(unsafe { *input_base.add(i) })
+    } else {
+        None
+    }
+}
+
 fn run_from_impl(
     graph: &ParseGraph<'_>,
     input: &[u8],
@@ -73,6 +85,8 @@ fn run_from_impl(
 ) -> Result<Pos, ParseError> {
     let mut ip: u32 = start_ip;
     let mut pos: Pos = start_pos;
+    let input_base = input.as_ptr();
+    let input_len = input.len();
 
     loop {
         let insn = graph.insn(ip);
@@ -88,595 +102,629 @@ fn run_from_impl(
             };
         }
 
-        match insn {
-            // ── Byte terminals ────────────────────────────────────────────────
-            Insn::Byte { byte, on_fail } => {
-                if input.get(pos as usize).copied() == Some(byte) {
-                    pos += 1;
-                    ip += 1;
-                } else {
+        // `STAGE_LOOKUP` is built from `is_hot_scan_opcode`, same as `Insn::opcode_u8()`.
+        match STAGE_LOOKUP[insn.opcode_u8() as usize] {
+            0 => match insn {
+                // ── Byte terminals ────────────────────────────────────────────────
+                Insn::Byte { byte, on_fail } => {
+                    if byte_at(input_base, input_len, pos) == Some(byte) {
+                        pos += 1;
+                        ip += 1;
+                    } else {
+                        vm.error_ctx
+                            .record(pos, vm.context_stack.as_slice(), Expected::Byte(byte));
+                        fail_jump!(on_fail);
+                    }
+                }
+
+                Insn::ByteEither { a, b, on_fail } => {
+                    if let Some(x) = byte_at(input_base, input_len, pos) {
+                        if x == a || x == b {
+                            pos += 1;
+                            ip += 1;
+                            continue;
+                        }
+                    }
+                    // Record both possibilities for better errors.
                     vm.error_ctx
-                        .record(pos, vm.context_stack.as_slice(), Expected::Byte(byte));
+                        .record(pos, vm.context_stack.as_slice(), Expected::Byte(a));
+                    vm.error_ctx
+                        .record(pos, vm.context_stack.as_slice(), Expected::Byte(b));
                     fail_jump!(on_fail);
                 }
-            }
 
-            Insn::ByteEither { a, b, on_fail } => {
-                if let Some(x) = input.get(pos as usize).copied() {
-                    if x == a || x == b {
-                        pos += 1;
-                        ip += 1;
-                        continue;
+                Insn::ByteIn3 { a, b, c, on_fail } => {
+                    if let Some(x) = byte_at(input_base, input_len, pos) {
+                        if x == a || x == b || x == c {
+                            pos += 1;
+                            ip += 1;
+                            continue;
+                        }
                     }
+                    vm.error_ctx
+                        .record(pos, vm.context_stack.as_slice(), Expected::Byte(a));
+                    vm.error_ctx
+                        .record(pos, vm.context_stack.as_slice(), Expected::Byte(b));
+                    vm.error_ctx
+                        .record(pos, vm.context_stack.as_slice(), Expected::Byte(c));
+                    fail_jump!(on_fail);
                 }
-                // Record both possibilities for better errors.
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Byte(a));
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Byte(b));
-                fail_jump!(on_fail);
-            }
 
-            Insn::ByteIn3 { a, b, c, on_fail } => {
-                if let Some(x) = input.get(pos as usize).copied() {
-                    if x == a || x == b || x == c {
-                        pos += 1;
-                        ip += 1;
-                        continue;
+                Insn::ByteRange { lo, hi, on_fail } => {
+                    if let Some(b) = byte_at(input_base, input_len, pos) {
+                        if b >= lo && b <= hi {
+                            pos += 1;
+                            ip += 1;
+                            continue;
+                        }
                     }
-                }
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Byte(a));
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Byte(b));
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Byte(c));
-                fail_jump!(on_fail);
-            }
-
-            Insn::ByteRange { lo, hi, on_fail } => {
-                if let Some(b) = input.get(pos as usize).copied() {
-                    if b >= lo && b <= hi {
-                        pos += 1;
-                        ip += 1;
-                        continue;
-                    }
-                }
-                vm.error_ctx.record(
-                    pos,
-                    vm.context_stack.as_slice(),
-                    Expected::ByteRange(lo, hi),
-                );
-                fail_jump!(on_fail);
-            }
-
-            Insn::Class {
-                class,
-                label_id,
-                on_fail,
-            } => {
-                if let Some(b) = input.get(pos as usize).copied() {
-                    if class.contains(b) {
-                        pos += 1;
-                        ip += 1;
-                        continue;
-                    }
-                }
-                vm.error_ctx.record(
-                    pos,
-                    vm.context_stack.as_slice(),
-                    Expected::ClassLabel(label_id),
-                );
-                fail_jump!(on_fail);
-            }
-
-            Insn::Literal { lit_id, on_fail } => {
-                let lit = graph.literals.get(lit_id);
-                if simd::literal_eq(input, pos, lit) {
-                    pos += pos_from_len(lit.len())?;
-                    ip += 1;
-                } else {
                     vm.error_ctx.record(
                         pos,
                         vm.context_stack.as_slice(),
-                        Expected::Literal(lit_id),
+                        Expected::ByteRange(lo, hi),
                     );
                     fail_jump!(on_fail);
                 }
-            }
 
-            Insn::LiteralSmall {
-                len,
-                bytes,
-                on_fail,
-            } => {
-                let n = len as usize;
-                if n > bytes.len() {
-                    return Err(ParseError::BadGraph(
-                        BadGraphKind::LiteralSmallLenOutOfRange {
-                            len,
-                            bytes_len: u8::try_from(bytes.len()).unwrap_or(u8::MAX),
-                        },
-                    ));
-                }
-                if n == 0 {
-                    ip += 1;
-                    continue;
-                }
-                if pos as usize + n <= input.len()
-                    && input[pos as usize..pos as usize + n] == bytes[..n]
-                {
-                    pos += pos_from_len(n)?;
-                    ip += 1;
-                } else {
-                    // We don't have a literal-table id; just record the first byte as a hint.
-                    if let Some(&b0) = bytes.first() {
-                        vm.error_ctx
-                            .record(pos, vm.context_stack.as_slice(), Expected::Byte(b0));
-                    }
-                    fail_jump!(on_fail);
-                }
-            }
-
-            Insn::EndOfInput { on_fail } => {
-                if pos as usize == input.len() {
-                    ip += 1;
-                } else {
-                    vm.error_ctx
-                        .record(pos, vm.context_stack.as_slice(), Expected::EndOfInput);
-                    fail_jump!(on_fail);
-                }
-            }
-
-            Insn::Fail => {
-                do_fail(graph, input, &mut ip, &mut pos, vm)?;
-            }
-
-            // ── Unicode codepoint terminals ───────────────────────────────────
-            Insn::AnyChar { on_fail } => {
-                if let Some((_cp, len)) = decode_utf8(input, pos as usize) {
-                    pos += pos_from_len(len)?;
-                    ip += 1;
-                } else {
-                    vm.error_ctx
-                        .record(pos, vm.context_stack.as_slice(), Expected::AnyChar);
-                    fail_jump!(on_fail);
-                }
-            }
-
-            Insn::Char { codepoint, on_fail } => {
-                if let Some((cp, len)) = decode_utf8(input, pos as usize) {
-                    if cp == codepoint {
-                        pos += pos_from_len(len)?;
-                        ip += 1;
-                        continue;
-                    }
-                }
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Char(codepoint));
-                fail_jump!(on_fail);
-            }
-
-            Insn::CharRange { lo, hi, on_fail } => {
-                if let Some((cp, len)) = decode_utf8(input, pos as usize) {
-                    if cp >= lo && cp <= hi {
-                        pos += pos_from_len(len)?;
-                        ip += 1;
-                        continue;
-                    }
-                }
-                vm.error_ctx.record(
-                    pos,
-                    vm.context_stack.as_slice(),
-                    Expected::CharRange(lo, hi),
-                );
-                fail_jump!(on_fail);
-            }
-
-            // ── Control flow ──────────────────────────────────────────────────
-            Insn::Jump { target } => {
-                ip = target;
-            }
-
-            Insn::Call { rule } => {
-                let entry =
-                    graph
-                        .rule_entry
-                        .get(rule as usize)
-                        .copied()
-                        .ok_or(ParseError::BadGraph(BadGraphKind::RuleEntryOutOfRange {
-                            rule,
-                        }))?;
-
-                // Record that we're trying this rule so diagnostics can show "expected <rule>".
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Rule(rule));
-
-                #[cfg(feature = "trace")]
-                if let Some(obs) = vm.observer.as_deref_mut() {
-                    obs.on_call(rule, pos);
-                }
-                #[cfg(feature = "trace")]
-                if let Some(t) = vm.tracer.as_deref_mut() {
-                    let name = graph.rule_name(rule).unwrap_or("?");
-                    t.on_call(name, pos);
-                }
-
-                #[cfg(feature = "std")]
-                {
-                    if let Some(mt) = vm.memo {
-                        match mt.query_replay(rule, pos, vm.events, vm.tree_events) {
-                            MemoReplay::Hit { end_pos } => {
-                                pos = end_pos;
-                                ip += 1;
-                            }
-                            MemoReplay::Miss { furthest } => {
-                                vm.error_ctx.record(
-                                    furthest,
-                                    vm.context_stack.as_slice(),
-                                    Expected::Rule(rule),
-                                );
-                                do_fail(graph, input, &mut ip, &mut pos, vm)?;
-                            }
-                            MemoReplay::Unknown => {
-                                vm.stack.push(Frame::MemoReturn {
-                                    ret_ip: ip + 1,
-                                    rule,
-                                    start_pos: pos,
-                                    events_mark: u32::try_from(vm.events.len()).unwrap_or(0),
-                                    tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
-                                });
-                                #[cfg(feature = "trace")]
-                                vm.rule_stack.push(rule);
-                                ip = entry;
-                            }
+                Insn::Class {
+                    class,
+                    label_id,
+                    on_fail,
+                } => {
+                    if let Some(b) = byte_at(input_base, input_len, pos) {
+                        if class.contains(b) {
+                            pos += 1;
+                            ip += 1;
+                            continue;
                         }
+                    }
+                    vm.error_ctx.record(
+                        pos,
+                        vm.context_stack.as_slice(),
+                        Expected::ClassLabel(label_id),
+                    );
+                    fail_jump!(on_fail);
+                }
+
+                Insn::Literal { lit_id, on_fail } => {
+                    let lit = graph.literals.get(lit_id);
+                    if simd::literal_eq(input, pos, lit) {
+                        pos += pos_from_len(lit.len())?;
+                        ip += 1;
                     } else {
+                        vm.error_ctx.record(
+                            pos,
+                            vm.context_stack.as_slice(),
+                            Expected::Literal(lit_id),
+                        );
+                        fail_jump!(on_fail);
+                    }
+                }
+
+                Insn::LiteralSmall {
+                    len,
+                    bytes,
+                    on_fail,
+                } => {
+                    let n = len as usize;
+                    if n > bytes.len() {
+                        return Err(ParseError::BadGraph(
+                            BadGraphKind::LiteralSmallLenOutOfRange {
+                                len,
+                                bytes_len: u8::try_from(bytes.len()).unwrap_or(u8::MAX),
+                            },
+                        ));
+                    }
+                    if n == 0 {
+                        ip += 1;
+                        continue;
+                    }
+                    if simd::literal_small_eq(input, pos as usize, n, &bytes) {
+                        pos += pos_from_len(n)?;
+                        ip += 1;
+                    } else {
+                        // We don't have a literal-table id; just record the first byte as a hint.
+                        if let Some(&b0) = bytes.first() {
+                            vm.error_ctx.record(
+                                pos,
+                                vm.context_stack.as_slice(),
+                                Expected::Byte(b0),
+                            );
+                        }
+                        fail_jump!(on_fail);
+                    }
+                }
+
+                Insn::Jump { target } => {
+                    ip = target;
+                }
+                Insn::ByteDispatch {
+                    table_id,
+                    fallback,
+                    push_choice_backtrack,
+                } => {
+                    if let Some(b) = byte_at(input_base, input_len, pos) {
+                        let target = graph.dispatch(table_id, b);
+                        if target != u32::MAX {
+                            if push_choice_backtrack && fallback != u32::MAX {
+                                vm.stack.push(Frame::Backtrack {
+                                    alt: fallback,
+                                    saved_pos: pos,
+                                    capture_mark: u32::try_from(vm.events.len()).unwrap_or(0),
+                                    tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
+                                    open_tokens_mark: u32::try_from(vm.open_tokens.len())
+                                        .unwrap_or(0),
+                                    context_mark: u32::try_from(vm.context_stack.len())
+                                        .unwrap_or(0),
+                                });
+                            }
+                            ip = target;
+                            continue;
+                        }
+                    }
+                    if fallback != u32::MAX {
+                        ip = fallback;
+                    } else {
+                        do_fail(graph, input, &mut ip, &mut pos, vm)?;
+                    }
+                }
+                Insn::ConsumeWhileClass {
+                    class,
+                    label_id,
+                    min,
+                    on_fail,
+                } => {
+                    let start = pos;
+                    let mut i = pos as usize;
+                    while i < input_len {
+                        let b = unsafe { *input_base.add(i) };
+                        if !class.contains(b) {
+                            break;
+                        }
+                        i += 1;
+                    }
+                    pos = pos_from_len(i)?;
+                    let consumed = pos.saturating_sub(start) as u32;
+                    if consumed >= min {
+                        ip += 1;
+                    } else {
+                        // Failure is at the start position (where the run was required).
+                        vm.error_ctx.record(
+                            start,
+                            vm.context_stack.as_slice(),
+                            Expected::ClassLabel(label_id),
+                        );
+                        // Restore pos so backtracking sees the pre-attempt state.
+                        pos = start;
+                        fail_jump!(on_fail);
+                    }
+                }
+                _ => {
+                    debug_assert!(
+                        false,
+                        "STAGE_LOOKUP disagrees with Insn::opcode_u8 (expected scan-hot)"
+                    );
+                    unsafe { core::hint::unreachable_unchecked() }
+                }
+            },
+            _ => match insn {
+                Insn::EndOfInput { on_fail } => {
+                    if pos as usize == input_len {
+                        ip += 1;
+                    } else {
+                        vm.error_ctx
+                            .record(pos, vm.context_stack.as_slice(), Expected::EndOfInput);
+                        fail_jump!(on_fail);
+                    }
+                }
+
+                Insn::Fail => {
+                    do_fail(graph, input, &mut ip, &mut pos, vm)?;
+                }
+
+                // ── Unicode codepoint terminals ───────────────────────────────────
+                Insn::AnyChar { on_fail } => {
+                    if let Some((_cp, len)) = decode_utf8(input, pos as usize) {
+                        pos += pos_from_len(len)?;
+                        ip += 1;
+                    } else {
+                        vm.error_ctx
+                            .record(pos, vm.context_stack.as_slice(), Expected::AnyChar);
+                        fail_jump!(on_fail);
+                    }
+                }
+
+                Insn::Char { codepoint, on_fail } => {
+                    if let Some((cp, len)) = decode_utf8(input, pos as usize) {
+                        if cp == codepoint {
+                            pos += pos_from_len(len)?;
+                            ip += 1;
+                            continue;
+                        }
+                    }
+                    vm.error_ctx.record(
+                        pos,
+                        vm.context_stack.as_slice(),
+                        Expected::Char(codepoint),
+                    );
+                    fail_jump!(on_fail);
+                }
+
+                Insn::CharRange { lo, hi, on_fail } => {
+                    if let Some((cp, len)) = decode_utf8(input, pos as usize) {
+                        if cp >= lo && cp <= hi {
+                            pos += pos_from_len(len)?;
+                            ip += 1;
+                            continue;
+                        }
+                    }
+                    vm.error_ctx.record(
+                        pos,
+                        vm.context_stack.as_slice(),
+                        Expected::CharRange(lo, hi),
+                    );
+                    fail_jump!(on_fail);
+                }
+
+                Insn::Call { rule } => {
+                    let entry = graph.rule_entry.get(rule as usize).copied().ok_or(
+                        ParseError::BadGraph(BadGraphKind::RuleEntryOutOfRange { rule }),
+                    )?;
+
+                    // Record that we're trying this rule so diagnostics can show "expected <rule>".
+                    vm.error_ctx
+                        .record(pos, vm.context_stack.as_slice(), Expected::Rule(rule));
+
+                    #[cfg(feature = "trace")]
+                    if let Some(obs) = vm.observer.as_deref_mut() {
+                        obs.on_call(rule, pos);
+                    }
+                    #[cfg(feature = "trace")]
+                    if let Some(t) = vm.tracer.as_deref_mut() {
+                        let name = graph.rule_name(rule).unwrap_or("?");
+                        t.on_call(name, pos);
+                    }
+
+                    #[cfg(feature = "std")]
+                    {
+                        if let Some(mt) = vm.memo {
+                            match mt.query_replay(rule, pos, vm.events, vm.tree_events) {
+                                MemoReplay::Hit { end_pos } => {
+                                    pos = end_pos;
+                                    ip += 1;
+                                }
+                                MemoReplay::Miss { furthest } => {
+                                    vm.error_ctx.record(
+                                        furthest,
+                                        vm.context_stack.as_slice(),
+                                        Expected::Rule(rule),
+                                    );
+                                    do_fail(graph, input, &mut ip, &mut pos, vm)?;
+                                }
+                                MemoReplay::Unknown => {
+                                    vm.stack.push(Frame::MemoReturn {
+                                        ret_ip: ip + 1,
+                                        rule,
+                                        start_pos: pos,
+                                        events_mark: u32::try_from(vm.events.len()).unwrap_or(0),
+                                        tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
+                                    });
+                                    #[cfg(feature = "trace")]
+                                    vm.rule_stack.push(rule);
+                                    ip = entry;
+                                }
+                            }
+                        } else {
+                            vm.stack.push(Frame::Return { ret_ip: ip + 1 });
+                            #[cfg(feature = "trace")]
+                            vm.rule_stack.push(rule);
+                            ip = entry;
+                        }
+                    }
+                    #[cfg(not(feature = "std"))]
+                    {
                         vm.stack.push(Frame::Return { ret_ip: ip + 1 });
                         #[cfg(feature = "trace")]
                         vm.rule_stack.push(rule);
                         ip = entry;
                     }
                 }
-                #[cfg(not(feature = "std"))]
-                {
-                    vm.stack.push(Frame::Return { ret_ip: ip + 1 });
-                    #[cfg(feature = "trace")]
-                    vm.rule_stack.push(rule);
-                    ip = entry;
-                }
-            }
 
-            Insn::Return => {
-                loop {
-                    match vm.stack.pop() {
-                        Some(Frame::Return { ret_ip }) => {
-                            #[cfg(feature = "trace")]
-                            if let Some(t) = vm.tracer.as_deref_mut() {
-                                if let Some(r) = vm.rule_stack.pop() {
-                                    let name = graph.rule_name(r).unwrap_or("?");
-                                    t.on_return(name, pos, true);
+                Insn::Return => {
+                    loop {
+                        match vm.stack.pop() {
+                            Some(Frame::Return { ret_ip }) => {
+                                #[cfg(feature = "trace")]
+                                if let Some(t) = vm.tracer.as_deref_mut() {
+                                    if let Some(r) = vm.rule_stack.pop() {
+                                        let name = graph.rule_name(r).unwrap_or("?");
+                                        t.on_return(name, pos, true);
+                                    }
                                 }
+                                if ret_ip == u32::MAX {
+                                    return Ok(pos);
+                                }
+                                ip = ret_ip;
+                                break;
                             }
-                            if ret_ip == u32::MAX {
-                                return Ok(pos);
-                            }
-                            ip = ret_ip;
-                            break;
-                        }
-                        #[cfg(feature = "std")]
-                        Some(Frame::MemoReturn {
-                            ret_ip,
-                            rule,
-                            start_pos,
-                            events_mark,
-                            tree_mark,
-                        }) => {
                             #[cfg(feature = "std")]
-                            if let Some(m) = vm.memo {
-                                let stored_events = vm.events[events_mark as usize..]
-                                    .to_vec()
-                                    .into_boxed_slice();
-                                let stored_tree = vm.tree_events[tree_mark as usize..]
-                                    .to_vec()
-                                    .into_boxed_slice();
-                                m.insert_hit(rule, start_pos, pos, stored_events, stored_tree);
+                            Some(Frame::MemoReturn {
+                                ret_ip,
+                                rule,
+                                start_pos,
+                                events_mark,
+                                tree_mark,
+                            }) => {
+                                #[cfg(feature = "std")]
+                                if let Some(m) = vm.memo {
+                                    let em = events_mark as usize;
+                                    let tm = tree_mark as usize;
+                                    let captures = vm.events.get(em..).unwrap_or(&[]);
+                                    let tree = vm.tree_events.get(tm..).unwrap_or(&[]);
+                                    m.insert_hit(rule, start_pos, pos, captures, tree);
+                                }
+                                if ret_ip == u32::MAX {
+                                    return Ok(pos);
+                                }
+                                ip = ret_ip;
+                                break;
                             }
-                            if ret_ip == u32::MAX {
-                                return Ok(pos);
+                            Some(Frame::ContextSave { snapshot_mark }) => {
+                                restore_snapshot(vm.flags, vm.ctx_snapshots, snapshot_mark)?;
                             }
-                            ip = ret_ip;
+                            Some(Frame::Backtrack { .. }) => { /* defensive */ }
+                            Some(f @ (Frame::Recover { .. } | Frame::RecoverSync { .. })) => {
+                                vm.stack.push(f);
+                                return Err(ParseError::BadGraph(
+                                    BadGraphKind::ReturnWithRecoverFrameOnStack,
+                                ));
+                            }
+                            Some(Frame::_Reserved { .. }) => {
+                                return Err(ParseError::BadGraph(BadGraphKind::ReservedFrame));
+                            }
+                            None => {
+                                return Err(ParseError::BadGraph(
+                                    BadGraphKind::UnexpectedFrameDuringReturn,
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                // ── Backtracking ──────────────────────────────────────────────────
+                Insn::Choice { alt } => {
+                    vm.stack.push(Frame::Backtrack {
+                        alt,
+                        saved_pos: pos,
+                        capture_mark: u32::try_from(vm.events.len()).unwrap_or(0),
+                        tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
+                        open_tokens_mark: u32::try_from(vm.open_tokens.len()).unwrap_or(0),
+                        context_mark: u32::try_from(vm.context_stack.len()).unwrap_or(0),
+                    });
+                    ip += 1;
+                }
+
+                Insn::Commit { target } => {
+                    pop_backtrack(vm.stack)?;
+                    ip = target;
+                }
+
+                Insn::BackCommit { target } => {
+                    pop_backtrack_commit(
+                        vm.stack,
+                        &mut pos,
+                        vm.events,
+                        vm.tree_events,
+                        vm.open_tokens,
+                        vm.context_stack,
+                    )?;
+                    ip = target;
+                }
+
+                Insn::NegBackCommit { target } => {
+                    pop_backtrack_commit(
+                        vm.stack,
+                        &mut pos,
+                        vm.events,
+                        vm.tree_events,
+                        vm.open_tokens,
+                        vm.context_stack,
+                    )?;
+                    ip = target;
+                    do_fail(graph, input, &mut ip, &mut pos, vm)?;
+                }
+
+                // Fix: PartialCommit must update ALL backtrack marks so that a
+                // failed later iteration does not discard events from already-committed
+                // earlier iterations.
+                Insn::PartialCommit { target } => {
+                    update_backtrack_marks(
+                        vm.stack,
+                        pos,
+                        u32::try_from(vm.events.len()).unwrap_or(0),
+                        u32::try_from(vm.tree_events.len()).unwrap_or(0),
+                        u32::try_from(vm.open_tokens.len()).unwrap_or(0),
+                        u32::try_from(vm.context_stack.len()).unwrap_or(0),
+                    )?;
+                    ip = target;
+                }
+                Insn::IfFlag { flag_id, on_fail } => {
+                    if flag_is_set(vm.flags, flag_id) {
+                        ip += 1;
+                    } else {
+                        vm.error_ctx.record(
+                            pos,
+                            vm.context_stack.as_slice(),
+                            Expected::Flag {
+                                id: flag_id,
+                                required: true,
+                            },
+                        );
+                        fail_jump!(on_fail);
+                    }
+                }
+
+                Insn::IfNotFlag { flag_id, on_fail } => {
+                    if flag_is_set(vm.flags, flag_id) {
+                        vm.error_ctx.record(
+                            pos,
+                            vm.context_stack.as_slice(),
+                            Expected::Flag {
+                                id: flag_id,
+                                required: false,
+                            },
+                        );
+                        fail_jump!(on_fail);
+                    } else {
+                        ip += 1;
+                    }
+                }
+
+                Insn::PushFlags { mask_id } => {
+                    let entries = graph.flag_masks.get(mask_id);
+                    let mark = u32::try_from(vm.ctx_snapshots.len()).unwrap_or(0);
+                    for e in entries {
+                        let w = e.word as usize;
+                        let old = if w < vm.flags.len() { vm.flags[w] } else { 0 };
+                        vm.ctx_snapshots.push(SnapEntry {
+                            word: e.word,
+                            val: old,
+                        });
+                    }
+                    FlagMask { entries }.apply(vm.flags);
+                    vm.stack.push(Frame::ContextSave {
+                        snapshot_mark: mark,
+                    });
+                    ip += 1;
+                }
+
+                Insn::PopFlags => {
+                    let mark = pop_context_save(vm.stack)?;
+                    restore_snapshot(vm.flags, vm.ctx_snapshots, mark)?;
+                    ip += 1;
+                }
+
+                // ── Legacy captures ───────────────────────────────────────────────
+                Insn::CaptureBegin { tag } => {
+                    vm.events.push(CaptureEvent::Open { tag, pos });
+                    ip += 1;
+                }
+                Insn::CaptureEnd { tag } => {
+                    vm.events.push(CaptureEvent::Close { tag, pos });
+                    ip += 1;
+                }
+
+                // ── Green/Red tree ────────────────────────────────────────────────
+                Insn::NodeBegin { kind, field } => {
+                    vm.tree_events
+                        .push(TreeEvent::NodeOpen { kind, field, pos });
+                    ip += 1;
+                }
+
+                Insn::NodeEnd => {
+                    vm.tree_events.push(TreeEvent::NodeClose { pos });
+                    ip += 1;
+                }
+
+                Insn::TokenBegin { kind, is_trivia } => {
+                    vm.open_tokens.push((kind, is_trivia, pos));
+                    ip += 1;
+                }
+
+                Insn::TokenEnd => {
+                    let (kind, is_trivia, start) = vm
+                        .open_tokens
+                        .pop()
+                        .ok_or(ParseError::BadGraph(BadGraphKind::TokenStackUnderflow))?;
+                    vm.tree_events.push(TreeEvent::Token {
+                        kind,
+                        start,
+                        end: pos,
+                        is_trivia,
+                    });
+                    ip += 1;
+                }
+
+                Insn::RecordExpectedLabel { label_id } => {
+                    vm.error_ctx.record(
+                        pos,
+                        vm.context_stack.as_slice(),
+                        Expected::Label(label_id),
+                    );
+                    ip += 1;
+                }
+
+                Insn::PushDiagnosticContext { label_id } => {
+                    vm.context_stack.push(label_id);
+                    ip += 1;
+                }
+
+                Insn::PopDiagnosticContext => {
+                    vm.context_stack.pop();
+                    ip += 1;
+                }
+
+                Insn::SetHint { hint_id } => {
+                    vm.error_ctx
+                        .record_hint(pos, vm.context_stack.as_slice(), hint_id);
+                    ip += 1;
+                }
+
+                Insn::TracePoint { .. } => {
+                    #[cfg(feature = "trace")]
+                    if let Some(t) = vm.tracer.as_deref_mut() {
+                        if let Insn::TracePoint { label_id } = insn {
+                            let label = graph.strings.resolve(label_id);
+                            t.on_trace(label, pos, ip);
+                        }
+                    }
+                    ip += 1;
+                }
+
+                // ── Error recovery ────────────────────────────────────────────────
+                Insn::RecoverUntil { sync_rule, resume } => {
+                    vm.stack.push(Frame::Recover {
+                        sync_rule,
+                        resume,
+                        capture_mark: u32::try_from(vm.events.len()).unwrap_or(0),
+                        tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
+                        open_tokens_mark: u32::try_from(vm.open_tokens.len()).unwrap_or(0),
+                        context_mark: u32::try_from(vm.context_stack.len()).unwrap_or(0),
+                    });
+                    ip += 1;
+                }
+
+                Insn::RecoveryResume => {
+                    // Body succeeded or sync rule matched; pop Recover or RecoverSync and continue.
+                    let mut put_back = Vec::new();
+                    let mut found = false;
+                    while let Some(f) = vm.stack.pop() {
+                        if matches!(f, Frame::RecoverSync { .. } | Frame::Recover { .. }) {
+                            found = true;
                             break;
                         }
-                        Some(Frame::ContextSave { snapshot_mark }) => {
-                            restore_snapshot(vm.flags, vm.ctx_snapshots, snapshot_mark)?;
-                        }
-                        Some(Frame::Backtrack { .. }) => { /* defensive */ }
-                        Some(f @ (Frame::Recover { .. } | Frame::RecoverSync { .. })) => {
-                            vm.stack.push(f);
-                            return Err(ParseError::BadGraph(
-                                BadGraphKind::ReturnWithRecoverFrameOnStack,
-                            ));
-                        }
-                        Some(Frame::_Reserved { .. }) => {
-                            return Err(ParseError::BadGraph(BadGraphKind::ReservedFrame));
-                        }
-                        None => {
-                            return Err(ParseError::BadGraph(
-                                BadGraphKind::UnexpectedFrameDuringReturn,
-                            ));
-                        }
+                        put_back.push(f);
                     }
-                }
-            }
-
-            // ── Backtracking ──────────────────────────────────────────────────
-            Insn::Choice { alt } => {
-                vm.stack.push(Frame::Backtrack {
-                    alt,
-                    saved_pos: pos,
-                    capture_mark: u32::try_from(vm.events.len()).unwrap_or(0),
-                    tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
-                    open_tokens_mark: u32::try_from(vm.open_tokens.len()).unwrap_or(0),
-                    context_mark: u32::try_from(vm.context_stack.len()).unwrap_or(0),
-                });
-                ip += 1;
-            }
-
-            Insn::Commit { target } => {
-                pop_backtrack(vm.stack)?;
-                ip = target;
-            }
-
-            Insn::BackCommit { target } => {
-                pop_backtrack_commit(
-                    vm.stack,
-                    &mut pos,
-                    vm.events,
-                    vm.tree_events,
-                    vm.open_tokens,
-                    vm.context_stack,
-                )?;
-                ip = target;
-            }
-
-            Insn::NegBackCommit { target } => {
-                pop_backtrack_commit(
-                    vm.stack,
-                    &mut pos,
-                    vm.events,
-                    vm.tree_events,
-                    vm.open_tokens,
-                    vm.context_stack,
-                )?;
-                ip = target;
-                do_fail(graph, input, &mut ip, &mut pos, vm)?;
-            }
-
-            // Fix: PartialCommit must update ALL backtrack marks so that a
-            // failed later iteration does not discard events from already-committed
-            // earlier iterations.
-            Insn::PartialCommit { target } => {
-                update_backtrack_marks(
-                    vm.stack,
-                    pos,
-                    u32::try_from(vm.events.len()).unwrap_or(0),
-                    u32::try_from(vm.tree_events.len()).unwrap_or(0),
-                    u32::try_from(vm.open_tokens.len()).unwrap_or(0),
-                    u32::try_from(vm.context_stack.len()).unwrap_or(0),
-                )?;
-                ip = target;
-            }
-
-            // ── O(1) dispatch ────────────────────────────────────────────────
-            Insn::ByteDispatch { table_id } => {
-                if let Some(b) = input.get(pos as usize).copied() {
-                    let target = graph.dispatch(table_id, b);
-                    if target != u32::MAX {
-                        ip = target;
-                        continue;
+                    for f in put_back.into_iter().rev() {
+                        vm.stack.push(f);
                     }
-                }
-                do_fail(graph, input, &mut ip, &mut pos, vm)?;
-            }
-
-            // ── Fused terminals ───────────────────────────────────────────────
-            Insn::ConsumeWhileClass {
-                class,
-                label_id,
-                min,
-                on_fail,
-            } => {
-                let start = pos;
-                while let Some(b) = input.get(pos as usize).copied() {
-                    if !class.contains(b) {
-                        break;
+                    if !found {
+                        return Err(ParseError::BadGraph(
+                            BadGraphKind::RecoveryResumeWithoutRecoverFrame,
+                        ));
                     }
-                    pos += 1;
-                }
-                let consumed = pos.saturating_sub(start) as u32;
-                if consumed >= min {
-                    ip += 1;
-                } else {
-                    // Failure is at the start position (where the run was required).
-                    vm.error_ctx.record(
-                        start,
-                        vm.context_stack.as_slice(),
-                        Expected::ClassLabel(label_id),
-                    );
-                    // Restore pos so backtracking sees the pre-attempt state.
-                    pos = start;
-                    fail_jump!(on_fail);
-                }
-            }
-
-            // ── Context flags ─────────────────────────────────────────────────
-            Insn::IfFlag { flag_id, on_fail } => {
-                if flag_is_set(vm.flags, flag_id) {
-                    ip += 1;
-                } else {
-                    vm.error_ctx.record(
-                        pos,
-                        vm.context_stack.as_slice(),
-                        Expected::Flag {
-                            id: flag_id,
-                            required: true,
-                        },
-                    );
-                    fail_jump!(on_fail);
-                }
-            }
-
-            Insn::IfNotFlag { flag_id, on_fail } => {
-                if flag_is_set(vm.flags, flag_id) {
-                    vm.error_ctx.record(
-                        pos,
-                        vm.context_stack.as_slice(),
-                        Expected::Flag {
-                            id: flag_id,
-                            required: false,
-                        },
-                    );
-                    fail_jump!(on_fail);
-                } else {
                     ip += 1;
                 }
-            }
 
-            Insn::PushFlags { mask_id } => {
-                let entries = graph.flag_masks.get(mask_id);
-                let mark = u32::try_from(vm.ctx_snapshots.len()).unwrap_or(0);
-                for e in entries {
-                    let w = e.word as usize;
-                    let old = if w < vm.flags.len() { vm.flags[w] } else { 0 };
-                    vm.ctx_snapshots.push(SnapEntry {
-                        word: e.word,
-                        val: old,
-                    });
+                Insn::Accept => return Ok(pos),
+                _ => {
+                    debug_assert!(
+                        false,
+                        "STAGE_LOOKUP disagrees with Insn::opcode_u8 (expected general)"
+                    );
+                    unsafe { core::hint::unreachable_unchecked() }
                 }
-                FlagMask { entries }.apply(vm.flags);
-                vm.stack.push(Frame::ContextSave {
-                    snapshot_mark: mark,
-                });
-                ip += 1;
-            }
-
-            Insn::PopFlags => {
-                let mark = pop_context_save(vm.stack)?;
-                restore_snapshot(vm.flags, vm.ctx_snapshots, mark)?;
-                ip += 1;
-            }
-
-            // ── Legacy captures ───────────────────────────────────────────────
-            Insn::CaptureBegin { tag } => {
-                vm.events.push(CaptureEvent::Open { tag, pos });
-                ip += 1;
-            }
-            Insn::CaptureEnd { tag } => {
-                vm.events.push(CaptureEvent::Close { tag, pos });
-                ip += 1;
-            }
-
-            // ── Green/Red tree ────────────────────────────────────────────────
-            Insn::NodeBegin { kind, field } => {
-                vm.tree_events
-                    .push(TreeEvent::NodeOpen { kind, field, pos });
-                ip += 1;
-            }
-
-            Insn::NodeEnd => {
-                vm.tree_events.push(TreeEvent::NodeClose { pos });
-                ip += 1;
-            }
-
-            Insn::TokenBegin { kind, is_trivia } => {
-                vm.open_tokens.push((kind, is_trivia, pos));
-                ip += 1;
-            }
-
-            Insn::TokenEnd => {
-                let (kind, is_trivia, start) = vm
-                    .open_tokens
-                    .pop()
-                    .ok_or(ParseError::BadGraph(BadGraphKind::TokenStackUnderflow))?;
-                vm.tree_events.push(TreeEvent::Token {
-                    kind,
-                    start,
-                    end: pos,
-                    is_trivia,
-                });
-                ip += 1;
-            }
-
-            Insn::RecordExpectedLabel { label_id } => {
-                vm.error_ctx
-                    .record(pos, vm.context_stack.as_slice(), Expected::Label(label_id));
-                ip += 1;
-            }
-
-            Insn::PushDiagnosticContext { label_id } => {
-                vm.context_stack.push(label_id);
-                ip += 1;
-            }
-
-            Insn::PopDiagnosticContext => {
-                vm.context_stack.pop();
-                ip += 1;
-            }
-
-            Insn::SetHint { hint_id } => {
-                vm.error_ctx
-                    .record_hint(pos, vm.context_stack.as_slice(), hint_id);
-                ip += 1;
-            }
-
-            Insn::TracePoint { .. } => {
-                #[cfg(feature = "trace")]
-                if let Some(t) = vm.tracer.as_deref_mut() {
-                    if let Insn::TracePoint { label_id } = insn {
-                        let label = graph.strings.resolve(label_id);
-                        t.on_trace(label, pos, ip);
-                    }
-                }
-                ip += 1;
-            }
-
-            // ── Error recovery ────────────────────────────────────────────────
-            Insn::RecoverUntil { sync_rule, resume } => {
-                vm.stack.push(Frame::Recover {
-                    sync_rule,
-                    resume,
-                    capture_mark: u32::try_from(vm.events.len()).unwrap_or(0),
-                    tree_mark: u32::try_from(vm.tree_events.len()).unwrap_or(0),
-                    open_tokens_mark: u32::try_from(vm.open_tokens.len()).unwrap_or(0),
-                    context_mark: u32::try_from(vm.context_stack.len()).unwrap_or(0),
-                });
-                ip += 1;
-            }
-
-            Insn::RecoveryResume => {
-                // Body succeeded or sync rule matched; pop Recover or RecoverSync and continue.
-                let mut put_back = Vec::new();
-                let mut found = false;
-                while let Some(f) = vm.stack.pop() {
-                    if matches!(f, Frame::RecoverSync { .. } | Frame::Recover { .. }) {
-                        found = true;
-                        break;
-                    }
-                    put_back.push(f);
-                }
-                for f in put_back.into_iter().rev() {
-                    vm.stack.push(f);
-                }
-                if !found {
-                    return Err(ParseError::BadGraph(
-                        BadGraphKind::RecoveryResumeWithoutRecoverFrame,
-                    ));
-                }
-                ip += 1;
-            }
-
-            Insn::Accept => return Ok(pos),
+            },
         }
     }
 }

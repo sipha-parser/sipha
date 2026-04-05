@@ -32,7 +32,7 @@
 //! (source-independent, allocates).
 
 use super::green::{GreenElement, GreenNode, GreenToken};
-use crate::types::{FieldId, FromSyntaxKind, IntoSyntaxKind, Span, SyntaxKind};
+use crate::types::{FieldId, FromSyntaxKind, RuleKind, Span, SyntaxKind};
 use std::sync::Arc;
 
 // ─── SyntaxElement ────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ impl SyntaxNode {
 
     /// First direct child **node** with the given kind (convenience for passing a `Kind` enum).
     #[must_use]
-    pub fn child_node_by_kind<K: IntoSyntaxKind>(&self, kind: K) -> Option<Self> {
+    pub fn child_node_by_kind<K: RuleKind>(&self, kind: K) -> Option<Self> {
         self.child_by_kind(kind.into_syntax_kind())
     }
 

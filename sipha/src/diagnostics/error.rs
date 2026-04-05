@@ -149,7 +149,7 @@ impl Expected {
             }
             Self::Rule(rule_id) => {
                 if let Some(n) = names {
-                    if let Some(s) = n.rule_name(*rule_id) {
+                    if let Some(s) = n.rule_diagnostic_display(*rule_id) {
                         return s.to_string();
                     }
                 }
@@ -169,7 +169,9 @@ impl Expected {
 
 // ─── Helpers for expected list formatting ─────────────────────────────────────
 
-pub(crate) fn format_expected_list(items: &[String]) -> String {
+/// Join a list of expected-token strings into prose (`"a"`, `"a, b, or c"`, truncation).
+#[must_use]
+pub fn format_expected_list(items: &[String]) -> String {
     if items.is_empty() {
         return "nothing".to_string();
     }
@@ -192,6 +194,15 @@ pub(crate) fn format_expected_list(items: &[String]) -> String {
     } else {
         list
     }
+}
+
+#[cfg(feature = "std")]
+fn dedupe_expected_display_items(items: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    items
+        .into_iter()
+        .filter(|s| seen.insert(s.clone()))
+        .collect()
 }
 
 // ─── Diagnostic ──────────────────────────────────────────────────────────────
@@ -270,6 +281,64 @@ impl Diagnostic {
         format_expected_list(&items)
     }
 
+    /// Like [`expected_string`](Self::expected_string), but drops duplicate display strings
+    /// (keeping the first occurrence) so overlapping grammar rules do not repeat the same phrase.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn expected_string_deduped(
+        &self,
+        literals: Option<&LiteralTable<'_>>,
+        names: Option<&dyn GrammarNames>,
+    ) -> String {
+        let items: Vec<String> = self
+            .expected
+            .iter()
+            .map(|e| e.display(literals, names))
+            .collect();
+        format_expected_list(&dedupe_expected_display_items(items))
+    }
+
+    #[cfg(feature = "std")]
+    fn format_with_expected_str(
+        &self,
+        source: &[u8],
+        line_index: &LineIndex,
+        expected_str: &str,
+        names: Option<&dyn GrammarNames>,
+    ) -> String {
+        let (line_1, col_1) = line_index.line_col_1based(self.furthest);
+        let header = format!(
+            "parse error at {line_1}:{col_1} (byte {}): expected {expected_str}",
+            self.furthest
+        );
+
+        if source.is_empty() || self.furthest as usize > source.len() {
+            let mut out = header;
+            for line in self.context_lines(names) {
+                out.push('\n');
+                out.push_str(&line);
+            }
+            for line in self.hint_lines(names) {
+                out.push('\n');
+                out.push_str(&line);
+            }
+            return out;
+        }
+
+        let mut out = header;
+        for line in self.context_lines(names) {
+            out.push('\n');
+            out.push_str(&line);
+        }
+        for line in self.hint_lines(names) {
+            out.push('\n');
+            out.push_str(&line);
+        }
+        out.push('\n');
+        out.push_str(&line_index.snippet_at(source, self.furthest));
+        out
+    }
+
     /// Format the diagnostic using the grammar's literal, rule-name, and label tables (optional).
     ///
     /// If there are more than `MAX_EXPECTED_DISPLAY` (10) expected items, only the first
@@ -312,38 +381,22 @@ impl Diagnostic {
         names: Option<&dyn GrammarNames>,
     ) -> String {
         let expected_str = self.expected_string(literals, names);
+        self.format_with_expected_str(source, line_index, &expected_str, names)
+    }
 
-        let (line_1, col_1) = line_index.line_col_1based(self.furthest);
-        let header = format!(
-            "parse error at {line_1}:{col_1} (byte {}): expected {expected_str}",
-            self.furthest
-        );
-
-        if source.is_empty() || self.furthest as usize > source.len() {
-            let mut out = header;
-            for line in self.context_lines(names) {
-                out.push('\n');
-                out.push_str(&line);
-            }
-            for line in self.hint_lines(names) {
-                out.push('\n');
-                out.push_str(&line);
-            }
-            return out;
-        }
-
-        let mut out = header;
-        for line in self.context_lines(names) {
-            out.push('\n');
-            out.push_str(&line);
-        }
-        for line in self.hint_lines(names) {
-            out.push('\n');
-            out.push_str(&line);
-        }
-        out.push('\n');
-        out.push_str(&line_index.snippet_at(source, self.furthest));
-        out
+    /// Like [`format_with_source`](Self::format_with_source), but merges duplicate expected
+    /// display strings (e.g. several rules that all map to “expression”).
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn format_with_source_deduped_expected(
+        &self,
+        source: &[u8],
+        line_index: &LineIndex,
+        literals: Option<&LiteralTable<'_>>,
+        names: Option<&dyn GrammarNames>,
+    ) -> String {
+        let expected_str = self.expected_string_deduped(literals, names);
+        self.format_with_expected_str(source, line_index, &expected_str, names)
     }
 }
 

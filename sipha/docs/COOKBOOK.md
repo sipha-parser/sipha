@@ -16,15 +16,22 @@ If you call `GrammarBuilder::set_trivia_rule("ws")`, the builder will **auto-inj
 
 ```rust
 use sipha::prelude::*;
+use sipha::types::LexKind;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::LexKinds)]
 #[repr(u16)]
-enum K { Ws }
+enum Lex { Ws }
+
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        "WS"
+    }
+}
 
 let mut g = GrammarBuilder::new();
 g.set_trivia_rule("ws");
 g.lexer_rule("ws", |g| {
-    g.trivia(K::Ws, |g| {
+    g.trivia(Lex::Ws, |g| {
         g.zero_or_more(|g| {
             g.class(classes::WHITESPACE);
         });
@@ -38,6 +45,35 @@ g.lexer_rule("ws", |g| {
 - **`parser_rule`**: structural composition of tokens + subrules, with trivia auto-skip.
 
 Inside `token(...)` and `trivia(...)` bodies, trivia auto-skip is suppressed automatically (token interiors should be byte-level).
+
+## Type-safe rule names (`GrammarRuleName`)
+
+[`GrammarRuleName`](https://docs.rs/sipha/latest/sipha/types/trait.GrammarRuleName.html) maps a **copy** type (usually a unit enum) to the `&str` registered with `parser_rule` / `lexer_rule`. Use [`GrammarBuilder::call_rule`](https://docs.rs/sipha/latest/sipha/parse/builder/struct.GrammarBuilder.html#method.call_rule), [`set_trivia_rule_name`](https://docs.rs/sipha/latest/sipha/parse/builder/struct.GrammarBuilder.html#method.set_trivia_rule_name), and [`recover_until_rule`](https://docs.rs/sipha/latest/sipha/parse/builder/struct.GrammarBuilder.html#method.recover_until_rule) so call sites do not spell raw rule strings. Forward references still resolve at `finish()` like `call("…")`.
+
+```rust
+use sipha::prelude::*;
+use sipha::types::GrammarRuleName;
+
+#[derive(Clone, Copy)]
+enum R {
+    Ws,
+    Start,
+}
+
+impl GrammarRuleName for R {
+    fn rule_name(self) -> &'static str {
+        match self {
+            R::Ws => "ws",
+            R::Start => "start",
+        }
+    }
+}
+
+// g.set_trivia_rule_name(R::Ws);
+// g.call_rule(R::Start);
+```
+
+This names **PEG rules** in the bytecode graph, not CST [`RuleKind`](https://docs.rs/sipha/latest/sipha/types/trait.RuleKind.html) variants.
 
 ## Trailing trivia before EOF
 
@@ -120,7 +156,7 @@ let sexp = sipha::tree::sexp::syntax_node_to_sexp(
 );
 ```
 
-If you derive `SyntaxKinds`, you can pass a `kind_to_name` mapping so the output uses readable names instead of numeric kinds.
+If you implement [`LexKind`](https://docs.rs/sipha/latest/sipha/types/trait.LexKind.html) / [`RuleKind`](https://docs.rs/sipha/latest/sipha/types/trait.RuleKind.html) (the `LexKinds` / `RuleKinds` derives do not fill these in), you can pass a `kind_to_name` mapping so the output uses readable names instead of numeric kinds.
 
 ## Multi-error recovery (panic-free parsing)
 

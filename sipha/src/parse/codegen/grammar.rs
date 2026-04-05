@@ -11,6 +11,7 @@ pub(super) fn quote_grammar_binding() -> TokenStream {
             flag_masks: FlagMaskTable { data: FLAG_MASK_DATA, offsets: FLAG_MASK_OFFSETS },
             strings: &STRING_TABLE,
             rule_names: RULE_NAMES,
+            rule_diagnostic_labels: RULE_DIAGNOSTIC_LABELS,
             tag_names: TAG_NAMES,
             class_labels: CLASS_LABELS,
             expected_labels: EXPECTED_LABELS,

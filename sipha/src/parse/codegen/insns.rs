@@ -86,8 +86,16 @@ fn insn_tokens(insn: &Insn) -> TokenStream {
         Insn::PartialCommit { target } => quote! {
             Insn::PartialCommit { target: #target }
         },
-        Insn::ByteDispatch { table_id } => quote! {
-            Insn::ByteDispatch { table_id: #table_id }
+        Insn::ByteDispatch {
+            table_id,
+            fallback,
+            push_choice_backtrack,
+        } => quote! {
+            Insn::ByteDispatch {
+                table_id: #table_id,
+                fallback: #fallback,
+                push_choice_backtrack: #push_choice_backtrack,
+            }
         },
         Insn::ConsumeWhileClass {
             class,

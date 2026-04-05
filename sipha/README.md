@@ -18,13 +18,37 @@ Key capabilities:
 
 ```rust
 use sipha::prelude::*;
+use sipha::types::{LexKind, RuleKind};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
+enum Lex {
     Ws,
     Number,
+}
+
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::Ws => "WS",
+            Self::Number => "NUMBER",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sipha::RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Node {
+    Root,
+}
+
+impl RuleKind for Node {
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::Root => "ROOT",
+        }
+    }
 }
 
 fn main() {
@@ -32,7 +56,7 @@ fn main() {
     g.set_trivia_rule("ws");
 
     g.lexer_rule("ws", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.zero_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -40,7 +64,7 @@ fn main() {
     });
 
     g.lexer_rule("number", |g| {
-        g.token(K::Number, |g| {
+        g.token(Lex::Number, |g| {
             g.one_or_more(|g| {
                 g.class(classes::DIGIT);
             });
@@ -48,7 +72,7 @@ fn main() {
     });
 
     g.parser_rule("start", |g| {
-        g.node(K::Root, |g| {
+        g.node(Node::Root, |g| {
             g.call("number");
             g.skip(); // consume trailing trivia before EOI
         });

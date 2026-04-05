@@ -1,13 +1,10 @@
-use sipha::SyntaxKinds;
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
-    Section,
-    Header,
-    Pair,
+enum Lex {
     Key,
     Value,
     LBracket,
@@ -18,33 +15,56 @@ enum K {
     Comment,
 }
 
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Lex::Key => "KEY",
+            Lex::Value => "VALUE",
+            Lex::LBracket => "LBRACKET",
+            Lex::RBracket => "RBRACKET",
+            Lex::Eq => "EQ",
+            Lex::Newline => "NEWLINE",
+            Lex::Ws => "WS",
+            Lex::Comment => "COMMENT",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    Root,
+    Header,
+    Pair,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        match self {
+            Rule::Root => "ROOT",
+            Rule::Header => "HEADER",
+            Rule::Pair => "PAIR",
+        }
+    }
+}
+
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Root)]
+#[ast(kind = Rule::Root)]
 struct Root(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Header)]
+#[ast(kind = Rule::Header)]
 struct Header(SyntaxNode);
 
 #[derive(Clone, Debug, sipha::AstNode)]
-#[ast(kind = K::Pair)]
+#[ast(kind = Rule::Pair)]
 struct Pair(SyntaxNode);
 
 fn kind_name(k: SyntaxKind) -> Option<&'static str> {
-    K::from_syntax_kind(k).map(|k| match k {
-        K::Root => "ROOT",
-        K::Section => "SECTION",
-        K::Header => "HEADER",
-        K::Pair => "PAIR",
-        K::Key => "KEY",
-        K::Value => "VALUE",
-        K::LBracket => "LBRACKET",
-        K::RBracket => "RBRACKET",
-        K::Eq => "EQ",
-        K::Newline => "NEWLINE",
-        K::Ws => "WS",
-        K::Comment => "COMMENT",
-    })
+    Lex::from_syntax_kind(k)
+        .map(LexKind::display_name)
+        .or_else(|| Rule::from_syntax_kind(k).map(RuleKind::display_name))
 }
 
 fn grammar() -> BuiltGraph {
@@ -56,7 +76,7 @@ fn grammar() -> BuiltGraph {
     // The first defined rule is the grammar entrypoint.
     g.parser_rule("start", |g| {
         g.context_rule("ini-file", |g| {
-            g.node(K::Root, |g| {
+            g.node(Rule::Root, |g| {
                 g.zero_or_more(|g| {
                     g.call("item");
                 });
@@ -68,14 +88,14 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("newline", |g| {
-        g.token(K::Newline, |g| {
+        g.token(Lex::Newline, |g| {
             g.byte(b'\n');
         });
     });
 
     // Whitespace and comments are trivia.
     g.lexer_rule("trivia", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.zero_or_more(|g| {
                 g.choice(
                     |g| {
@@ -85,7 +105,7 @@ fn grammar() -> BuiltGraph {
                     },
                     |g| {
                         // Comment: '#' until newline or EOI.
-                        g.trivia(K::Comment, |g| {
+                        g.trivia(Lex::Comment, |g| {
                             g.byte(b'#');
                             g.zero_or_more(|g| {
                                 g.neg_lookahead(|g| {
@@ -101,7 +121,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("key", |g| {
-        g.token(K::Key, |g| {
+        g.token(Lex::Key, |g| {
             g.class_with_label(classes::IDENT_START, "ident-start");
             g.zero_or_more(|g| {
                 g.class_with_label(classes::IDENT_CONT, "ident-cont");
@@ -110,7 +130,7 @@ fn grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("value", |g| {
-        g.token(K::Value, |g| {
+        g.token(Lex::Value, |g| {
             // Value: all bytes until newline or comment start.
             g.zero_or_more(|g| {
                 g.neg_lookahead(|g| {
@@ -130,14 +150,14 @@ fn grammar() -> BuiltGraph {
 
     g.parser_rule("header", |g| {
         g.context_rule("ini-header", |g| {
-            g.node(K::Header, |g| {
+            g.node(Rule::Header, |g| {
                 g.trace("header");
-                g.token(K::LBracket, |g| {
+                g.token(Lex::LBracket, |g| {
                     g.byte(b'[');
                 });
                 g.call("key");
                 g.hint("missing closing ']' for section header?");
-                g.token(K::RBracket, |g| {
+                g.token(Lex::RBracket, |g| {
                     g.byte(b']');
                 });
             });
@@ -146,9 +166,9 @@ fn grammar() -> BuiltGraph {
 
     g.parser_rule("pair", |g| {
         g.context_rule("ini-pair", |g| {
-            g.node(K::Pair, |g| {
+            g.node(Rule::Pair, |g| {
                 g.call("key");
-                g.token(K::Eq, |g| {
+                g.token(Lex::Eq, |g| {
                     g.byte(b'=');
                 });
                 g.hint("missing value after '='?");

@@ -79,14 +79,41 @@ pub fn stitch_unit_syntax_root(input: &[u8], outputs: &[ParseOutput]) -> Option<
 mod tests {
     use super::*;
     use crate::parse::builder::GrammarBuilder;
+    use crate::types::{IntoSyntaxKind, LexKind, RuleKind, SyntaxKind};
+
+    #[derive(Clone, Copy)]
+    struct TestRule(SyntaxKind);
+    impl IntoSyntaxKind for TestRule {
+        fn into_syntax_kind(self) -> SyntaxKind {
+            self.0
+        }
+    }
+    impl RuleKind for TestRule {
+        fn display_name(self) -> &'static str {
+            "TEST_RULE"
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct TestLex(SyntaxKind);
+    impl IntoSyntaxKind for TestLex {
+        fn into_syntax_kind(self) -> SyntaxKind {
+            self.0
+        }
+    }
+    impl LexKind for TestLex {
+        fn display_name(self) -> &'static str {
+            "TEST_LEX"
+        }
+    }
 
     #[test]
     fn parse_units_parallel_parses_each_unit() {
         // unit := node(2, token(10, byte('a')))
         let mut g = GrammarBuilder::new();
         let unit_rule = g.rule("unit", |g| {
-            g.node(2, |g| {
-                g.token(10, |g| {
+            g.node(TestRule(2), |g| {
+                g.token(TestLex(10), |g| {
                     g.byte(b'a');
                 });
             });

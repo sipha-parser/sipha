@@ -1,14 +1,11 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use sipha::SyntaxKinds;
+use sipha::LexKinds;
+use sipha::RuleKinds;
 use sipha::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SyntaxKinds)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, LexKinds)]
 #[repr(u16)]
-enum K {
-    Root,
-    Expr,
-    BinExpr,
-    ParenExpr,
+enum Lex {
     Number,
     Plus,
     Star,
@@ -17,12 +14,46 @@ enum K {
     Ws,
 }
 
+impl LexKind for Lex {
+    fn display_name(self) -> &'static str {
+        match self {
+            Lex::Number => "NUMBER",
+            Lex::Plus => "PLUS",
+            Lex::Star => "STAR",
+            Lex::LParen => "LPAREN",
+            Lex::RParen => "RPAREN",
+            Lex::Ws => "WS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RuleKinds)]
+#[sipha(lex = Lex)]
+#[repr(u16)]
+enum Rule {
+    Root,
+    Expr,
+    BinExpr,
+    ParenExpr,
+}
+
+impl RuleKind for Rule {
+    fn display_name(self) -> &'static str {
+        match self {
+            Rule::Root => "ROOT",
+            Rule::Expr => "EXPR",
+            Rule::BinExpr => "BIN_EXPR",
+            Rule::ParenExpr => "PAREN_EXPR",
+        }
+    }
+}
+
 fn build_expr_grammar() -> BuiltGraph {
     let mut g = GrammarBuilder::new();
     g.set_trivia_rule("ws");
 
     g.lexer_rule("ws", |g| {
-        g.trivia(K::Ws, |g| {
+        g.trivia(Lex::Ws, |g| {
             g.zero_or_more(|g| {
                 g.class(classes::WHITESPACE);
             });
@@ -30,7 +61,7 @@ fn build_expr_grammar() -> BuiltGraph {
     });
 
     g.lexer_rule("number", |g| {
-        g.token(K::Number, |g| {
+        g.token(Lex::Number, |g| {
             g.one_or_more(|g| {
                 g.class(classes::DIGIT);
             });
@@ -38,10 +69,10 @@ fn build_expr_grammar() -> BuiltGraph {
     });
 
     g.parser_rule("expr", |g| {
-        g.node(K::Expr, |g| {
+        g.node(Rule::Expr, |g| {
             g.call("mul");
             g.zero_or_more(|g| {
-                g.token(K::Plus, |g| {
+                g.token(Lex::Plus, |g| {
                     g.byte(b'+');
                 });
                 g.call("mul");
@@ -50,10 +81,10 @@ fn build_expr_grammar() -> BuiltGraph {
     });
 
     g.parser_rule("mul", |g| {
-        g.node(K::BinExpr, |g| {
+        g.node(Rule::BinExpr, |g| {
             g.call("atom");
             g.zero_or_more(|g| {
-                g.token(K::Star, |g| {
+                g.token(Lex::Star, |g| {
                     g.byte(b'*');
                 });
                 g.call("atom");
@@ -67,12 +98,12 @@ fn build_expr_grammar() -> BuiltGraph {
                 g.call("number");
             },
             |g| {
-                g.node(K::ParenExpr, |g| {
-                    g.token(K::LParen, |g| {
+                g.node(Rule::ParenExpr, |g| {
+                    g.token(Lex::LParen, |g| {
                         g.byte(b'(');
                     });
                     g.call("expr");
-                    g.token(K::RParen, |g| {
+                    g.token(Lex::RParen, |g| {
                         g.byte(b')');
                     });
                 });
@@ -81,7 +112,7 @@ fn build_expr_grammar() -> BuiltGraph {
     });
 
     g.parser_rule("start", |g| {
-        g.node(K::Root, |g| {
+        g.node(Rule::Root, |g| {
             g.call("expr");
             g.skip();
         });
@@ -119,40 +150,7 @@ fn bench_expr_parse(c: &mut Criterion) {
                 }
             },
             BatchSize::SmallInput,
-        )
-    });
-
-    c.bench_function("expr/parse_memo", |b| {
-        b.iter_batched(
-            || {
-                let engine = Engine::new().with_memo();
-                (engine, &graph)
-            },
-            |(mut engine, graph)| {
-                for input in &inputs {
-                    let out = engine.parse(graph, input).unwrap();
-                    criterion::black_box(out.consumed);
-                }
-            },
-            BatchSize::SmallInput,
-        )
-    });
-
-    c.bench_function("expr/parse_and_build_tree", |b| {
-        b.iter_batched(
-            || {
-                let engine = Engine::new();
-                (engine, &graph)
-            },
-            |(mut engine, graph)| {
-                for input in &inputs {
-                    let out = engine.parse(graph, input).unwrap();
-                    let root = out.syntax_root(input).unwrap();
-                    criterion::black_box(root.text_len());
-                }
-            },
-            BatchSize::SmallInput,
-        )
+        );
     });
 }
 
