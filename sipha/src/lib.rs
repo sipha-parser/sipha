@@ -106,8 +106,6 @@ pub mod prelude {
         pub use crate::parse::builder::{
             BuiltGraph, GrammarBuilder, GrammarChoiceFn, Repeat, SharedGrammar,
         };
-        #[cfg(feature = "std")]
-        pub use crate::parse::lexer_batch::{LexerKeywordSpec, LexerTokenLiteralSpec};
         pub use crate::parse::capture::CaptureNode;
         pub use crate::parse::context::{FlagId, ParseContext};
         pub use crate::parse::engine::{
@@ -121,6 +119,8 @@ pub mod prelude {
         pub use crate::parse::insn::{
             FlagMaskTable, Insn, InsnOpcode, LiteralTable, ParseGraph, opcode,
         };
+        #[cfg(feature = "std")]
+        pub use crate::parse::lexer_batch::{LexerKeywordSpec, LexerTokenLiteralSpec};
         #[cfg(feature = "std")]
         pub use crate::parse::memo::MemoTable;
         pub use crate::parse::sublanguage::{

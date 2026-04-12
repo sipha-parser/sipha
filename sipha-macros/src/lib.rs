@@ -7,8 +7,8 @@
 mod ast_enum;
 mod ast_node;
 mod ir;
-mod lower;
 mod lex_kinds;
+mod lower;
 mod parse;
 mod rule_kinds;
 

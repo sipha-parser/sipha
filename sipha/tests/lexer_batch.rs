@@ -73,8 +73,9 @@ fn lexer_rule_token_literals_batch_honors_require_flags() {
         g.accept();
     });
 
-    g.lexer_rule_token_literals_batch(&[LexerTokenLiteralSpec::new("plus_tok", TestLex(20), b"+")
-        .with_flags(PLUS_REQ_FLAGS)]);
+    g.lexer_rule_token_literals_batch(&[
+        LexerTokenLiteralSpec::new("plus_tok", TestLex(20), b"+").with_flags(PLUS_REQ_FLAGS)
+    ]);
 
     let built = g.finish().expect("grammar");
     let graph = built.as_graph();

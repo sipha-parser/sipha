@@ -89,7 +89,9 @@ fn compile_expr(src: &[u8], expr: &Expr, out: &mut Vec<Op>) -> Result<(), String
 
     while let Some(e) = it.next() {
         match e {
-            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == Lex::Plus.into_syntax_kind() => {
+            sipha::tree::red::SyntaxElement::Token(t)
+                if t.kind() == Lex::Plus.into_syntax_kind() =>
+            {
                 let next_term = it
                     .find_map(|e| e.into_node())
                     .ok_or_else(|| "expr: expected term after '+'".to_string())?;
@@ -112,7 +114,9 @@ fn compile_term(src: &[u8], term: &Term, out: &mut Vec<Op>) -> Result<(), String
 
     while let Some(e) = it.next() {
         match e {
-            sipha::tree::red::SyntaxElement::Token(t) if t.kind() == Lex::Star.into_syntax_kind() => {
+            sipha::tree::red::SyntaxElement::Token(t)
+                if t.kind() == Lex::Star.into_syntax_kind() =>
+            {
                 let next_factor = it
                     .find_map(|e| e.into_node())
                     .ok_or_else(|| "term: expected factor after '*'".to_string())?;

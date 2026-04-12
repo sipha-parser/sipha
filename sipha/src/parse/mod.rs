@@ -4,8 +4,6 @@
 
 #[cfg(feature = "std")]
 pub mod builder;
-#[cfg(feature = "std")]
-pub mod lexer_batch;
 pub mod capture;
 #[cfg(feature = "std")]
 pub mod codegen;
@@ -18,6 +16,8 @@ pub(crate) mod graph_optimize;
 #[cfg(feature = "incremental")]
 pub mod incremental;
 pub mod insn;
+#[cfg(feature = "std")]
+pub mod lexer_batch;
 #[cfg(feature = "std")]
 pub mod memo;
 #[cfg(feature = "parallel")]
